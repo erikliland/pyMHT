@@ -1,3 +1,8 @@
+# TRACK-ORIENTED-(MULTI-TARGET)-MULTI-HYPOTHESIS-TRACKER (with Kalman Filter and PV-model)
+# by Erik Liland, Norwegian University of Science and Technology
+# Trondheim, Norway
+# Authumn 2016
+
 ##Initiation starting
 import numpy as np
 #State space model
@@ -9,6 +14,8 @@ Gamma 	= np.array([[0,0],
 					[0,1]]) #Disturbance matrix (only velocity)
 P0 		= np.eye(5) * 1e-5
 q 		= 0.04
+P_d 	= 0.8
+lambda_ex = 1 #Spatial density of the extraneous measurements (expected number per volume in scan k)
 __trackList__ = []
 __clusterList__ = []
 __lastMeasurementTime__ = -1.0
@@ -27,9 +34,17 @@ def Q(q,T):
 	from numpy import eye
 	return np.eye(2)*q*T
 
+def NLLR(measurement,predictedMeasurement,lambda_ex,covariance,P_d):
+	from numpy import dot, transpose, log, pi, power
+	from numpy.linalg import inv, det
+	measurementResidual = measurement.array() - predictedMeasurement
+	return (	0.5*(measurementResidual.transpose().dot(inv(covariance)).dot(measurementResidual))
+				+ log((lambda_ex*power(det(2*pi*covariance),0.5))/P_d) 	)
+
 def initiateTrack(target):
 	state = np.array([target.position.x,target.position.y, target.velocity.x,target.velocity.y])
-	tempTrack = Track(state, target.time)
+	currentScanIndex = len(__scanHistory__)
+	tempTrack = Track(state, target.time, currentScanIndex)
 	__trackList__.append(tempTrack)
 	__clusterList__.append(len(__trackList__))
 
@@ -50,10 +65,34 @@ def addMeasurementList(measurementList):
 	#re-cluster / merge-split clusters
 	reCluster()
 
-	#process each cluster (in parallel...?)
-	
-	
+	#process each cluster (in parallel...?)[generate hypothesis and calculate score]
+	for clusterIndex, cluster in enumerate(__clusterList__):
+		print("Processing cluster", clusterIndex, "with tracks:", end= " ")
+		print(*cluster, sep = ",")
+		processCluster(cluster)
+		break
+	print()
+
+
 	#store updated result in track list
+
+def processCluster(cluster):
+	from numpy import dot
+	for trackIndex in cluster:
+		track = __trackList__[trackIndex]
+		print("Track:", trackIndex)
+		print("Initial position:", track.initialState[0:2])
+		predictedMeasurement = np.dot(C,track.aprioriEstimatedState)
+		print("Predicted measurement:", predictedMeasurement)
+		index = 1
+		for measurementIndex in track.assosiatedMeasurements[-1]:
+			measurement = __scanHistory__[-1].measurements[measurementIndex]
+			measurementResidual = measurement.array() - predictedMeasurement
+			nllr = NLLR(measurement, predictedMeasurement, lambda_ex, track.aprioriEstimatedCovariance[0:2,0:2], P_d)
+			print("Alternative ",index,": ",measurement, "\tResidual: ", measurementResidual, "\tNLLR: ", nllr, sep = "")	
+			index += 1
+		print()
+	pass
 
 def reCluster():
 	__clusterList__.clear()
@@ -108,17 +147,20 @@ def plotCovariance(sigma):
 			plotCovarianceEllipse(track.aprioriEstimatedCovariance, track.aprioriEstimatedState[0:2], sigma)
 
 class Track:
-	def __init__(self, state, time):
+	def __init__(self, state, time, initialScanIndex):
 		from numpy import array, eye
 		self.time = time
+		self.initialState = state
+		self.initialScanIndex = initialScanIndex
 		self.isAlive = True
 		self.assosiatedMeasurements = [] #indecies to measurements in measurementList
 		self.state = state
-		self.aprioriEstimatedState = self.state
+		self.aprioriEstimatedState = state
 		self.aprioriEstimatedCovariance = eye(4)*0.04
-		self.kalmanGain = 0
-		self.aposterioriEstimatedState = self.state
-		self.aposterioriEstimatedCovariance = eye(2) * 0.04
+		self.kalmanGain = None
+		self.aposterioriEstimatedState = None
+		self.aposterioriEstimatedCovariance = None
+	
 	def __str__(self):
 		return str(self.state)
 

@@ -39,7 +39,7 @@ class MeasurementList:
 
 	__repr__ = __str__
 
-class Target:
+class initialTarget:
 	def __init__(self, pos, vel, time):
 		self.position = pos
 		self.velocity = vel
@@ -47,6 +47,17 @@ class Target:
 
 	def __str__(self):
 		from time import ctime
-		return "Time: "+str(ctime(self.time))+"\tTargets:\t"+repr(self.position) + ",  \t" + repr(self.velocity)
+		return "Time: "+str(ctime(self.time))+"  \t"+repr(self.position) + ",\t" + repr(self.velocity)
+	
+	__repr__ = __str__
+
+class Target:
+	def __init__(self, initialTarget):
+		self.initial = initialTarget
+		self
+
+	def __str__(self):
+		from time import ctime
+		return repr(self.initial)
 	
 	__repr__ = __str__

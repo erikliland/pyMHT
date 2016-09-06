@@ -17,7 +17,7 @@ class SimTarget:
 
 def generateInitialTargets(randomSeed, numOfTargets, centerPosition, radarRange, maxSpeed, time):
 	from random import seed, uniform
-	from classDefinitions import Position, Velocity, Target
+	from classDefinitions import Position, Velocity, initialTarget
 	from helpFunctions import pol2cart
 	seed(randomSeed)
 	initialList = []
@@ -31,12 +31,12 @@ def generateInitialTargets(randomSeed, numOfTargets, centerPosition, radarRange,
 		speed = uniform(0, maxSpeed)
 		vx, vy = pol2cart(travelHeading, speed)
 		V0 = Velocity(vx,vy)
-		target = Target( P0, V0,time)
+		target = initialTarget( P0, V0,time)
 		initialList.append(target)
 	return initialList
 
 def generateScans(randomSeed, initialTargets, numOfScans, timeStep, R):
-	from random import seed, uniform
+	from random import seed, uniform, gauss
 	from classDefinitions import Position, Velocity, MeasurementList
 	
 	if len(initialTargets) == 0:
@@ -49,7 +49,7 @@ def generateScans(randomSeed, initialTargets, numOfScans, timeStep, R):
 		scanTime = scanTime + timeStep
 		measurementList = MeasurementList(scanTime)
 		for targetIndex, target in enumerate(initialTargets):
-			tempMeasurement = target.position + target.velocity*timeStep
+			tempMeasurement = target.position + target.velocity*timeStep + Position( gauss(0,R[0,0]) , gauss(0,R[1,1]) )
 			measurementList.add( tempMeasurement )
 		scanList.append(measurementList)
 	return scanList

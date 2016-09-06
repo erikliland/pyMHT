@@ -4,7 +4,7 @@ import radarSimulator as sim
 import matplotlib.pyplot as plt
 import time
 import numpy as np
-import mht
+import tomht
 
 initalTime = time.time()
 randomSeed = "trackGen"
@@ -31,21 +31,21 @@ print("Scan list:")
 print(*scanList, sep = "\n", end = "\n\n")
 
 for target in initialTargets:
-	mht.initiateTrack(target)
+	tomht.initiateTrack(target)
 
 for measurementList in scanList:
-	mht.addMeasurementList(measurementList)
+	tomht.addMeasurementList(measurementList)
 	plotMeasurements(measurementList)
-	mht.plotCovariance(mht.__sigma__)
+	tomht.plotCovariance(tomht.__sigma__)
 	break
 
-mht.printMeasurementAssosiation()
-mht.printClusterList()
+tomht.printMeasurementAssosiation()
+tomht.printClusterList()
 
-# print("mht.__trackList__:")
-# print(mht.__trackList__)
-# print("mht.__clusterList__")
-# print(mht.__clusterList__)
+# print("tomht.__trackList__:")
+# print(tomht.__trackList__)
+# print("tomht.__clusterList__")
+# print(tomht.__clusterList__)
 
 plt.axis("equal")
 plt.xlim((centerPosition.x-radarRange*1.05, centerPosition.x + radarRange*1.05))
