@@ -1,27 +1,16 @@
-# TRACK-ORIENTED-(MULTI-TARGET)-MULTI-HYPOTHESIS-TRACKER (with Kalman Filter and PV-model)
-# by Erik Liland, Norwegian University of Science and Technology
-# Trondheim, Norway
-# Authumn 2016
-
+"""
+========================================================================================
+TRACK-ORIENTED-(MULTI-TARGET)-MULTI-HYPOTHESIS-TRACKER (with Kalman Filter and PV-model)
+by Erik Liland, Norwegian University of Science and Technology
+Trondheim, Norway
+Authumn 2016
+=========================================================================================
+"""
 ##Initiation starting
+import pykalman.standard as pk
 import numpy as np
-#State space model
-C 		= np.array([[1, 0, 0, 0],
-					[0, 1, 0, 0]]) #also known as "H"
-Gamma 	= np.array([[0,0],
-					[0,0],
-					[1,0],
-					[0,1]]) #Disturbance matrix (only velocity)
-P0 		= np.eye(5) * 1e-5
-q 		= 0.04
-P_d 	= 0.8
-lambda_ex = 1 #Spatial density of the extraneous measurements (expected number per volume in scan k)
-__trackList__ = []
-__clusterList__ = []
-__lastMeasurementTime__ = -1.0
-__sigma__ = 2
-__scanHistory__ = []
-##Initiation finished
+from pykalman.utils import Bunch
+
 
 def Phi(T):
 	from numpy import array
@@ -29,6 +18,37 @@ def Phi(T):
 					[0, 1, 0, T],
 					[0, 0, 1, 0],
 					[0, 0, 0, 1]])
+
+
+#State space model
+timeStep = 1 #second
+A 		= Phi(timeStep) #transition matrix
+
+b 		= np.zeros(4) 	#transition offsets
+
+C 		= np.array([[1, 0, 0, 0],
+					[0, 1, 0, 0]]) #also known as "H"
+
+d 		= np.zeros(2)	#observation offsets
+
+Gamma 	= np.array([[0,0],
+					[0,0],
+					[1,0],
+					[0,1]]) #Disturbance matrix (only velocity)
+P0 		= np.eye(4) * 1e-5
+q 		= 0.04
+P_d 	= 0.8
+r 		= 0.04 			#Measurement variance
+R0 		= np.eye(2)*r 	#Initial Measurement/observation covariance
+Q0		= np.eye(4) * 1	#Initial transition covariance
+lambda_ex = 1 #Spatial density of the extraneous measurements (expected number per volume in scan k)
+
+__targetList__ = []
+__clusterList__ = []
+__lastMeasurementTime__ = -1.0
+__sigma__ = 2
+__scanHistory__ = []
+##Initiation finished
 
 def Q(q,T):
 	from numpy import eye
@@ -41,30 +61,40 @@ def NLLR(measurement,predictedMeasurement,lambda_ex,covariance,P_d):
 	return (	0.5*(measurementResidual.transpose().dot(inv(covariance)).dot(measurementResidual))
 				+ log((lambda_ex*power(det(2*pi*covariance),0.5))/P_d) 	)
 
-def initiateTrack(target):
-	state = np.array([target.position.x,target.position.y, target.velocity.x,target.velocity.y])
+def getKalmanFilterInitData(initialTarget):
+	import numpy as np
+	return Bunch(	transitionMatrix 				= A,
+					observationMatrix 				= C,
+					initialTransitionCovariance 	= Q0,
+					initialObservationCovariance 	= R0,
+					transitionOffsets 				= b,
+					observationOffsets 				= d,
+					initialStateMean 				= initialTarget.state(), 
+					initialStateCovariance 			= P0,
+					randomState 					= 0)
+
+def initiateTrack(initialTarget):
+	from classDefinitions import Target
 	currentScanIndex = len(__scanHistory__)
-	tempTrack = Track(state, target.time, currentScanIndex)
-	__trackList__.append(tempTrack)
-	__clusterList__.append(len(__trackList__))
+	kfData = getKalmanFilterInitData(initialTarget)
+	tempTarget = Target(initialTarget, currentScanIndex, kfData)
+	__targetList__.append(tempTarget)
 
 def addMeasurementList(measurementList):
 	__scanHistory__.append(measurementList)
-	now = measurementList.time
-	#calculate estimated position for alive tracks
-	for track in __trackList__:
-		if track.isAlive:
-			track.calculateAprioriState(now)
-			track.calculateAprioriCovariance
+	scanIndex = len(__scanHistory__)
+	for target in __targetList__:
+		if target.isAlive:
+			#calculate estimated position for alive tracks
+			target.kfPredict(A,Q0,b)
+			#assign measurement to tracks
+			target.assosiateMeasurements(measurementList.measurements, __sigma__, scanIndex, measurementList.time)
 	
-	#assign measurement to tracks
-	for track in __trackList__:
-		if track.isAlive:
-			track.assosiateMeasurements(measurementList.measurements)
-	
+	return
 	#re-cluster / merge-split clusters
 	reCluster()
-
+	
+	
 	#process each cluster (in parallel...?)[generate hypothesis and calculate score]
 	for clusterIndex, cluster in enumerate(__clusterList__):
 		print("Processing cluster", clusterIndex, "with tracks:", end= " ")
@@ -79,7 +109,7 @@ def addMeasurementList(measurementList):
 def processCluster(cluster):
 	from numpy import dot
 	for trackIndex in cluster:
-		track = __trackList__[trackIndex]
+		track = __targetList__[trackIndex]
 		print("Track:", trackIndex)
 		print("Initial position:", track.initialState[0:2])
 		predictedMeasurement = np.dot(C,track.aprioriEstimatedState)
@@ -97,7 +127,7 @@ def processCluster(cluster):
 def reCluster():
 	__clusterList__.clear()
 	assignedTracs = []
-	for trackIndex, track in enumerate(__trackList__):
+	for trackIndex, track in enumerate(__targetList__):
 		if not track.isAlive:
 			break
 		nMeasurement = len(track.assosiatedMeasurements[-1])
@@ -124,6 +154,10 @@ def reCluster():
 		else:
 			raise RuntimeError("Number of assosiated measurements can't be negative!")
 
+def printTargetList():
+	print("TargetList:")
+	print(*__targetList__, sep = "\n")
+
 def printClusterList():
 	print("Cluster list:")
 	# print(*__clusterList__, sep = "", end = "\n\n")
@@ -133,7 +167,7 @@ def printClusterList():
 
 def printMeasurementAssosiation():
 	print("Track-measurement assosiation:")
-	for trackIndex, track in enumerate(__trackList__):
+	for trackIndex, track in enumerate(__targetList__):
 		if track.isAlive:
 			print("Track ",trackIndex, " is assosiated with measurements:\t",sep = "", end = "")
 			print(*track.assosiatedMeasurements, sep = "; ")
@@ -141,85 +175,7 @@ def printMeasurementAssosiation():
 
 def plotCovariance(sigma):
 		from helpFunctions import plotCovarianceEllipse
-		for track in __trackList__:
+		for track in __targetList__:
 			if not track.isAlive:
 				break
 			plotCovarianceEllipse(track.aprioriEstimatedCovariance, track.aprioriEstimatedState[0:2], sigma)
-
-class Track:
-	def __init__(self, state, time, initialScanIndex):
-		from numpy import array, eye
-		self.time = time
-		self.initialState = state
-		self.initialScanIndex = initialScanIndex
-		self.isAlive = True
-		self.assosiatedMeasurements = [] #indecies to measurements in measurementList
-		self.state = state
-		self.aprioriEstimatedState = state
-		self.aprioriEstimatedCovariance = eye(4)*0.04
-		self.kalmanGain = None
-		self.aposterioriEstimatedState = None
-		self.aposterioriEstimatedCovariance = None
-	
-	def __str__(self):
-		return str(self.state)
-
-	__repr__ = __str__
-
-	def assosiateMeasurements(self, measurements):
-		foundMeasurement = False
-		measurementCandidates = []
-		for measurementIndex, measurement in enumerate(measurements):
-			if self.measurementIsInsideErrorEllipse(measurement, __sigma__):
-				measurementCandidates.append(measurementIndex)
-				foundMeasurement = True
-		if not foundMeasurement:
-			measurementCandidates.append(-1)
-		self.assosiatedMeasurements.append(measurementCandidates)
-
-	def calculateAprioriState(self, now):
-		from numpy import dot
-		T = now - self.time
-		self.aprioriEstimatedState = dot(Phi(T),self.aprioriEstimatedState)
-
-	def calculateAprioriCovariance(self):
-		from numpy import dot, transpose
-		T = now - self.time
-		A = Phi(T)
-		Q = Q(T)
-		self.aprioriEstimatedCovariance = A.dot(self.aprioriEstimatedCovariance).dot(A.transpose()) + Gamma.dot(Q).dot(Gamma.transpose())
-
-	def calculateAposterioriEstimatedCovariance(self, H, R):
-		from numpy import dot
-		from numpy.linalg import inv
-		self.aposterioriEstimatedCovariance=self.aprioriEstimatedCovariance-self.aprioriEstimatedCovariance.dot(H.transpose()).dot(inv(H.dot(self.aprioriEstimatedCovariance).dot(H.transpose())+R)).dot(H.dot(self.aprioriEstimatedCovariance))
-
-	def calculateKalmanGain(self, H, R):
-		from numpy import dot
-		from numpy.linalg import inv
-		self.kalmanGain = self.aposterioriEstimatedCovariance.dot(H.transpose()).dot(inv(R))
-
-	def calculateAposterioriStateEstimate(self,z, H):
-		self.aposterioriEstimatedState = self.aprioriEstimatedState + self.kalmanGain * ( z - H.dot(self.aprioriEstimatedState) )
-
-
-	def printAprioriState(self):
-		print("Apriori state:\tP(", round(self.aprioriEstimatedState[0],3), ",", round(self.aprioriEstimatedState[1],3), 
-				")  \tV(", round(self.aprioriEstimatedState[2],3), ",", round(self.aprioriEstimatedState[3],3),")", sep = "")
-
-	def measurementIsInsideErrorEllipse(self, measurement, sigma):
-		from numpy.linalg import eig
-		from numpy import sqrt, rad2deg, arccos, cos, sin, power
-
-		lambda_, v = eig(self.aprioriEstimatedCovariance[0:2,0:2])
-		lambda_ = sqrt(lambda_)
-		deltaX = measurement.x - self.aprioriEstimatedState[0]
-		deltaY = measurement.y - self.aprioriEstimatedState[1]
-		a = lambda_[0]*sigma
-		b = lambda_[1]*sigma
-		angle = arccos(v[0,0])
-		sum = power( cos(angle)*deltaX+sin(angle)*deltaY,2 )/power(a,2)  + power( sin(angle)*deltaX-cos(angle)*deltaY,2)/power(b,2)
-		if sum <= 1:
-			return True
-		else:
-			return False
