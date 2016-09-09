@@ -48,8 +48,14 @@ def generateScans(randomSeed, initialTargets, numOfScans, timeStep, R):
 	for scan in range(numOfScans):
 		scanTime = scanTime + timeStep
 		measurementList = MeasurementList(scanTime)
-		for targetIndex, target in enumerate(initialTargets):
-			tempMeasurement = target.position + target.velocity*timeStep + Position( gauss(0,R[0,0]) , gauss(0,R[1,1]) )
-			measurementList.add( tempMeasurement )
+		if scan == 0:
+			for targetIndex, target in enumerate(initialTargets):
+				tempMeasurement = target.position + target.velocity*timeStep + Position( gauss(0,R[0,0]) , gauss(0,R[1,1]) )
+				measurementList.add( tempMeasurement )
+		else:
+			for targetIndex, target in enumerate(scanList[-1].measurements):
+				tempMeasurement = target + initialTargets[targetIndex].velocity*timeStep + Position( gauss(0,R[0,0]) , gauss(0,R[1,1]) )
+				measurementList.add( tempMeasurement )
+		
 		scanList.append(measurementList)
 	return scanList
