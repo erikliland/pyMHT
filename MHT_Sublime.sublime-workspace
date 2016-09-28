@@ -1,0 +1,582 @@
+{
+	"auto_complete":
+	{
+		"selected_items":
+		[
+			[
+				"ge",
+				"geKalmanFilterInitData"
+			],
+			[
+				"Kalma",
+				"KalmanFilter"
+			],
+			[
+				"ap",
+				"aposterioriEstimatedState"
+			],
+			[
+				"meas",
+				"measurements"
+			],
+			[
+				"lam",
+				"lambda_ex"
+			],
+			[
+				"me",
+				"measurementResidual"
+			],
+			[
+				"apr",
+				"aprioriEstimatedCovariance"
+			],
+			[
+				"ini",
+				"initialScanIndex"
+			],
+			[
+				"__",
+				"__scanHistory__"
+			],
+			[
+				"cluster",
+				"cluster"
+			],
+			[
+				"cl",
+				"cluster"
+			],
+			[
+				"assig",
+				"assignedTracs"
+			],
+			[
+				"n",
+				"nMeasurement"
+			],
+			[
+				"al",
+				"alreadyAssignedToCluster"
+			],
+			[
+				"ass",
+				"assosiatedMeasurements"
+			],
+			[
+				"as",
+				"assosiatedMeasurements"
+			],
+			[
+				"tra",
+				"trackIndex"
+			],
+			[
+				"__c",
+				"__clusterList__"
+			],
+			[
+				"fo",
+				"foundMeasurement"
+			],
+			[
+				"track",
+				"trackIndex"
+			],
+			[
+				"set",
+				"set_linestyle"
+			],
+			[
+				"cen",
+				"centerPosition"
+			],
+			[
+				"ce",
+				"centerPosition"
+			],
+			[
+				"tar",
+				"target"
+			],
+			[
+				"target",
+				"target"
+			],
+			[
+				"clas",
+				"classDefinitions"
+			],
+			[
+				"Vel",
+				"Velocity"
+			],
+			[
+				"plot",
+				"plotHandles"
+			],
+			[
+				"an",
+				"angleRAD"
+			],
+			[
+				"mea",
+				"measurements"
+			],
+			[
+				"clust",
+				"clusterMeasurementCount"
+			],
+			[
+				"delt",
+				"deltaX"
+			],
+			[
+				"dela",
+				"deltaY"
+			],
+			[
+				"estim",
+				"aprioriEstimatedState"
+			],
+			[
+				"targ",
+				"targetIndex"
+			],
+			[
+				"time",
+				"timestep"
+			],
+			[
+				"apo",
+				"aprioriEstimatedState"
+			],
+			[
+				"aposter",
+				"aprioriEstimatedCovariance"
+			],
+			[
+				"sca",
+				"scanIndex"
+			],
+			[
+				"apos",
+				"aprioriEstimatedCovariance"
+			],
+			[
+				"est",
+				"estimatedState"
+			],
+			[
+				"e",
+				"estimatedState"
+			],
+			[
+				"tem",
+				"tempPlot"
+			],
+			[
+				"scan",
+				"scanIndex"
+			],
+			[
+				"pl",
+				"plotMeasurementMatrix"
+			],
+			[
+				"sc",
+				"scanList"
+			],
+			[
+				"nu",
+				"numOfScans"
+			],
+			[
+				"numOf",
+				"numOfScans"
+			],
+			[
+				"num",
+				"numOfTarget"
+			],
+			[
+				"x",
+				"xList"
+			],
+			[
+				"y",
+				"yList"
+			],
+			[
+				"ma",
+				"maxY"
+			],
+			[
+				"min",
+				"minY"
+			],
+			[
+				"ra",
+				"random"
+			],
+			[
+				"numOfS",
+				"numOfScans"
+			]
+		]
+	},
+	"buffers":
+	[
+		{
+			"file": "main.py",
+			"settings":
+			{
+				"buffer_size": 1366,
+				"line_ending": "Windows"
+			}
+		},
+		{
+			"file": "radarSimulator.py",
+			"settings":
+			{
+				"buffer_size": 2494,
+				"line_ending": "Windows"
+			}
+		},
+		{
+			"file": "tomht.py",
+			"settings":
+			{
+				"buffer_size": 7123,
+				"line_ending": "Windows"
+			}
+		}
+	],
+	"build_system": "",
+	"build_system_choices":
+	[
+		[
+			[
+				[
+					"Packages/Python/Python.sublime-build",
+					""
+				],
+				[
+					"Packages/Python/Python.sublime-build",
+					"Syntax Check"
+				]
+			],
+			[
+				"Packages/Python/Python.sublime-build",
+				""
+			]
+		]
+	],
+	"build_varint": "",
+	"command_palette":
+	{
+		"height": 104.0,
+		"last_filter": "Instll",
+		"selected_items":
+		[
+			[
+				"Instll",
+				"Package Control: Install Package"
+			],
+			[
+				"Pyth",
+				"Set Syntax: Python"
+			]
+		],
+		"width": 400.0
+	},
+	"console":
+	{
+		"height": 126.0,
+		"history":
+		[
+			"import urllib.request,os,hashlib; h = '2915d1851351e5ee549c20394736b442' + '8bc59f460fa1548d1514676163dafc88'; pf = 'Package Control.sublime-package'; ipp = sublime.installed_packages_path(); urllib.request.install_opener( urllib.request.build_opener( urllib.request.ProxyHandler()) ); by = urllib.request.urlopen( 'http://packagecontrol.io/' + pf.replace(' ', '%20')).read(); dh = hashlib.sha256(by).hexdigest(); print('Error validating download (got %s instead of %s), please try manual install' % (dh, h)) if dh != h else open(os.path.join( ipp, pf), 'wb' ).write(by)"
+		]
+	},
+	"distraction_free":
+	{
+		"menu_visible": true,
+		"show_minimap": false,
+		"show_open_files": false,
+		"show_tabs": false,
+		"side_bar_visible": false,
+		"status_bar_visible": false
+	},
+	"file_history":
+	[
+		"/C/Users/eriklil/OneDrive/02 NTNU/01 Fag/TTK4550 Prosjekt/03 Python/KalmanFilter.py",
+		"/C/Users/eriklil/OneDrive/02 NTNU/01 Fag/TTK4550 Prosjekt/03 Python/mht.py",
+		"/C/Users/eriklil/OneDrive/02 NTNU/01 Fag/TTK4550 Prosjekt/03 Python/MHT_Sublime.sublime-project",
+		"/C/Users/eriklil/OneDrive/02 NTNU/01 Fag/TTK4550 Prosjekt/03 Python/helpFunctions.py",
+		"/C/Users/eriklil/OneDrive/02 NTNU/01 Fag/TTK4550 Prosjekt/03 Python/classDefinitions.py",
+		"/C/Users/eriklil/OneDrive/02 NTNU/01 Fag/TTK4550 Prosjekt/03 Python/main.sublime-workspace",
+		"/C/Users/eriklil/AppData/Roaming/Sublime Text 3/Packages/Default/Preferences.sublime-settings",
+		"/C/Users/eriklil/AppData/Roaming/Sublime Text 3/Packages/User/Default (Windows).sublime-keymap",
+		"/C/Users/eriklil/AppData/Roaming/Sublime Text 3/Packages/Default/Default (Windows).sublime-keymap",
+		"/C/Users/eriklil/AppData/Roaming/Sublime Text 3/Packages/User/Preferences.sublime-settings",
+		"/C/Users/eriklil/OneDrive/02 NTNU/01 Fag/TTK4550 Prosjekt/03 Python/MHT.py",
+		"/C/Users/eriklil/OneDrive/02 NTNU/01 Fag/TTK4550 Prosjekt/03 Python/simTarget.py"
+	],
+	"find":
+	{
+		"height": 34.0
+	},
+	"find_in_files":
+	{
+		"height": 90.0,
+		"where_history":
+		[
+			"",
+			"mht.py",
+			"mht",
+			""
+		]
+	},
+	"find_state":
+	{
+		"case_sensitive": true,
+		"find_history":
+		[
+			"None",
+			"__trackList__",
+			"Target",
+			"0",
+			"None",
+			"mht",
+			"plotMeasure",
+			"matplot",
+			"mouse",
+			"calculateNextPosition",
+			"measurmentMatrix",
+			"()",
+			"printAprioriState",
+			"H",
+			"inv",
+			"np",
+			"Y",
+			"ctrl+*",
+			"simTarget",
+			"30",
+			"vY"
+		],
+		"highlight": true,
+		"in_selection": false,
+		"preserve_case": false,
+		"regex": false,
+		"replace_history":
+		[
+			"__targetList__",
+			"tomht",
+			"simulatedMeasurements",
+			"SimTarget"
+		],
+		"reverse": false,
+		"show_context": true,
+		"use_buffer2": true,
+		"whole_word": false,
+		"wrap": true
+	},
+	"groups":
+	[
+		{
+			"selected": 0,
+			"sheets":
+			[
+				{
+					"buffer": 0,
+					"file": "main.py",
+					"semi_transient": false,
+					"settings":
+					{
+						"buffer_size": 1366,
+						"regions":
+						{
+						},
+						"selection":
+						[
+							[
+								0,
+								0
+							]
+						],
+						"settings":
+						{
+							"syntax": "Packages/Python/Python.sublime-syntax"
+						},
+						"translation.x": 0.0,
+						"translation.y": 218.0,
+						"zoom_level": 1.0
+					},
+					"stack_index": 1,
+					"type": "text"
+				}
+			]
+		},
+		{
+			"selected": 1,
+			"sheets":
+			[
+				{
+					"buffer": 1,
+					"file": "radarSimulator.py",
+					"semi_transient": false,
+					"settings":
+					{
+						"buffer_size": 2494,
+						"regions":
+						{
+						},
+						"selection":
+						[
+							[
+								0,
+								0
+							]
+						],
+						"settings":
+						{
+							"syntax": "Packages/Python/Python.sublime-syntax",
+							"translate_tabs_to_spaces": false
+						},
+						"translation.x": 0.0,
+						"translation.y": 0.0,
+						"zoom_level": 1.0
+					},
+					"stack_index": 2,
+					"type": "text"
+				},
+				{
+					"buffer": 2,
+					"file": "tomht.py",
+					"semi_transient": false,
+					"settings":
+					{
+						"buffer_size": 7123,
+						"regions":
+						{
+						},
+						"selection":
+						[
+							[
+								1017,
+								1017
+							]
+						],
+						"settings":
+						{
+							"syntax": "Packages/Python/Python.sublime-syntax",
+							"translate_tabs_to_spaces": false
+						},
+						"translation.x": 0.0,
+						"translation.y": 252.0,
+						"zoom_level": 1.0
+					},
+					"stack_index": 0,
+					"type": "text"
+				}
+			]
+		}
+	],
+	"incremental_find":
+	{
+		"height": 23.0
+	},
+	"input":
+	{
+		"height": 0.0
+	},
+	"layout":
+	{
+		"cells":
+		[
+			[
+				0,
+				0,
+				1,
+				1
+			],
+			[
+				1,
+				0,
+				2,
+				1
+			]
+		],
+		"cols":
+		[
+			0.0,
+			0.430208333333,
+			1.0
+		],
+		"rows":
+		[
+			0.0,
+			1.0
+		]
+	},
+	"menu_visible": true,
+	"output.exec":
+	{
+		"height": 270.0
+	},
+	"output.find_results":
+	{
+		"height": 0.0
+	},
+	"pinned_build_system": "Packages/Python/Python.sublime-build",
+	"project": "MHT_Sublime.sublime-project",
+	"replace":
+	{
+		"height": 42.0
+	},
+	"save_all_on_build": true,
+	"select_file":
+	{
+		"height": 0.0,
+		"last_filter": "",
+		"selected_items":
+		[
+			[
+				"",
+				"C:\\Users\\eriklil\\OneDrive\\02 NTNU\\01 Fag\\TTK4550 Prosjekt\\03 Python\\MHT.py"
+			]
+		],
+		"width": 0.0
+	},
+	"select_project":
+	{
+		"height": 0.0,
+		"last_filter": "",
+		"selected_items":
+		[
+		],
+		"width": 0.0
+	},
+	"select_symbol":
+	{
+		"height": 0.0,
+		"last_filter": "",
+		"selected_items":
+		[
+		],
+		"width": 0.0
+	},
+	"selected_group": 1,
+	"settings":
+	{
+	},
+	"show_minimap": false,
+	"show_open_files": true,
+	"show_tabs": true,
+	"side_bar_visible": false,
+	"side_bar_width": 187.0,
+	"status_bar_visible": true,
+	"template_settings":
+	{
+	}
+}

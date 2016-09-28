@@ -1,0 +1,2 @@
+import pulp
+pulp.pulpTestAll()
