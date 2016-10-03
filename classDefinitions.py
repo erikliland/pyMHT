@@ -75,7 +75,7 @@ class Target:
 		self.scanIndex = scanIndex
 		self.measurementNumber = measurementNumber
 		self.measurement = measurement
-		self.cummulativeNLLR = 0
+		self.cummulativeNLLR = 0.0
 		self.trackHypotheses = [] ##children in the track hypothesis tree
 		self.filteredStateMean = kfData.initialStateMean
 		self.filteredStateCovariance = kfData.initialStateCovariance
@@ -102,6 +102,12 @@ class Target:
 		for hyp in self.trackHypotheses:
 			ret += hyp.__str__(level+1)
 		return ret
+
+
+	def depth(self, count = 0):
+		if len(self.trackHypotheses):
+			return self.trackHypotheses[0].depth(count +1)
+		return count
 
 	def kfPredict(self, A, Q0, b):
 		import pykalman.standard as pk

@@ -108,45 +108,171 @@ def addMeasurementList(measurementList):
 	clusterList = findClusters(associationMatrix)
 	hpf.printClusterList(clusterList)
 
-	#process each cluster (generate hypothesis and calculate score)
-	processClusters(clusterList)
+	#calculate score for new hypotheses
+	calculateScore(clusterList)
+
+	targetDepthArray = [target.depth() for target in __targetList]
+	if np.std(np.array(targetDepthArray)) > 0.001:
+	 	error("All targets must be of equal depth")
 
 	#maximize global (cluster vise) likelihood
-	for clusterIndex, cluster in enumerate(clusterList):
-		association = solveOptimumAssociation(cluster, associationMatrix)
-		break
+	globalAssociationMatrix = np.zeros((targetDepthArray[0], len(__targetList)), dtype = int)
+	for cluster in clusterList:
+		if len(cluster) == 1:
+			globalAssociationMatrix[:,cluster] = selectBestHypothesis(__targetList[cluster[0]])
+		else:
+			globalAssociationMatrix[:,cluster] = solveOptimumAssociation(cluster)
+	print("globalAssociationMatrix:",globalAssociationMatrix)
+	 
 
 	#store updated result in track list
 
+def selectBestHypothesis(target):
+	def recSearchBestHypothesis(target,bestScore, bestHypothesisTrack, currentHypothesisTrack = []):
+		if len(target.trackHypotheses) == 0:
+			if target.cummulativeNLLR <= bestScore[0]:
+				bestScore[0] = target.cummulativeNLLR
+				currentHypothesisTrack.append(target.measurementNumber)
+				bestHypothesisTrack[:] = currentHypothesisTrack
+		else:
+			for hyp in target.trackHypotheses:
+				currentHypothesisTrackCpy = currentHypothesisTrack.copy()
+				if target.measurementNumber is not None:
+					currentHypothesisTrackCpy.append(target.measurementNumber)
+				recSearchBestHypothesis(hyp, bestScore, bestHypothesisTrack, currentHypothesisTrackCpy)
 
-def solveOptimumAssociation(cluster, associationMatrix):
-	print("Cluster:")
-	print(cluster)
-	print("Association Matrix")
-	print(associationMatrix)
-	clusterAssociationMatrix = associationMatrix[:,cluster]
-	activeMeasurements = np.nonzero(clusterAssociationMatrix)
-	uniqueActiveMeasurements = np.unique(activeMeasurements[0])
-	reducedAssociationMatrix = clusterAssociationMatrix[uniqueActiveMeasurements,:]
-	print("Active measurements")
-	print(activeMeasurements)
-	print("ClusterAssociationMatrix")
-	print(clusterAssociationMatrix)
-	print("reducedAssociationMatrix")
-	print(reducedAssociationMatrix)
-	##### Need to add dummy measurements somewhere...
-	# Aeq = np.array([[1,1,1,0],
-	# 				[0,0,0,1]])
-	# f 	= np.array([1.2,0.6,1.5,1.1]) 
-	# x 	= solveBLP(Aeq, f)
-	# print("Aeq:\n", Aeq, sep="")
-	# print("f:", f)
-	# print("x:", x)
-	
+	bestScore = [float('Inf')]
+	bestHypothesisTrack = []
+	currentHypothesisTrack = []
+	recSearchBestHypothesis(target, bestScore, bestHypothesisTrack)
+	return bestHypothesisTrack
 
-def solveBLP(Aeq, f):
+
+def solveOptimumAssociation(cluster):
+	nHypInClusterArray = getHypInCluster(cluster)
+	nRealMeasurementsInCluster = getRealMeasurementsInCluster(cluster)
+	A1 	= createA1(nRealMeasurementsInCluster,sum(nHypInClusterArray), cluster)
+	A2 	= createA2(len(cluster), nHypInClusterArray)
+	c 	= getHypScoreInCluster(cluster)
+	selectedHypotheses = solveBLP(A1,A2, c)
+	selectedMeasurements = selectedHypotheses
+	print(	"Solving optimal association in cluster with targets", cluster, ",   \t", sum(nHypInClusterArray),
+			" hypotheses and", nRealMeasurementsInCluster, "real measurements.", sep = " ")
+	# print("nHypothesesInCluster",sum(nHypInClusterArray))
+	# print("nRealMeasurementsInCluster", nRealMeasurementsInCluster)	
+	# print("nTargetsInCluster", len(cluster))
+	# print("nHypInClusterArray",nHypInClusterArray)
+	# print("c =", c)
+	# print("A1", A1, sep = "\n")
+	# print("A2", A2, sep = "\n")
+	return selectedMeasurements
+
+def createA1(nRealMeasurementsInCluster,nHypothesesInCluster,cluster):
+	A1 	= np.zeros((nRealMeasurementsInCluster,nHypothesesInCluster), dtype = bool)
+	def recActiveMeasurement(target, A1, measurementList,  activeMeasurements, hypothesisIndex):
+		if len(target.trackHypotheses) == 0:
+			if target.measurementNumber != 0: #we are at a real measurement
+				measurement = (target.scanIndex,target.measurementNumber)
+				try:
+					measurementIndex = measurementList.index(measurement)
+				except ValueError:
+					measurementList.append(measurement)
+					measurementIndex = len(measurementList) -1
+				activeMeasurements[measurementIndex] = True
+				A1[activeMeasurements,hypothesisIndex[0]] = True
+				# print("Measurement list", measurementList)
+				# print("Measurement index", measurementIndex)
+				# print("HypInd = ", hypothesisIndex[0])
+				# print("Active measurement", activeMeasurements)
+			hypothesisIndex[0] += 1
+		else:
+			for hyp in target.trackHypotheses:
+				activeMeasurementsCpy = activeMeasurements.copy()
+				if target.measurementNumber != 0 and target.measurementNumber != None: #we are on a real measurement, but not on a leaf node
+					measurementList.append((target.scanIndex,target.measurementNumber))
+					print(len(measurementList))
+					activeMeasurementsCpy[len(measurementList)-1] = True
+				recActiveMeasurement(hyp, A1, measurementList, activeMeasurementsCpy, hypothesisIndex)
+
+	(nRow, nCol) = A1.shape
+	activeMeasurements = np.zeros(nRow, dtype = bool)
+	measurementList = []
+	hypothesisIndex = [0] ##TODO: fix this ugly workaround (http://stackoverflow.com/questions/15148496/python-passing-an-integer-by-reference)
+	for targetIndex in cluster:
+		recActiveMeasurement(__targetList[targetIndex], A1, measurementList, activeMeasurements,hypothesisIndex)
+	return A1
+
+def createA2(nTargetsInCluster, nHypInClusterArray):
+	A2 	= np.zeros((nTargetsInCluster,sum(nHypInClusterArray)), dtype = bool)
+	colOffset = 0
+	for rowIndex, nHyp in enumerate(nHypInClusterArray):
+		for colIndex in range(colOffset, colOffset + nHyp):
+			A2[rowIndex,colIndex]=True
+		colOffset += nHyp
+	return A2
+
+def getHypScoreInCluster(cluster):
+	def getTargetScore(target, scoreArray):
+		if len(target.trackHypotheses) == 0:
+			scoreArray.append(target.cummulativeNLLR)
+		else:
+			for hyp in target.trackHypotheses:
+				getTargetScore(hyp, scoreArray)
+	scoreArray = []
+	for targetIndex in cluster:
+		getTargetScore(__targetList[targetIndex], scoreArray)
+	return scoreArray
+
+def getHypInCluster(cluster):
+	def nLeafNodes(target):
+		if len(target.trackHypotheses) == 0:
+			return 1
+		else:
+			return sum(nLeafNodes(hyp) for hyp in target.trackHypotheses)
+	nHypInClusterArray = np.zeros(len(cluster), dtype = int)
+	for i, targetIndex in enumerate(cluster):
+		nHypInTarget = nLeafNodes(__targetList[targetIndex])
+		nHypInClusterArray[i] = nHypInTarget
+	return nHypInClusterArray
+
+def getRealMeasurementsInCluster(cluster):
+	def nRealMeasurements(target, measurementsInCluster):
+		if len(target.trackHypotheses) == 0:
+			if target.measurementNumber != 0:
+				measurementsInCluster.add((target.scanIndex, target.measurementNumber))
+		else:
+			for hyp in target.trackHypotheses:
+				nRealMeasurements(hyp, measurementsInCluster) 
+
+	measurementsInCluster = set()
+	for targetIndex in cluster:
+		nRealMeasurements(__targetList[targetIndex], measurementsInCluster)
+	return len(measurementsInCluster)
+
+def dfs(target, measurementHistory, h, depth = 0):
 	import numpy as np
-	(nMeas, nHyp) = Aeq.shape
+	if depth == 0: #root node
+		print("Root")
+		for hyp in target.trackHypotheses:
+			dfs(hyp, measurementHistory, h, depth +1)
+	elif len(target.trackHypotheses): #We are not at a leaf node
+		for hyp in target.trackHypotheses:
+			print("Midle node")
+			dfs(hyp, (measurementHistory[:]).append(target.measurementNumber), h, depth+1)
+	else: #we are at a leaf node
+		print("Leaf node")
+		mHistCopy = list(measurementHistory)
+		mHistCopy.append(target.measurementNumber)
+		nMeas = len(mHistCopy)
+		print("nMeas", nMeas)
+		h.append(mHistCopy)
+		print("h",h)
+		print("measurementHistory",mHistCopy)
+
+def solveBLP(A1, A2, f):
+	import numpy as np
+	(nMeas, nHyp) = A1.shape
+	(nTargets, _) = A2.shape
 	nCost = len(f)
 	if nCost != nHyp:
 		error("The number of costs and hypotheses must be equal")
@@ -160,7 +286,10 @@ def solveBLP(Aeq, f):
 	prob += pulp.lpSum(c[i]*x[i] for i in range(nHyp))
 
 	for row in range(nMeas):
-		prob += pulp.lpSum([ Aeq[row,col] * x[col] for col in range(nHyp) ]) == 1
+		prob += pulp.lpSum([ A1[row,col] * x[col] for col in range(nHyp) ]) == 1
+
+	for row in range(nTargets):
+		prob += pulp.lpSum([ A2[row,col] * x[col] for col in range(nHyp) ]) == 1
 
 	sol = prob.solve()
 
@@ -183,12 +312,12 @@ def assosiationToAdjacencyMatrix(assosiationMatrix):
 	adjacencyMatrix[vertices[0]+nCol,vertices[1]] = True
 	return adjacencyMatrix
 
-def processClusters(clusterList):
+def calculateScore(clusterList):
 	from numpy import dot, transpose
 	import numpy as np
 	from numpy.linalg import norm
 	for clusterIndex, cluster in enumerate(clusterList):
-		print("Processing cluster", clusterIndex, "with target:", end= " ")
+		print("Calculating score for hypotheses in cluster", clusterIndex, "with target:", end= " ")
 		print(*cluster, sep = ",")
 		for targetIndex in cluster:
 			target = __targetList[targetIndex]
@@ -206,14 +335,14 @@ def processClusters(clusterList):
 				correctedMeasurementCovariance = C.dot(cov).dot(C.transpose())
 				nllr = NLLR(hypothesisIndex, 
 					measurement, predictedMeasurement, lambda_ex, correctedMeasurementCovariance, P_d)
-				hypothesis.cumulativeNLLR = target.cummulativeNLLR + nllr
+				hypothesis.cummulativeNLLR = target.cummulativeNLLR + nllr
 				np.set_printoptions(formatter = {'float':'{: 06.4f}'.format})
 				print("  \t\tAlternative ",hypothesisIndex,":"
 						," \tMeas", hypothesis.measurement
 						," \tFilt", hypothesis.initial.position
 						," \tResidual: ", measurementResidual
 						," \t|R|: ", '{:06.4f}'.format(measurementResidualLength)
-						," \tNLLR: ", '{: 06.4f}'.format(nllr)
+						," \tNLLR: ", '{: 06.4f}'.format(hypothesis.cummulativeNLLR)
 						, sep = "")
 			print()
 
