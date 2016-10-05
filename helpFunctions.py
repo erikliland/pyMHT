@@ -3,9 +3,9 @@ def plotInitialTargetIndex(initialTarget, index):
 	from numpy.linalg import norm
 	ax = plt.subplot(111)
 	normVelocity = initialTarget.velocity.toarray() / norm(initialTarget.velocity.toarray())
-	offset = 0.2 * normVelocity
+	offset = 0.1 * normVelocity
 	position = initialTarget.position.toarray() - offset
-	ax.text(position[0], position[1], index, 
+	ax.text(position[0], position[1], "T"+str(index), 
 		fontsize=8, horizontalalignment = "center", verticalalignment = "center")
 
 def plotDummyMeasurement(target):
@@ -32,21 +32,19 @@ def plotRadarOutline(centerPosition, radarRange):
 	ax.add_artist(circle)
 
 def plotCovarianceEllipse(cov, Position, sigma):
-	from numpy.linalg import eig
-	from numpy import sqrt, rad2deg, arccos
+	import numpy as np
 	from matplotlib.patches import Ellipse
 	import matplotlib.pyplot as plt
-
-	lambda_, v = eig(cov[0:2,0:2])
-	lambda_ = sqrt(lambda_)
-	# print("Cov:\n", cov[0:2,0:2])
+	lambda_, v = np.linalg.eig(cov)
+	np.set_printoptions(precision = 3)
+	# print("Cov:\n", cov)
 	# print("Lambda:", lambda_)
 	# print("Sigma:", sigma)
 	ax = plt.subplot(111)
 	ell = Ellipse( xy	 = (Position[0], Position[1]), 
-				   width = lambda_[0]*sigma*2, 
-				   height= lambda_[1]*sigma*2, 
-				   angle = rad2deg(arccos(v[0,0])))
+				   width = np.sqrt(lambda_[0])*sigma*2, 
+				   height= np.sqrt(lambda_[1])*sigma*2, 
+				   angle = np.rad2deg( np.arctan2( lambda_[1], lambda_[0]) ))
 	ell.set_facecolor('none')
 	ell.set_linestyle("dotted")
 	ell.set_alpha(0.3)
@@ -83,9 +81,10 @@ def plotTargetList(targetList):
 	for target in targetList:
 		plot([target.position.x],[target.position.y],"k+")
 
-def plotCovariance(target,sigma, C):
-		from numpy import dot
-		plotCovarianceEllipse(target.predictedStateCovariance, dot(C,target.predictedStateMean), sigma)
+def plotValidationRegion(target,sigma, C, R):
+	from numpy import dot
+	plotCovarianceEllipse(C.dot(target.predictedStateCovariance.dot(C.T))+R,
+								dot(C,target.predictedStateMean), sigma)
 
 def printScanList(scanList):
 	for index, measurement in enumerate(scanList):

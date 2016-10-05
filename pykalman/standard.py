@@ -289,7 +289,7 @@ def _filter_correct(observation_matrix, observation_covariance,
         corrected_state_covariance = predicted_state_covariance
 
     return (kalman_gain, corrected_state_mean,
-            corrected_state_covariance)
+            corrected_state_covariance, predicted_observation_covariance)
 
 
 def _filter(transition_matrices, observation_matrices, transition_covariance,
