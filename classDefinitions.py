@@ -1,4 +1,5 @@
 import numpy as np
+import helpFunctions as hpf
 
 class Position:
 	def __init__(self, x, y):
@@ -61,7 +62,7 @@ class initialTarget:
 	def __str__(self):
 		from time import gmtime, strftime
 		timeString = strftime("%H:%M:%S", gmtime(self.time))
-		return ("Time: "+ timeString +" \t"+repr(self.position) + ",\t" + repr(self.velocity))
+		return ("Time: "+ timeString +" ,\t"+repr(self.position) + ",\t" + repr(self.velocity))
 	
 	__repr__ = __str__
 
@@ -71,14 +72,15 @@ class initialTarget:
 
 class Target:
 	def __init__(self, initialTarget, scanIndex,measurementNumber,measurement,
-				 initialState, initialStateCovariance, residualCovariance = None):
+				 initialState, initialStateCovariance, Parent = None, cummulativeNLLR = 0.0, residualCovariance = None):
 		from pykalman import KalmanFilter
 		self.isAlive = True
+		self.parent = Parent
 		self.initial = initialTarget
 		self.scanIndex = scanIndex
 		self.measurementNumber = measurementNumber
 		self.measurement = measurement
-		self.cummulativeNLLR = 0.0
+		self.cummulativeNLLR = cummulativeNLLR
 		self.trackHypotheses = [] #children in the track hypothesis tree
 		self.filteredStateMean = initialState
 		self.filteredStateCovariance = initialStateCovariance
@@ -88,23 +90,21 @@ class Target:
 
 	def __repr__(self):
 		from time import ctime
-		return (repr(self.initial)
-			+ " \tInitialScanIndex: " 	+ str(self.scanIndex) 
-			+ " \tIsAlive: " 	+ str(self.isAlive) 
-			+ " \t#Hypothesis: "+ str(len(self.trackHypotheses))
-			+ " \tNLLR: "		+ str(self.cummulativeNLLR)
-			+ " \tPredState: " 	+ str(self.predictedStateMean)
-			# + " \tPredCov: " 	+ repr(self.predictedStateCovariance)
-			+ " \tFiltState: " 	+ str(self.filteredStateMean)
-			# + " \nFiltCov: " 	+ str(self.filteredStateCovariance)
-			)
+		if self.predictedStateMean is not None:
+			predStateStr = " \tPredState: " 	+ str(self.predictedStateMean)
+		else:
+			predStateStr = ""
+		return (repr(self.initial) 
+				+ " \tcNLLR:" + '{: 06.4f}'.format(self.cummulativeNLLR)
+				+ predStateStr
+				)
 
-	def __str__(self, level=0):
+	def __str__(self, level=0, hypIndex = 0):
 		ret = ""
 		if level != 0:
-			ret += str(level)+":" + "\t"*level+repr(str(self.measurementNumber))+"\n"
-		for hyp in self.trackHypotheses:
-			ret += hyp.__str__(level+1)
+			ret += "\t" + "\t"*level + "H" + str(hypIndex)+":\t" +repr(self)+"\n"
+		for hypIndex, hyp in enumerate(self.trackHypotheses):
+			ret += hyp.__str__(level+1, hypIndex)
 		return ret
 
 
@@ -118,28 +118,29 @@ class Target:
 		self.predictedStateMean, self.predictedStateCovariance = (
 				pk._filter_predict(A,Gamma.dot(Q.dot(Gamma.T)),b,self.filteredStateMean,self.filteredStateCovariance))
 
-	def associateMeasurements(self, measurementList, sigma, scanIndex, C, R, d, usedMeasurements):
-		useFilteredEstimate = True
+	def associateMeasurements(self, measurementList, sigma, P_d, lambda_ex, scanIndex, C, R, d, usedMeasurements):
 		from pykalman.standard import _filter_correct
 		time = measurementList.time
 		measurements = measurementList.measurements
 		predictedPosition = Position(self.predictedStateMean[0], self.predictedStateMean[1])
 		zeroInitTarget = initialTarget(predictedPosition, self.initial.velocity, time)
-		self.trackHypotheses.append( Target(zeroInitTarget, scanIndex, 0, predictedPosition, zeroInitTarget.state(), self.predictedStateCovariance)) #Zero-hypothesis
+		nllr = hpf.NLLR(0, P_d)
+		self.trackHypotheses.append( Target(zeroInitTarget, scanIndex, 0, predictedPosition, 
+							zeroInitTarget.state(), self.predictedStateCovariance, self, self.cummulativeNLLR + nllr)) #Zero-hypothesis
 		for measurementIndex, measurement in enumerate(measurements):
 			if self.measurementIsInsideErrorEllipse(measurement, sigma, C, R):
 				(_, state, filtCov, resCov) = _filter_correct(
 					C, R, d, self.predictedStateMean, self.predictedStateCovariance, measurement.toarray() )
-				if useFilteredEstimate:
-					filteredPosition = Position(state[0], state[1])
-				else:
-					filteredPosition = measurement
-				deltaPosArray = filteredPosition.toarray() - self.initial.position.toarray()
+				filteredPosition = Position(state[0], state[1])
+				deltaPosArray = state[0:2] - self.initial.position.toarray()
 				deltaTime = time - self.initial.time
 				velocityArray = deltaPosArray / deltaTime
 				velocity = Velocity(velocityArray[0], velocityArray[1])
 				virtualInitialTarget = initialTarget(filteredPosition,velocity, time)
-				self.trackHypotheses.append( Target(virtualInitialTarget, scanIndex, measurementIndex+1, measurement,state, filtCov, resCov) )
+				predictedMeasurement = np.dot(C,self.predictedStateMean)
+				nllr = hpf.NLLR(None,P_d, measurement, predictedMeasurement, lambda_ex, resCov)
+				self.trackHypotheses.append( Target(virtualInitialTarget, scanIndex, measurementIndex+1, 
+											measurement,state, filtCov, self, self.cummulativeNLLR + nllr, resCov) )
 				usedMeasurements[measurementIndex] = True
 
 	def measurementIsInsideErrorEllipse(self,measurement, sigma, C, R):

@@ -75,7 +75,6 @@ def plotMeasurementIndecies(scanIndex, measurements):
 				str(scanIndex)+":"+str(measurementIndex+1), 
 				size = 7, ha = "left", va = "top") 
 
-
 def plotTargetList(targetList):
 	from matplotlib.pyplot import plot
 	for target in targetList:
@@ -91,9 +90,8 @@ def printScanList(scanList):
 		print("\tMeasurement ", index, ":\t", end="", sep='')
 		measurement.print()
 
-def printMeasurementAssociation(targetIndex, target):
-	print("Track-measurement assosiation:")
-	print("Target: ", targetIndex, "\n", target, sep = "")
+def printTarget(target,targetIndex):
+	print("\tTarget: ", str(targetIndex), "\n", target, sep = "")
 
 def printClusterList(clusterList):
 	print("Clusters:")
@@ -101,11 +99,24 @@ def printClusterList(clusterList):
 		print("Cluster ", clusterIndex, " contains target(s):\t", cluster, sep ="", end = "\n")
 	print()
 
-def printTargetList():
+def printTargetList(__targetList__):
 	print("TargetList:")
 	for targetIndex, target in enumerate(__targetList__):
-		print("Target: ", str(targetIndex), "\t",repr(target), sep = "")
+		printTarget(target, targetIndex)
 	print()
+
+def printHypothesesScore(__targetList__):
+	def recPrint(target, targetIndex):
+		if len(target.trackHypotheses) == 0:
+			pass
+		else:
+			for hyp in target.trackHypotheses:
+				recPrint(hyp, targetIndex)
+	for targetIndex, target in enumerate(__targetList__):
+		print(	"\tTarget: ",targetIndex,
+ 				"\tInit",	target.initial.position,
+ 				"\tPred",	target.predictedPosition(),
+ 				"\tMeas",	target.measurement,sep = "")
 
 def pol2cart(bearingDEG,distance):
 	from numpy import deg2rad, cos, sin
@@ -116,3 +127,25 @@ def pol2cart(bearingDEG,distance):
 	y = distance * sin(angleRAD)
 	return [x,y]
 
+
+def NLLR(hypothesisIndex,P_d, measurement = None,predictedMeasurement = None,lambda_ex = None,covariance = None):
+	from numpy import dot, transpose, log, pi, power
+	from numpy.linalg import inv, det
+	if hypothesisIndex == 0:
+		return -log(1-P_d)
+	else:
+		measurementResidual = measurement.toarray() - predictedMeasurement
+		return (	0.5*(measurementResidual.T.dot(inv(covariance)).dot(measurementResidual))
+					+ log((lambda_ex*power(det(2*pi*covariance),0.5))/P_d) 	)
+
+# def getKalmanFilterInitData(initialTarget):
+# 	import numpy as np
+# 	return Bunch(	transitionMatrix 		= A,
+# 					observationMatrix 		= C,
+# 					transitionCovariance 	= Q,
+# 					bbservationCovariance 	= R,
+# 					transitionOffsets 		= b,
+# 					observationOffsets 		= d,
+# 					initialStateMean 		= initialTarget.state(),
+# 					initialStateCovariance 	= P0,
+# 					randomState 			= 0)

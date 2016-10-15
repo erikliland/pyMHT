@@ -39,8 +39,6 @@ for initialTarget in initialTargets:
 associationHistory = []
 for measurementIndex, measurementList in enumerate(scanList):
 	associationHistory.append(tomht.addMeasurementList(measurementList))
-	# if measurementIndex == 2:
-	# 	break
 
 # tomht.printTargetList()
 
