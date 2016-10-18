@@ -1,28 +1,23 @@
-def plotInitialTargetIndex(initialTarget, index):
-	import matplotlib.pyplot as plt
-	from numpy.linalg import norm
-	ax = plt.subplot(111)
-	normVelocity = initialTarget.velocity.toarray() / norm(initialTarget.velocity.toarray())
-	offset = 0.1 * normVelocity
-	position = initialTarget.position.toarray() - offset
-	ax.text(position[0], position[1], "T"+str(index), 
-		fontsize=8, horizontalalignment = "center", verticalalignment = "center")
+import matplotlib.pyplot as plt
+import numpy as np
 
-def plotDummyMeasurement(target):
-	from matplotlib.pyplot import plot
-	plot(target.predictedStateMean[0], target.predictedStateMean[1], color = "black", fillstyle = "none", marker = "o")
+def plotVelocityArrowFromNode(nodes, stepsBack = 1):
+	def recPlotVelocityArrowFromNode(node, stepsLeft):
+		if node.predictedStateMean is not None:
+			plotVelocityArrow(node)
+		if stepsLeft > 0 and (node.parent is not None):
+			recPlotVelocityArrowFromNode(node.parent, stepsLeft-1)
+	for node in nodes:
+		recPlotVelocityArrowFromNode(node, stepsBack)
 
 def plotVelocityArrow(target):
-	from matplotlib.pyplot import arrow, subplot
-	ax = subplot(111)
+	ax = plt.subplot(111)
 	deltaPos = target.predictedStateMean[0:2] - target.initial.position.toarray()
 	ax.arrow(target.initial.position.x, target.initial.position.y, deltaPos[0], deltaPos[1],
 	head_width=0.1, head_length=0.1, fc= "None", ec='k', 
 	length_includes_head = "true", linestyle = "-", alpha = 0.3, linewidth = 0.5)
 
 def plotRadarOutline(centerPosition, radarRange):
-	from classDefinitions import Position
-	import matplotlib.pyplot as plt
 	from matplotlib.patches import Ellipse
 	plt.plot(centerPosition.x, centerPosition.y,"bo")
 	ax = plt.subplot(111)
@@ -32,14 +27,9 @@ def plotRadarOutline(centerPosition, radarRange):
 	ax.add_artist(circle)
 
 def plotCovarianceEllipse(cov, Position, sigma):
-	import numpy as np
 	from matplotlib.patches import Ellipse
-	import matplotlib.pyplot as plt
 	lambda_, v = np.linalg.eig(cov)
 	np.set_printoptions(precision = 3)
-	# print("Cov:\n", cov)
-	# print("Lambda:", lambda_)
-	# print("Sigma:", sigma)
 	ax = plt.subplot(111)
 	ell = Ellipse( xy	 = (Position[0], Position[1]), 
 				   width = np.sqrt(lambda_[0])*sigma*2, 
@@ -50,48 +40,67 @@ def plotCovarianceEllipse(cov, Position, sigma):
 	ell.set_alpha(0.3)
 	ax.add_artist(ell)
 
-def plotMeasurements(measurmentList):
-	import matplotlib.pyplot as plt
-	ax = plt.subplot(111)
-	for measurement in measurmentList.measurements:
-		x = measurement.x
-		y = measurement.y
-		plt.plot(x, y,'kx')
+def plotMeasurementList(measurmentList, scanIndex = None):
+	for measurementIndex, measurement in enumerate(measurmentList.measurements):
+		plotMeasurement(measurmentList, measurementIndex+1, scanIndex)
 
-def plotDummyMeasurementIndex(scanIndex, target):
-	import matplotlib.pyplot as plt
-	ax = plt.subplot(111)
-	ax.text(target.predictedStateMean[0],
-			target.predictedStateMean[1],
-			str(scanIndex)+":"+str(0), 
-			size = 7, ha = "left", va = "top") 
+def plotMeasurementsFromList(scanHistory):
+	for scanIndex, scan in enumerate(scanHistory):
+		for measurementIndex, measurement in enumerate(scan.measurements):
+			plotMeasurement(measurement, measurementIndex+1, scanIndex)
 
-def plotMeasurementIndecies(scanIndex, measurements):
-	import matplotlib.pyplot as plt
-	ax = plt.subplot(111)
-	for measurementIndex, measurement in enumerate(measurements):
-		ax.text(measurement.x,
-				measurement.y,
-				str(scanIndex)+":"+str(measurementIndex+1), 
-				size = 7, ha = "left", va = "top") 
-
-def plotTargetList(targetList):
-	from matplotlib.pyplot import plot
+def plotMeasurementsFromForest(targetList, plotReal = True, plotDummy = True, **kwargs):
+	def recPlotMeasurements(target, plottedMeasurements, plotReal, plotDummy):
+		if target.parent is not None:
+			if target.measurementNumber == 0:
+				if plotDummy:
+					plotMeasurement(target.initial.position, target.measurementNumber, target.scanIndex)
+			else:
+				if plotReal:
+					measurementID = (target.scanIndex,target.measurementNumber)
+					if measurementID not in plottedMeasurements:
+						plotMeasurement(target.measurement, target.measurementNumber, target.scanIndex)
+						plottedMeasurements.add( measurementID )
+		for hyp in target.trackHypotheses:
+			recPlotMeasurements(hyp, plottedMeasurements, plotReal, plotDummy)
+	
+	plotReal = kwargs.get('real', plotReal)
+	plotDummy = kwargs.get('dummy', plotDummy)
+	if not (plotReal or plotDummy):
+		return
+	plottedMeasurements = set()
 	for target in targetList:
-		plot([target.position.x],[target.position.y],"k+")
+		recPlotMeasurements(target,plottedMeasurements,plotReal, plotDummy)
+
+def plotMeasurement(position, measurementNumber = None, scanIndex = None):
+	x = position.x
+	y = position.y
+	if measurementNumber == 0:
+		plt.plot(x,y,color = "black",fillstyle = "none", marker = "o")
+	else:
+		plt.plot(x, y,'kx')
+	if (scanIndex is not None) and (measurementNumber is not None):
+		ax = plt.subplot(111)
+		ax.text(x, y,str(scanIndex)+":"+str(measurementNumber), size = 7, ha = "left", va = "top") 
 
 def plotValidationRegion(target,sigma, C, R):
-	from numpy import dot
 	plotCovarianceEllipse(C.dot(target.predictedStateCovariance.dot(C.T))+R,
-								dot(C,target.predictedStateMean), sigma)
+								C.dot(target.predictedStateMean), sigma)
+
+def plotActiveTrack(associationHistory):
+	def recBacktrackPosition(target):
+		if target.parent is None:
+			return [target.initial.position]
+		return recBacktrackPosition(target.parent) + [target.initial.position] 
+
+	for hyp in associationHistory:
+		positions = recBacktrackPosition(hyp)
+		plt.plot([p.x for p in positions], [p.y for p in positions])
 
 def printScanList(scanList):
 	for index, measurement in enumerate(scanList):
 		print("\tMeasurement ", index, ":\t", end="", sep='')
 		measurement.print()
-
-def printTarget(target,targetIndex):
-	print("\tTarget: ", str(targetIndex), "\n", target, sep = "")
 
 def printClusterList(clusterList):
 	print("Clusters:")
@@ -102,7 +111,7 @@ def printClusterList(clusterList):
 def printTargetList(__targetList__):
 	print("TargetList:")
 	for targetIndex, target in enumerate(__targetList__):
-		printTarget(target, targetIndex)
+		print("\tTarget: ", str(targetIndex), "\t", repr(target),"\n", target, sep = "")
 	print()
 
 def printHypothesesScore(__targetList__):
@@ -119,33 +128,43 @@ def printHypothesesScore(__targetList__):
  				"\tMeas",	target.measurement,sep = "")
 
 def pol2cart(bearingDEG,distance):
-	from numpy import deg2rad, cos, sin
-	from classDefinitions import Position
 	angleDEG = 90 - bearingDEG
-	angleRAD = deg2rad(angleDEG)
-	x = distance * cos(angleRAD)
-	y = distance * sin(angleRAD)
+	angleRAD = np.deg2rad(angleDEG)
+	x = distance * np.cos(angleRAD)
+	y = distance * np.sin(angleRAD)
 	return [x,y]
 
-
 def NLLR(hypothesisIndex,P_d, measurement = None,predictedMeasurement = None,lambda_ex = None,covariance = None):
-	from numpy import dot, transpose, log, pi, power
-	from numpy.linalg import inv, det
 	if hypothesisIndex == 0:
-		return -log(1-P_d)
+		return -np.log(1-P_d)
 	else:
 		measurementResidual = measurement.toarray() - predictedMeasurement
-		return (	0.5*(measurementResidual.T.dot(inv(covariance)).dot(measurementResidual))
-					+ log((lambda_ex*power(det(2*pi*covariance),0.5))/P_d) 	)
+		return (	0.5*(measurementResidual.T.dot(np.linalg.inv(covariance)).dot(measurementResidual))
+					+ np.log((lambda_ex*np.power(np.linalg.det(2*np.pi*covariance),0.5))/P_d) 	)
 
-# def getKalmanFilterInitData(initialTarget):
-# 	import numpy as np
-# 	return Bunch(	transitionMatrix 		= A,
-# 					observationMatrix 		= C,
-# 					transitionCovariance 	= Q,
-# 					bbservationCovariance 	= R,
-# 					transitionOffsets 		= b,
-# 					observationOffsets 		= d,
-# 					initialStateMean 		= initialTarget.state(),
-# 					initialStateCovariance 	= P0,
-# 					randomState 			= 0)
+def backtrackMeasurementsIndices(selectedNodes):
+	def recBacktrackNodeMeasurements(node, measurementBacktrack):
+		if node.parent is not None:
+			measurementBacktrack.append(node.measurementNumber)
+			recBacktrackNodeMeasurements(node.parent,measurementBacktrack)
+	measurementsBacktracks = []
+	for leafNode in selectedNodes:
+		measurementBacktrack = []
+		recBacktrackNodeMeasurements(leafNode, measurementBacktrack)
+		measurementBacktrack.reverse()
+		measurementsBacktracks.append(measurementBacktrack)
+	return measurementsBacktracks
+
+# def _hypothesesIndices2measurementsIndices(measurementList, selectedHypotheses, A1):
+# from operator import itemgetter
+# numOfTimesteps = max(measurementList,key=itemgetter(1))[0]
+# print("numOfTimesteps",numOfTimesteps)
+# measurementsIndices = []
+# for hypIndex in selectedHypotheses:
+# 	hypMeasIndices = np.nonzero(A1[:,hypIndex])[0]
+# 	print("hypMeasIndices", A1[:,hypIndex] )
+# 	hypMeas = [measurementList[i] for i in hypMeasIndices]
+# 	print("hypMeas",hypMeas)
+# 	hypMeas.sort(key=lambda tup: tup[0])
+# 	measurementsIndices.append( [meas[1] for meas in hypMeas] )
+# return measurementsIndices

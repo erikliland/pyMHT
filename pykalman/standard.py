@@ -217,7 +217,7 @@ def _filter_predict(transition_matrix, transition_covariance,
 
 def _filter_correct(observation_matrix, observation_covariance,
     observation_offset, predicted_state_mean,predicted_state_covariance, observation):
-    r"""Correct a predicted state with a Kalman Filter update
+    """Correct a predicted state with a Kalman Filter update
 
     Incorporate observation `observation` from time `t` to turn
     :math:`P(x_t | z_{0:t-1})` into :math:`P(x_t | z_{0:t})`
