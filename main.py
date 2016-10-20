@@ -22,9 +22,9 @@ nScans = 5
 simList = sim.simulateTargets(seed, initialTargets, nScans, tomht.timeStep, tomht.Phi(tomht.timeStep), tomht.Q, tomht.Gamma)
 print("Sim list:")
 print(*simList, sep = "\n", end = "\n\n")
-scanList = sim.simulateScans(seed, simList, tomht.C, tomht.R, False)
-print("Scan list:")
-print(*scanList, sep = "\n", end = "\n\n")
+scanList = sim.simulateScans(seed, simList, tomht.C, tomht.R, False, tomht.lambda_phi, radarRange)
+# print("Scan list:")
+# print(*scanList, sep = "\n", end = "\n\n")
 
 for initialTarget in initialTargets:
  	tomht.initiateTarget(initialTarget)
@@ -34,6 +34,7 @@ for measurementIndex, measurementList in enumerate(scanList):
 	associationHistory.append(tomht.addMeasurementList(measurementList))
 	# if measurementIndex == 1:
 	# 	break
+# hpf.printTargetList(tomht.__targetList__)
 
 association = hpf.backtrackMeasurementsIndices(associationHistory[-1])
 print(*association, sep = "\n")
@@ -41,12 +42,12 @@ print(*association, sep = "\n")
 fig1 = plt.figure(num=1, figsize = (9,9), dpi=100)
 hpf.plotRadarOutline(p0, radarRange)
 # hpf.plotVelocityArrowFromNode(associationHistory[-1],2)
-# hpf.plotValidationRegion(target,__sigma__, C, R)
-hpf.plotMeasurementsFromForest(tomht.__targetList__, real = False)
-# hpf.plotMeasurementsFromList(tomht.__scanHistory__)
+# hpf.plotValidationRegionFromNodes(associationHistory[-1],tomht.sigma, 3)
+hpf.plotMeasurementsFromForest(tomht.__targetList__, real = False, dummy = False)
+hpf.plotMeasurementsFromList(tomht.__scanHistory__)
 hpf.plotActiveTrack(associationHistory[-1])
 plt.axis("equal")
 plt.xlim((p0.x-radarRange*1.05, p0.x + radarRange*1.05))
 plt.ylim((p0.y-radarRange*1.05, p0.y + radarRange*1.05))
-# plt.show(block = True)
+plt.show()
 print("Done :)")

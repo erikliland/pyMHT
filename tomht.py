@@ -9,7 +9,7 @@ Authumn 2016
 import numpy as np
 import helpFunctions as hpf
 import pulp
-from classDefinitions import Target, Position, Velocity, InitialTarget
+from classDefinitions import Target, Position, Velocity
 
 def Phi(T):
 	from numpy import array
@@ -28,37 +28,39 @@ C 		= np.array([[1, 0, 0, 0],	#Also known as "H"
 d 		= np.zeros(2)				#Observation offsets
 Gamma 	= np.diag([1,1],-2)[:,0:2]	#Disturbance matrix (only velocity)
 P_d 	= 0.9						#Probability of detection
-p 		= np.power(1e-2,2)			#Initial systen state variance
+p 		= np.power(1e-2,1)			#Initial systen state variance
 P0 		= np.diag([p,p,p,p])		#Initial state covariance
 r		= np.power(1e-4,1)			#Measurement variance
 q 		= np.power(2e-2,1)			#Velocity variance variance
 R 		= np.eye(2) * r 			#Measurement/observation covariance
 Q		= np.eye(2) * q * T 		#Transition/system covariance (process noise)
-lambda_ex = 1 						#Spatial density of the extraneous measurements
+lambda_phi = 0.0001					#Expected number of false measurements per unit volume of the measurement space per scan
+lambda_nu = 0.001					#Expected number of new targets per unit volume of the measurement space per scan
+lambda_ex = lambda_phi + lambda_nu	#Spatial density of the extraneous measurements
 sigma = 3
 
 __targetList__ 	= []
 __scanHistory__ = []
 
-def initiateTarget(target):
-	currentScanIndex = len(__scanHistory__)
-	initTarget = InitialTarget( target.state,target.time )
-	tempTarget = Target(initTarget, currentScanIndex, None, None, target.state, P0)
-	__targetList__.append(tempTarget)
-	initTarget.plot(len(__targetList__)-1)
+def initiateTarget(newTarget):
+	target = Target(	time = newTarget.time, 
+						scanNumber =  len(__scanHistory__),
+						state = newTarget.state, 
+						covariance = P0)
+	__targetList__.append(target)
+	target.plotInitial(len(__targetList__)-1)
 
 def addMeasurementList(measurementList):
 	__scanHistory__.append(measurementList)
-	scanIndex = len(__scanHistory__)
-	print("#"*150,"\nAdding scan index:", scanIndex)
+	scanNumber = len(__scanHistory__)
+	print("#"*150,"\nAdding scan index:", scanNumber)
 	nMeas = len(measurementList.measurements)
 	nTargets = len(__targetList__)
 	associationMatrix = np.zeros((nMeas, nTargets),dtype = np.bool)
 	for targetIndex, target in enumerate(__targetList__):
 		#estimate, gate and score new measurement
-		_processNewMeasurement(target, measurementList, scanIndex, associationMatrix[:,targetIndex])
+		_processNewMeasurement(target, measurementList, scanNumber, associationMatrix[:,targetIndex])
 
-	# hpf.printTargetList(__targetList__)
 	# print("AssosiationMatrix", associationMatrix, end = "\n\n")
 
 	#--Cluster targets--
@@ -69,10 +71,32 @@ def addMeasurementList(measurementList):
 	globalHypotheses = np.empty(len(__targetList__),dtype = np.dtype(object))
 	for cluster in clusterList:
 		if len(cluster) == 1:
+			# _pruneSmilarState(__targetList__[cluster[0]], 0.1)
 			globalHypotheses[cluster] = _selectBestHypothesis(__targetList__[cluster[0]])
 		else:
 			globalHypotheses[cluster] = _solveOptimumAssociation(cluster)
 	return globalHypotheses
+
+def _pruneSmilarState(target, errorNormLimit):
+	from scipy.special import binom
+	nHyp = len(target.trackHypotheses)
+	nDelta = int(binom(nHyp,2))
+	deltaX = np.zeros([4,nDelta])
+	hypotheses = target.trackHypotheses[1:]
+	done = set()
+	for a in target.trackHypotheses[:-1]:
+		for b in hypotheses:
+			if a != b:
+				targetID = (a.measurementNumber,b.measurementNumber)
+				if targetID not in done:
+					deltaX[:,len(done)] = (a.getState() - b.getState())
+					done.add( targetID )
+		hypotheses.pop(0)
+	for col in range(nDelta):
+		errorNorm = np.linalg.norm(deltaX[:,col])
+		print(errorNorm)
+		if errorNorm < errorNormLimit:
+			pass
 
 def _selectBestHypothesis(target):
 	def recSearchBestHypothesis(target,bestScore, bestHypothesis):
@@ -130,7 +154,7 @@ def _createA1(nRow,nCol,cluster):
 	def recActiveMeasurement(target, A1, measurementList,  activeMeasurements, hypothesisIndex):
 		if len(target.trackHypotheses) == 0:
 			if target.measurementNumber != 0: #we are at a real measurement
-				measurement = (target.scanIndex,target.measurementNumber)
+				measurement = (target.scanNumber,target.measurementNumber)
 				try:
 					measurementIndex = measurementList.index(measurement)
 				except ValueError:
@@ -149,7 +173,7 @@ def _createA1(nRow,nCol,cluster):
 				activeMeasurementsCpy = activeMeasurements.copy()
 				if target.measurementNumber != 0 and target.measurementNumber is not None: 
 					#we are on a real measurement, but not on a leaf node
-					measurement = (target.scanIndex,target.measurementNumber)
+					measurement = (target.scanNumber,target.measurementNumber)
 					try:
 						measurementIndex = measurementList.index(measurement)
 					except ValueError:
@@ -203,7 +227,7 @@ def _getHypInCluster(cluster):
 def _getRealMeasurementsInCluster(cluster):
 	def nRealMeasurements(target, measurementsInCluster):
 		if target.measurementNumber != 0 and target.measurementNumber is not None:
-			measurementsInCluster.add((target.scanIndex, target.measurementNumber))
+			measurementsInCluster.add((target.scanNumber, target.measurementNumber))
 		else:
 			for hyp in target.trackHypotheses:
 				nRealMeasurements(hyp, measurementsInCluster) 
@@ -232,7 +256,6 @@ def _solveBLP(A1, A2, f):
 
 	for row in range(nTargets):
 		prob += pulp.lpSum([ A2[row,col] * x[col] for col in range(nHyp) ]) == 1
-
 	sol = prob.solve()
 
 	# print(prob)
@@ -272,10 +295,10 @@ def _findClusters(assosiationMatrix):
 		clusterList.append( (np.where( labels == clusterIndex )[0]).tolist()  )
 	return clusterList
 
-def _processNewMeasurement(target, measurementList, scanIndex, usedMeasurements):
+def _processNewMeasurement(target, measurementList, scanNumber, usedMeasurements):
 	if len(target.trackHypotheses) == 0:
-		target.predictMeasurement(Phi(measurementList.time-target.initial.time),Q,b, Gamma)
-		target.gateAndCreateNewHypotheses(measurementList, sigma, P_d, lambda_ex, scanIndex, C, R, d, usedMeasurements)
+		target.predictMeasurement(Phi(measurementList.time-target.time),Q,b, Gamma, C, R)
+		target.gateAndCreateNewHypotheses(measurementList, sigma, P_d, lambda_ex, scanNumber, C, R, d, usedMeasurements)
 	else:
 		for hyp in target.trackHypotheses:
-			_processNewMeasurement(hyp, measurementList, scanIndex, usedMeasurements)
+			_processNewMeasurement(hyp, measurementList, scanNumber, usedMeasurements)

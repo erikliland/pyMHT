@@ -60,14 +60,27 @@ def simulateTargets(randomSeed, initialTargets, numOfSteps, timeStep, Phi, Q, Ga
 	simList.pop(0)
 	return simList
 
-def simulateScans(randomSeed, simList, H, R, shuffle = True):	
+def simulateScans(randomSeed, simList, H, R, shuffle = True, lambda_phi = None, radarRange = None, centerPosition = None):	
 	np.random.seed(randomSeed)
+	area = np.pi * np.power(radarRange,2)
+	nClutter = int(np.floor(lambda_phi * area))
+	print("nClutter",nClutter)
 	scanList = []
 	for scan in simList:
 		measurementList = MeasurementList(scan[0].time)
 		measurementList.measurements = [target.positionWithNoise(H, R) for target in scan]
+		if (lambda_phi is not None) and (radarRange is not None) and (centerPosition is not None):
+			for i in range(nClutter):
+				clutter = _generateClutter(randomSeed, centerPosition, radarRange)
+				measurementList.measurements.append( clutter)
 		scanList.append(measurementList)
 	if shuffle:
 		for measurementList in scanList:
 			np.random.shuffle(measurementList.measurements)
 	return scanList
+
+def _generateClutter(randomSeed, centerPosition, radarRange):
+	heading = np.random.uniform(0,360)
+	distance= np.random.uniform(0,radarRange*0.8)
+	px,py 	= hpf.pol2cart(heading,distance)
+	return centerPosition + Position(px,py)

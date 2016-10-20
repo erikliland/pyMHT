@@ -1,6 +1,7 @@
 import numpy as np
 import helpFunctions as hpf
 import pykalman.standard as pk
+import matplotlib.pyplot as plt
 
 class Position:
 	def __init__(self,*args,**kwargs):
@@ -79,69 +80,61 @@ class MeasurementList:
 
 	__repr__ = __str__
 
-class InitialTarget:
-	def __init__(self, *args, **kwargs):
-		pos = kwargs.get('Position')
-		vel = kwargs.get('Velocity')
-		time= kwargs.get('Time')
-		if (pos is not None) and (vel is not None) and (time is not None):
-			self.position 	= pos
-			self.velocity 	= vel
-			self.time 		= time
-		elif len(args) == 2:
-			self.position 	= Position(args[0][0:2])
-			self.velocity 	= Velocity(args[0][2:4])
-			self.time 		= args[1]
-		elif len(args) == 3:
-			self.position 	= args[0]
-			self.velocity 	= args[1]
-			self.time 		= args[2]
-		else:
-			print("Invalid arguments to Position")
+# class InitialTarget:
+# 	def __init__(self, *args, **kwargs):
+# 		pos = kwargs.get('Position')
+# 		vel = kwargs.get('Velocity')
+# 		time= kwargs.get('Time')
+# 		if (pos is not None) and (vel is not None) and (time is not None):
+# 			self.position 	= pos
+# 			self.velocity 	= vel
+# 			self.time 		= time
+# 		elif len(args) == 2:
+# 			self.position 	= Position(args[0][0:2])
+# 			self.velocity 	= Velocity(args[0][2:4])
+# 			self.time 		= args[1]
+# 		elif len(args) == 3:
+# 			self.position 	= args[0]
+# 			self.velocity 	= args[1]
+# 			self.time 		= args[2]
+# 		else:
+# 			print("Invalid arguments to Position")
 		
 
-	def __str__(self):
-		from time import gmtime, strftime
-		timeString = strftime("%H:%M:%S", gmtime(self.time))
-		return ("Time: "+ timeString +" ,\t"+repr(self.position) + ",\t" + repr(self.velocity))
+# 	def __str__(self):
+# 		from time import gmtime, strftime
+# 		timeString = strftime("%H:%M:%S", gmtime(self.time))
+# 		return ("Time: "+ timeString +" ,\t"+repr(self.position) + ",\t" + repr(self.velocity))
 	
-	__repr__ = __str__
+# 	__repr__ = __str__
 
-	def state(self):
-		from numpy import array
-		return array([self.position.x, self.position.y, self.velocity.x, self.velocity.y])
-
-	def plot(self, index = None):
-		import matplotlib.pyplot as plt
-		plt.plot(self.position.x,self.position.y,"k+")
-		if index is not None:
-			from numpy.linalg import norm
-			ax = plt.subplot(111)
-			normVelocity = self.velocity.toarray() / norm(self.velocity.toarray())
-			offset = 0.1 * normVelocity
-			position = self.position.toarray() - offset
-			ax.text(position[0], position[1], "T"+str(index), 
-				fontsize=8, horizontalalignment = "center", verticalalignment = "center")
+# 	def state(self):
+# 		from numpy import array
+# 		return array([self.position.x, self.position.y, self.velocity.x, self.velocity.y])
 
 class Target:
-	def __init__(self, initialTarget, scanIndex,measurementNumber,measurement,
-				 initialState, initialStateCovariance, Parent = None, cummulativeNLLR = 0.0, residualCovariance = None):
-		self.isAlive = True
-		self.parent = Parent
-		self.initial = initialTarget
-		self.scanIndex = scanIndex
-		self.measurementNumber = measurementNumber
-		self.measurement = measurement
-		self.cummulativeNLLR = cummulativeNLLR
-		self.trackHypotheses = [] #children in the track hypothesis tree
-		self.filteredStateMean = initialState
-		self.filteredStateCovariance = initialStateCovariance
-		self.predictedStateMean = None
-		self.predictedStateCovariance = None
-		self.residualCovariance = residualCovariance
+	def __init__(self, **kwargs):
+		time 						= kwargs.get("time")
+		scanNumber 					= kwargs.get("scanNumber")
+		filteredStateMean 			= kwargs.get("state")
+		filteredStateCovariance 	= kwargs.get("covariance")
+		if (time is None) or (scanNumber is None) or (filteredStateMean is None) or (filteredStateCovariance is None):
+			raise TypeError("Targer() need at least: time, scanNumber, state and covariance")
+		self.time 						= time
+		self.scanNumber 				= scanNumber
+		self.filteredStateMean 			= filteredStateMean
+		self.filteredStateCovariance 	= filteredStateCovariance
+		self.parent 					= kwargs.get("parent")
+		self.measurementNumber 			= kwargs.get("measurementNumber", 0)
+		self.measurement 				= kwargs.get("measurement")
+		self.cummulativeNLLR 			= kwargs.get("cummulativeNLLR", 0)
+		self.predictedStateMean 		= None
+		self.predictedStateCovariance 	= None
+		self.residualCovariance 		= None
+		self.trackHypotheses 			= []
 
 	def __repr__(self):
-		from time import ctime
+		from time import gmtime, strftime
 		if self.predictedStateMean is not None:
 			np.set_printoptions(precision = 4)
 			predStateStr = " \tPredState: " + str(self.predictedStateMean)
@@ -153,10 +146,19 @@ class Target:
 		else:
 			measStr = ""
 
-		return (repr(self.initial) 
+		if self.residualCovariance is not None:
+			lambda_, _ = np.linalg.eig(self.residualCovariance)
+			gateStr = " \tGate size: ("+'{:5.2f}'.format(np.sqrt(lambda_[0])*2)+","+'{:5.2f}'.format(np.sqrt(lambda_[1])*2)+")"
+		else:
+			gateStr = ""
+
+		return ("Time: " + strftime("%H:%M:%S", gmtime(self.time))
+				+ " \t" + repr(self.getPosition())
+				+ " \t" + repr(self.getVelocity()) 
 				+ " \tcNLLR:" + '{: 06.4f}'.format(self.cummulativeNLLR)
 				+ predStateStr
 				+ measStr
+				+ gateStr 
 				)
 
 	def __str__(self, level=0, hypIndex = 0):
@@ -167,44 +169,49 @@ class Target:
 			ret += hyp.__str__(level+1, hypIndex)
 		return ret
 
+	def getPosition(self):
+		pos = Position(self.filteredStateMean[0:2])
+		return pos
+
+	def getVelocity(self):
+		return Velocity(self.filteredStateMean[2:4])
+
 	def depth(self, count = 0):
 		if len(self.trackHypotheses):
 			return self.trackHypotheses[0].depth(count +1)
 		return count
 
-	def predictMeasurement(self, Phi, Q, b, Gamma):
+	def predictMeasurement(self, Phi, Q, b, Gamma, C, R):
 		self.predictedStateMean, self.predictedStateCovariance = (
 				pk._filter_predict(Phi,Gamma.dot(Q.dot(Gamma.T)),b,self.filteredStateMean,self.filteredStateCovariance))
-
-	def gateAndCreateNewHypotheses(self, measurementList, sigma, P_d, lambda_ex, scanIndex, C, R, d, usedMeasurements):
+		self.residualCovariance = C.dot(self.predictedStateCovariance.dot(C.T))+R
+	
+	def gateAndCreateNewHypotheses(self, measurementList, sigma, P_d, lambda_ex, scanNumber, C, R, d, usedMeasurements):
 		time = measurementList.time
-		measurements = measurementList.measurements
-		predictedPosition = Position(self.predictedStateMean[0], self.predictedStateMean[1])
-		zeroInitTarget = InitialTarget(predictedPosition, self.initial.velocity, time)
-		nllr = hpf.NLLR(0, P_d)
-		self.trackHypotheses.append( Target(zeroInitTarget, scanIndex, 0, None, 
-							zeroInitTarget.state(), self.predictedStateCovariance, self, self.cummulativeNLLR + nllr)) #Zero-hypothesis
-		for measurementIndex, measurement in enumerate(measurements):
-			if self.measurementIsInsideErrorEllipse(measurement, sigma, C, R):
-				(_, state, filtCov, resCov) = pk._filter_correct(
-					C, R, d, self.predictedStateMean, self.predictedStateCovariance, measurement.toarray() )
-				filteredPosition = Position(state[0], state[1])
-				deltaPosArray = state[0:2] - self.initial.position.toarray()
-				deltaTime = time - self.initial.time
-				velocityArray = deltaPosArray / deltaTime
-				ADHOCvelocity = Velocity(velocityArray[0], velocityArray[1])
-				KFvelocity = Velocity(state[2],state[3])
-				virtualInitialTarget = InitialTarget(filteredPosition,KFvelocity, time)
+		
+		zeroHypothesis = self._generateZeroHypothesis(time, scanNumber, P_d)
+		self.trackHypotheses.append(zeroHypothesis)
+		
+		for measurementIndex, measurement in enumerate(measurementList.measurements):
+			if self.measurementIsInsideErrorEllipse(measurement, sigma):
+				(_, filtState, filtCov, resCov) = pk._filter_correct(C, R, d, self.predictedStateMean, self.predictedStateCovariance, measurement.toarray() )
 				predictedMeasurement = np.dot(C,self.predictedStateMean)
-				nllr = hpf.NLLR(None,P_d, measurement, predictedMeasurement, lambda_ex, resCov)
-				self.trackHypotheses.append( Target(virtualInitialTarget, scanIndex, measurementIndex+1, 
-											measurement,state, filtCov, self, self.cummulativeNLLR + nllr, resCov) )
+				NLLR = hpf.nllr(P_d, measurement, predictedMeasurement, lambda_ex, resCov)
+				self.trackHypotheses.append( 
+					Target(	time = time, 
+							scanNumber = scanNumber,
+							measurementNumber = measurementIndex+1,
+							measurement = measurement,
+							state = filtState,
+							covariance = filtCov,
+							parent = self,
+							cummulativeNLLR = self.cummulativeNLLR + NLLR)
+							)
 				usedMeasurements[measurementIndex] = True
 
-	def measurementIsInsideErrorEllipse(self,measurement, sigma, C, R):
+	def measurementIsInsideErrorEllipse(self,measurement, sigma):
 		from numpy import cos, sin, power
-		B = C.dot(self.predictedStateCovariance.dot(C.T))+R
-		lambda_, v = np.linalg.eig(B)
+		lambda_, v = np.linalg.eig(self.residualCovariance)
 		deltaX = measurement.x - self.predictedStateMean[0]
 		deltaY = measurement.y - self.predictedStateMean[1]
 		a = np.sqrt(lambda_[0])*sigma
@@ -212,3 +219,23 @@ class Target:
 		angle = np.rad2deg( np.arctan2( lambda_[1], lambda_[0]) )
 		return power( cos(angle)*deltaX+sin(angle)*deltaY,2 )/power(a,2)  + power( sin(angle)*deltaX-cos(angle)*deltaY,2)/power(b,2) <= 1
 		#http://stackoverflow.com/questions/7946187/point-and-ellipse-rotated-position-test-algorithm
+
+	def _generateZeroHypothesis(self,time, scanNumber, P_d):
+		NLLR = hpf.nllr(P_d)
+		return Target(	time = time,
+						scanNumber = self.scanNumber, 
+						measurementNumber = 0,
+						state = self.predictedStateMean, 
+						covariance = self.predictedStateCovariance, 
+						parent = self,
+						cummulativeNLLR = self.cummulativeNLLR + NLLR
+						)
+
+	def plotInitial(self, index):
+		plt.plot(self.filteredStateMean[0],self.filteredStateMean[1],"k+")
+		ax = plt.subplot(111)
+		normVelocity = self.filteredStateMean[2:4] / np.linalg.norm(self.filteredStateMean[2:4])
+		offset = 0.1 * normVelocity
+		position = self.filteredStateMean[0:2] - offset
+		ax.text(position[0], position[1], "T"+str(index), 
+			fontsize=8, horizontalalignment = "center", verticalalignment = "center")
