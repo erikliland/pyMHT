@@ -7,6 +7,7 @@ Authumn 2016
 ========================================================================================
 """
 import numpy as np
+import scipy as sp
 import helpFunctions as hpf
 import pulp
 from classDefinitions import Target, Position, Velocity
@@ -30,16 +31,20 @@ Gamma 	= np.diag([1,1],-2)[:,0:2]	#Disturbance matrix (only velocity)
 P_d 	= 0.9						#Probability of detection
 p 		= np.power(1e-2,1)			#Initial systen state variance
 P0 		= np.diag([p,p,p,p])		#Initial state covariance
-r		= np.power(1e-4,1)			#Measurement variance
+r		= np.power(1e-3,1)			#Measurement variance
 q 		= np.power(2e-2,1)			#Velocity variance variance
 R 		= np.eye(2) * r 			#Measurement/observation covariance
 Q		= np.eye(2) * q * T 		#Transition/system covariance (process noise)
-lambda_phi = 0.0001					#Expected number of false measurements per unit volume of the measurement space per scan
-lambda_nu = 0.001					#Expected number of new targets per unit volume of the measurement space per scan
-lambda_ex = lambda_phi + lambda_nu	#Spatial density of the extraneous measurements
-sigma = 3
+lambda_phi 	= 0.05					#Expected number of false measurements per unit 
+									# volume of the measurement space per scan
+lambda_nu 	= 0.001					#Expected number of new targets per unit volume 
+									# of the measurement space per scan
+lambda_ex 	= lambda_phi+lambda_nu 	#Spatial density of the extraneous measurements
+sigma 		= 3						#Need to be changed to conficence
+windowSize 	= 3						#Number of  timesteps to tail (N-scan)
 
 __targetList__ 	= []
+__associatedMeasurements__ = []
 __scanHistory__ = []
 
 def initiateTarget(newTarget):
@@ -48,23 +53,22 @@ def initiateTarget(newTarget):
 						state = newTarget.state, 
 						covariance = P0)
 	__targetList__.append(target)
+	__associatedMeasurements__.append( set() )
 	target.plotInitial(len(__targetList__)-1)
 
 def addMeasurementList(measurementList):
 	__scanHistory__.append(measurementList)
 	scanNumber = len(__scanHistory__)
-	print("#"*150,"\nAdding scan index:", scanNumber)
+	print("#"*150,"\nAdding scan number:", scanNumber)
 	nMeas = len(measurementList.measurements)
 	nTargets = len(__targetList__)
-	associationMatrix = np.zeros((nMeas, nTargets),dtype = np.bool)
 	for targetIndex, target in enumerate(__targetList__):
 		#estimate, gate and score new measurement
-		_processNewMeasurement(target, measurementList, scanNumber, associationMatrix[:,targetIndex])
+		_processNewMeasurement(target, measurementList, scanNumber, __associatedMeasurements__[targetIndex])
 
-	# print("AssosiationMatrix", associationMatrix, end = "\n\n")
-
+	# print(*__associatedMeasurements__, sep = "\n", end = "\n\n")
 	#--Cluster targets--
-	clusterList = _findClusters(associationMatrix)
+	clusterList = _findClustersFromSets()
 	# hpf.printClusterList(clusterList)
 
 	#--Maximize global (cluster vise) likelihood--
@@ -114,11 +118,11 @@ def _selectBestHypothesis(target):
 
 def _solveOptimumAssociation(cluster):
 	nHypInClusterArray = _getHypInCluster(cluster)
-	nRealMeasurementsInCluster = _getRealMeasurementsInCluster(cluster)
+	nRealMeasurementsInCluster= len(set.union(*[__associatedMeasurements__[i] for i in cluster]))
 	(A1, measurementList) = _createA1(nRealMeasurementsInCluster,sum(nHypInClusterArray), cluster)
 	A2 	= _createA2(len(cluster), nHypInClusterArray)
-	c 	= _getHypScoreInCluster(cluster)
-	selectedHypotheses = _solveBLP(A1,A2, c)
+	C 	= _createC(cluster)
+	selectedHypotheses = _solveBLP(A1,A2, C)
 	selectedNodes = _hypotheses2Nodes(selectedHypotheses,cluster)
 	# print("Solving optimal association in cluster with targets",cluster,",   \t",
 	# sum(nHypInClusterArray)," hypotheses and",nRealMeasurementsInCluster,"real measurements.",sep = " ")
@@ -179,10 +183,12 @@ def _createA1(nRow,nCol,cluster):
 					except ValueError:
 						measurementList.append(measurement)
 						measurementIndex = len(measurementList) -1
+					# print("measurementIndex",measurementIndex)
 					activeMeasurementsCpy[measurementIndex] = True
 				recActiveMeasurement(hyp, A1, measurementList, activeMeasurementsCpy, hypothesisIndex)
 
 	A1 	= np.zeros((nRow,nCol), dtype = bool)
+	# print("nRow", nRow)
 	activeMeasurements = np.zeros(nRow, dtype = bool)
 	measurementList = []
 	hypothesisIndex = [0]
@@ -200,7 +206,7 @@ def _createA2(nTargetsInCluster, nHypInClusterArray):
 		colOffset += nHyp
 	return A2
 
-def _getHypScoreInCluster(cluster):
+def _createC(cluster):
 	def getTargetScore(target, scoreArray):
 		if len(target.trackHypotheses) == 0:
 			scoreArray.append(target.cummulativeNLLR)
@@ -223,18 +229,6 @@ def _getHypInCluster(cluster):
 		nHypInTarget = nLeafNodes(__targetList__[targetIndex])
 		nHypInClusterArray[i] = nHypInTarget
 	return nHypInClusterArray
-
-def _getRealMeasurementsInCluster(cluster):
-	def nRealMeasurements(target, measurementsInCluster):
-		if target.measurementNumber != 0 and target.measurementNumber is not None:
-			measurementsInCluster.add((target.scanNumber, target.measurementNumber))
-		else:
-			for hyp in target.trackHypotheses:
-				nRealMeasurements(hyp, measurementsInCluster) 
-	measurementsInCluster = set()
-	for targetIndex in cluster:
-		nRealMeasurements(__targetList__[targetIndex], measurementsInCluster)
-	return len(measurementsInCluster)
 
 def _solveBLP(A1, A2, f):
 	(nMeas, nHyp) = A1.shape
@@ -271,34 +265,24 @@ def _solveBLP(A1, A2, f):
 	selectedHypotheses.sort()
 	return selectedHypotheses
 
-def _assosiationToAdjacencyMatrix(assosiationMatrix):
-	(nRow, nCol) = assosiationMatrix.shape
-	nNodes = nRow + nCol
+def _findClustersFromSets():
+	superSet = set() #TODO: This should be done a more elegant way!
+	for targetIndex, targetSet in enumerate(__associatedMeasurements__):
+		superSet |= targetSet
+	nTargets = len(__associatedMeasurements__)
+	nNodes = nTargets + len(superSet)
 	adjacencyMatrix  = np.zeros((nNodes,nNodes),dtype=bool)
-	vertices = np.nonzero(assosiationMatrix)
-	adjacencyMatrix[vertices[1],vertices[0]+nCol] = True
-	adjacencyMatrix[vertices[0]+nCol,vertices[1]] = True
-	return adjacencyMatrix
+	for targetIndex, targetSet in enumerate(__associatedMeasurements__):
+		for measurementIndex, measurement in enumerate(superSet):
+			adjacencyMatrix[targetIndex,measurementIndex+nTargets] = (measurement in targetSet)
+	# print("Adjacency Matrix2:\n", adjacencyMatrix.astype(dtype = int), sep = "", end = "\n\n")
+	(nClusters, labels) = sp.sparse.csgraph.connected_components(adjacencyMatrix)
+	return [np.where(labels[:nTargets]==clusterIndex)[0].tolist() for clusterIndex in range(nClusters)]
 
-def _findClusters(assosiationMatrix):
-	import numpy as np
-	import scipy as sp
-	adjacencyMatrix = _assosiationToAdjacencyMatrix(assosiationMatrix)
-	# print("Adjacency Matrix:")
-	# print(adjacencyMatrix)
-	# print()
-	(_, nCol) = assosiationMatrix.shape
-	(nClusters, labels) = sp.sparse.csgraph.connected_components(adjacencyMatrix, False)
-	labels = labels[:nCol]
-	clusterList = []
-	for clusterIndex in range(nClusters):
-		clusterList.append( (np.where( labels == clusterIndex )[0]).tolist()  )
-	return clusterList
-
-def _processNewMeasurement(target, measurementList, scanNumber, usedMeasurements):
+def _processNewMeasurement(target, measurementList, scanNumber, associatedMeasurements):
 	if len(target.trackHypotheses) == 0:
 		target.predictMeasurement(Phi(measurementList.time-target.time),Q,b, Gamma, C, R)
-		target.gateAndCreateNewHypotheses(measurementList, sigma, P_d, lambda_ex, scanNumber, C, R, d, usedMeasurements)
+		target.gateAndCreateNewHypotheses(measurementList, sigma, P_d, lambda_ex, scanNumber, C, R, d, associatedMeasurements)
 	else:
 		for hyp in target.trackHypotheses:
-			_processNewMeasurement(hyp, measurementList, scanNumber, usedMeasurements)
+			_processNewMeasurement(hyp, measurementList, scanNumber,associatedMeasurements)

@@ -28,10 +28,10 @@ def plotRadarOutline(centerPosition, radarRange):
 
 def plotCovarianceEllipse(cov, position, sigma):
 	from matplotlib.patches import Ellipse
-	lambda_, v = np.linalg.eig(cov)
+	lambda_, _ = np.linalg.eig(cov)
 	ell = Ellipse( xy	 = (position.x, position.y), 
-				   width = np.sqrt(lambda_[0])*sigma*2, 
-				   height= np.sqrt(lambda_[1])*sigma*2, 
+				   width = np.sqrt(lambda_[0])*sigma*2,
+				   height= np.sqrt(lambda_[1])*sigma*2,
 				   angle = np.rad2deg( np.arctan2( lambda_[1], lambda_[0]) ))
 	ell.set_facecolor('none')
 	ell.set_linestyle("dotted")
@@ -71,6 +71,18 @@ def plotMeasurementsFromForest(targetList, plotReal = True, plotDummy = True, **
 	plottedMeasurements = set()
 	for target in targetList:
 		recPlotMeasurements(target,plottedMeasurements,plotReal, plotDummy)
+
+def plotMeasurementsFromNodes(nodes, stepsBack = None):
+	def recBactrackAndPlotMesurements(node, stepsBack = None):
+		if node.parent is not None:
+			if node.measurement is not None:
+				plotMeasurement(node.measurement, node.measurementNumber, node.scanNumber)
+			if stepsBack is None:
+				recBactrackAndPlotMesurements(node.parent)
+			elif stepsBack > 0:
+				recBactrackAndPlotMesurements(node.parent, stepsBack-1)
+	for node in nodes:
+		recBactrackAndPlotMesurements(node, stepsBack)
 
 def plotMeasurement(position, measurementNumber = None, scanNumber = None):
 	x = position.x
