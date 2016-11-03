@@ -1,7 +1,4 @@
 import numpy as np
-import helpFunctions as hpf
-import kalmanFilter as kf
-import matplotlib.pyplot as plt
 
 class Position:
 	def __init__(self,*args,**kwargs):
@@ -17,25 +14,28 @@ class Position:
 			self.x = float(args[0])
 			self.y = float(args[1])
 		else:
-			print("Invalid arguments to Position")
+			raise ValueError("Invalid arguments to Position")
 
 	def __add__(self,other):
 		return Position(self.x+other.x, self.y + other.y)
+	
 	def __str__(self):
-		return "("+'{: 9.4f}'.format(self.x)+","+'{: 9.4f}'.format(self.y)+")"
+		return "("+'{: 9.3f}'.format(self.x)+","+'{: 9.3f}'.format(self.y)+")"
 	
 	def __repr__(self):
 		return "Pos: " + str(self)
 
 	def toarray(self):
-		from numpy import array
-		return array([self.x,self.y])
+		return np.array([self.x,self.y])
 
 	def __sub__(self,other):
 		return Position(self.x-other.x, self.y-other.y)
 
 	def __mul__(self, other):
 		return Position(self.x * other, self.y * other)
+
+	def __div__(self, other):
+		return Position(self.x / other, self.y / other)
 
 class Velocity:
 	def __init__(self,*args,**kwargs):
@@ -51,19 +51,22 @@ class Velocity:
 			self.x = args[0]
 			self.y = args[1]
 		else:
-			print("Invalid arguments to Position")
+			raise ValueError("Invalid arguments to Position")
 
 	def __str__(self):
-		return "Vel: ("+'{: 06.4f}'.format(self.x)+","+'{: 06.4f}'.format(self.y)+")"
+		return "("+'{: 6.2f}'.format(self.x)+","+'{: 6.2f}'.format(self.y)+")"
 
-	__repr__ = __str__
+	def __repr__(self):
+		return "Vel: " + str(self)
 
 	def __mul__(self,other):
 		return Velocity(self.x * other, self.y * other)
 
+	def __div__(self,other):
+		return Velocity(self.x / other, self.y / other)
+
 	def toarray(self):
-		from numpy import array
-		return array([self.x,self.y])
+		return np.array([self.x,self.y])
 
 class MeasurementList:
 	def __init__(self, Time, measurements = []):
