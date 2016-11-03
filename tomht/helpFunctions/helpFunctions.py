@@ -113,7 +113,7 @@ def plotValidationRegionFromNodes(nodes,sigma, stepsBack = 1):
 
 def plotValidationRegionFromForest(targets, sigma, stepsBack = 1):
 	def recPlotValidationRegionFromTarget(target, sigma, stepsBack):
-		if len(target.trackHypotheses) == 0:
+		if not target.trackHypotheses:
 			plotValidationRegionFromNodes([target], sigma, stepsBack)
 		else:
 			for hyp in target.trackHypotheses:
@@ -135,7 +135,7 @@ def plotActiveTrack(associationHistory):
 def plotHypothesesTrack(targets):
 	def recPlotHypothesesTrack(target, color = None, track = []):
 		newTrack = track[:] + [target.getPosition()]
-		if len(target.trackHypotheses) == 0:
+		if not target.trackHypotheses:
 			if color is not None:
 				plt.plot([p.x for p in newTrack], [p.y for p in newTrack], "--", c = color)
 			else:
@@ -165,7 +165,7 @@ def printTargetList(targetList):
 
 def printHypothesesScore(targetList):
 	def recPrint(target, targetIndex):
-		if len(target.trackHypotheses) == 0:
+		if not target.trackHypotheses:
 			pass
 		else:
 			for hyp in target.trackHypotheses:
