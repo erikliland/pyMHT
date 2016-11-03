@@ -19,6 +19,8 @@ eggs/
 #Sublime files
 .sublime-project
 .sublime-workspace
+*.sublime-project
+*.sublime-workspace
 .eggs/
 lib/
 lib64/
