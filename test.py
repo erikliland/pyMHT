@@ -1,2 +1,0 @@
-import pulp
-pulp.pulpTestAll()
