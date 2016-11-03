@@ -1,0 +1,37 @@
+import numpy as np
+import numpy.linalg as linalg
+def filterPredict(transition_matrix, transition_covariance, current_state_mean,current_state_covariance):
+    predicted_state_mean = np.dot(transition_matrix, current_state_mean)
+    predicted_state_covariance = (np.dot(transition_matrix,np.dot(current_state_covariance,transition_matrix.T))+ transition_covariance)
+    return (predicted_state_mean, predicted_state_covariance)
+
+def filterCorrect(observation_matrix, observation_covariance, predicted_state_mean,predicted_state_covariance, observation):
+    predicted_observation_mean = (
+        np.dot(observation_matrix,
+         predicted_state_mean)
+        )
+    predicted_observation_covariance = (
+        np.dot(observation_matrix,
+         np.dot(predicted_state_covariance,
+          observation_matrix.T))
+        + observation_covariance
+        )
+
+    kalman_gain = (
+        np.dot(predicted_state_covariance,
+         np.dot(observation_matrix.T,
+          linalg.pinv(predicted_observation_covariance)))
+        )
+
+    corrected_state_mean = (
+        predicted_state_mean
+        + np.dot(kalman_gain, observation - predicted_observation_mean)
+        )
+    corrected_state_covariance = (
+        predicted_state_covariance
+        - np.dot(kalman_gain,
+           np.dot(observation_matrix,
+            predicted_state_covariance))
+        )
+    return (kalman_gain, corrected_state_mean,
+            corrected_state_covariance, predicted_observation_covariance)
