@@ -21,7 +21,7 @@ class Target:
 		scanNumber 					= kwargs.get("scanNumber")
 		filteredStateMean 			= kwargs.get("filteredStateMean")
 		filteredStateCovariance 	= kwargs.get("filteredStateCovariance")
-		A 							= kwargs.get("A")	
+		Phi							= kwargs.get("Phi")	
 		Q 							= kwargs.get("Q")
 		Gamma 						= kwargs.get("Gamma")	
 		C 							= kwargs.get("C")
@@ -53,7 +53,7 @@ class Target:
 		self.predictedStateCovariance 	= None
 		
 		#State space model
-		self.A 							= A
+		self.Phi						= Phi
 		self.Q 							= Q
 		self.Gamma 						= Gamma
 		self.C 							= C
@@ -114,11 +114,12 @@ class Target:
 			return self.trackHypotheses[0].depth(count +1)
 		return count
 
-	def predictMeasurement(self):
+	def predictMeasurement(self, scanTime):
+		dT = scanTime - self.time
 		self.predictedStateMean, self.predictedStateCovariance = (
 			kf.filterPredict(
-				self.A,
-				self.Gamma.dot(self.Q.dot(self.Gamma.T)),
+				self.Phi(dT),
+				self.Gamma.dot(self.Q(dT).dot(self.Gamma.T)),
 				self.filteredStateMean,
 				self.filteredStateCovariance)
 			)
@@ -173,7 +174,7 @@ class Target:
 		measurementNumber			=	kwargs.get("measurementNumber")
 		measurement					=	kwargs.get("measurement")
 		parent						=	kwargs.get("parent",self)
-		A							=	kwargs.get("A",		self.A)
+		Phi							=	kwargs.get("Phi",	self.Phi)
 		Q							=	kwargs.get("Q",		self.Q)
 		Gamma						=	kwargs.get("Gamma",	self.Gamma)
 		C							=	kwargs.get("C",		self.C)
@@ -189,7 +190,7 @@ class Target:
 			measurementNumber 			= measurementNumber,
 			measurement 				= measurement,
 			cummulativeNLLR 			= cummulativeNLLR,
-			A 							= A,
+			Phi							= Phi,
 			Q 							= Q,
 			Gamma 						= Gamma,
 			C 							= C,
@@ -237,7 +238,7 @@ class Target:
 
 	def processNewMeasurement(self, measurementList, measurementSet,tracker):
 		if not self.trackHypotheses:
-			self.predictMeasurement()
+			self.predictMeasurement(measurementList.time)
 			self.gateAndCreateNewHypotheses(measurementList,measurementSet, tracker)
 		else:
 			for hyp in self.trackHypotheses:
@@ -258,7 +259,7 @@ class Target:
 		return bestHypothesis
 
 class Tracker():
-	def __init__(self, timeStep, Phi, C, Gamma, P_d, P0, R, Q, 
+	def __init__(self, Phi, C, Gamma, P_d, P0, R, Q, 
 						lambda_phi, lambda_nu, sigma, N, solver):
 		#Tracker storage
 		self.__targetList__ 			= []
@@ -278,8 +279,7 @@ class Tracker():
 
 		#State space model
 		self.Phi 		= Phi
-		self.T 			= timeStep
-		self.A 			= Phi(timeStep) 				
+		# self.T 			= timeStep
 		self.b 			= np.zeros(4) 			
 		self.C 			= C
 		self.d 			= np.zeros(2)			
@@ -293,7 +293,7 @@ class Tracker():
 							scanNumber 				= len(self.__scanHistory__),
 							filteredStateMean 		= newTarget.state, 
 							filteredStateCovariance = self.P0,
-							A 						= self.A,
+							Phi						= self.Phi,
 							Q  						= self.Q,
 							Gamma 					= self.Gamma,
 							C 						= self.C,
