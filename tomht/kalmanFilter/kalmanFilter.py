@@ -1,5 +1,6 @@
 import numpy as np
 import numpy.linalg as linalg
+
 def filterPredict(transition_matrix, transition_covariance, current_state_mean,current_state_covariance):
     predicted_state_mean = np.dot(transition_matrix, current_state_mean)
     predicted_state_covariance = (np.dot(transition_matrix,np.dot(current_state_covariance,transition_matrix.T))+ transition_covariance)
