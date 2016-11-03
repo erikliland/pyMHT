@@ -14,6 +14,11 @@ develop-eggs/
 dist/
 downloads/
 eggs/
+
+
+#Sublime files
+.sublime-project
+.sublime-workspace
 .eggs/
 lib/
 lib64/
