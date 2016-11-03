@@ -10,7 +10,7 @@ def filterCorrect(observation_matrix, observation_covariance, predicted_state_me
         np.dot(observation_matrix,
          predicted_state_mean)
         )
-    predicted_observation_covariance = (
+    residual_covariance = (
         np.dot(observation_matrix,
          np.dot(predicted_state_covariance,
           observation_matrix.T))
@@ -20,18 +20,24 @@ def filterCorrect(observation_matrix, observation_covariance, predicted_state_me
     kalman_gain = (
         np.dot(predicted_state_covariance,
          np.dot(observation_matrix.T,
-          linalg.pinv(predicted_observation_covariance)))
+          linalg.pinv(residual_covariance)))
         )
 
-    corrected_state_mean = (
+    measurement_residual =  observation - predicted_observation_mean
+
+    filtered_state_mean = (
         predicted_state_mean
-        + np.dot(kalman_gain, observation - predicted_observation_mean)
+        + np.dot(kalman_gain, measurement_residual)
         )
-    corrected_state_covariance = (
+    filtered_state_covariance = (
         predicted_state_covariance
         - np.dot(kalman_gain,
            np.dot(observation_matrix,
             predicted_state_covariance))
         )
-    return (kalman_gain, corrected_state_mean,
-            corrected_state_covariance, predicted_observation_covariance)
+    return (measurement_residual,
+            residual_covariance,
+            kalman_gain, 
+            filtered_state_mean,
+            filtered_state_covariance
+            )
