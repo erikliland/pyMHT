@@ -20,11 +20,11 @@ class Position:
 		return Position(self.x+other.x, self.y + other.y)
 	
 	def __str__(self):
-		return "("+'{: 9.3f}'.format(self.x)+","+'{: 9.3f}'.format(self.y)+")"
+		return 'Pos: ({: 9.2f},{: 9.2f})'.format(self.x, self.y)
 	
 	def __repr__(self):
-		return "Pos: " + str(self)
-
+		return '({:.3e},{:.3e})'.format(self.x, self.y)
+	
 	def toarray(self):
 		return np.array([self.x,self.y])
 

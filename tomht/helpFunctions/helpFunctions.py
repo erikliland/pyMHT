@@ -1,6 +1,8 @@
 import matplotlib.pyplot as plt
 import numpy as np
 import itertools
+import pulp
+
 
 def plotVelocityArrowFromNode(nodes, stepsBack = 1):
 	def recPlotVelocityArrowFromNode(node, stepsLeft):
@@ -16,7 +18,7 @@ def plotVelocityArrow(target):
 	deltaPos = target.predictedStateMean[0:2] - target.filteredStateMean[0:2]
 	ax.arrow(target.filteredStateMean[0], target.filteredStateMean[1], deltaPos[0], deltaPos[1],
 	head_width=0.1, head_length=0.1, fc= "None", ec='k', 
-	length_includes_head = "true", linestyle = "-", alpha = 0.3, linewidth = 0.5)
+	length_includes_head = "true", linestyle = "-", alpha = 0.3, linewidth = 1)
 
 def plotRadarOutline(centerPosition, radarRange):
 	from matplotlib.patches import Ellipse
@@ -33,10 +35,12 @@ def plotCovarianceEllipse(cov, position, sigma):
 	ell = Ellipse( xy	 = (position.x, position.y), 
 				   width = np.sqrt(lambda_[0])*sigma*2,
 				   height= np.sqrt(lambda_[1])*sigma*2,
-				   angle = np.rad2deg( np.arctan2( lambda_[1], lambda_[0]) ))
+				   angle = np.rad2deg( np.arctan2( lambda_[1], lambda_[0]) ),
+				   linewidth = 2,
+				   )
 	ell.set_facecolor('none')
 	ell.set_linestyle("dotted")
-	ell.set_alpha(0.3)
+	ell.set_alpha(0.5)
 	ax = plt.subplot(111)
 	ax.add_artist(ell)
 
@@ -160,7 +164,8 @@ def printClusterList(clusterList):
 def printTargetList(targetList):
 	print("TargetList:")
 	for targetIndex, target in enumerate(targetList):
-		print("T", str(targetIndex), ": \t", repr(target),"\n", target, sep = "")
+		print(target.__str__(targetIndex = targetIndex)) 
+		# print("T", str(targetIndex), ": \t", repr(target),"\n", target, sep = "")
 	print()
 
 def printHypothesesScore(targetList):
@@ -223,14 +228,14 @@ def backtrackNodePositions(selectedNodes):
 			recBacktrackNodePosition(node.parent, measurementList)
 
 	trackList = []
-	for leafNode in selectedNodes:
+	for i, leafNode in enumerate(selectedNodes):
 		measurementList = []
 		recBacktrackNodePosition(leafNode,measurementList)
 		measurementList.reverse()
 		trackList.append(measurementList)
 	return trackList
 
-def writeTracksToFile(filename,trackList):
+def writeTracksToFile(filename,trackList, time, **kwargs):
 	f = open(filename,'w')
 	for targetTrack in trackList:
 		s = ""
@@ -240,6 +245,19 @@ def writeTracksToFile(filename,trackList):
 		s += "\n"
 		f.write(s)
 	f.close()
+
+def parseSolver(solverString):
+	s = solverString.strip().lower()
+	if s == "cplex":
+		return pulp.CPLEX_CMD(None, 0,1,0,[],0.05)
+	if s == "glpk":
+		return pulp.GLPK_CMD(None, 0,1,0,[])
+	if s == "cbc":
+		return pulp.PULP_CBC_CMD()
+	if s == "gurobi":
+		return pulp.GUROBI_CMD(None, 0,1,0,[])
+	return
+
 
 # import cProfile
 # import pstats
