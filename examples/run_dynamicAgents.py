@@ -20,7 +20,7 @@ def runDynamicAgents(pool, **kwargs):
 	NList = [1, 3, 6]
 	lambdaPhiList = [0, 5e-5, 2e-4, 4e-4]
 	solvers = ["CPLEX","GLPK","CBC","GUROBI"]
-	nMonteCarlo = 12
+	nMonteCarlo = 1
 	nMonteCarlo = kwargs.get("nMonteCarlo", nMonteCarlo)
 	lambda_nu 	= 0.0001				#Expected number of new targets per unit volume 
 	sigma 		= 3						#Need to be changed to conficence
@@ -30,10 +30,10 @@ def runDynamicAgents(pool, **kwargs):
 		(initialTargets, simList) = sim.importFromFile(filePath)
 		(p0, radarRange) = sim.findCenterPositionAndRange(simList)
 		for solver in solvers:
-			print("Checking solver",solver)
+			print("Checking solver",solver, end = " \t")
 			if not hpf.solverIsAvailable(solver):
 				print("Failed")
-				break
+				continue
 			print("Sucess")
 			for P_d in PdList:
 				for N in NList:
@@ -70,6 +70,8 @@ def runDynamicAgents(pool, **kwargs):
 								ET.SubElement( root, "Simulation", i = str(res['i']),seed = str(res['seed']), totalSimTime = '{:.3e}'.format(res['time']), runtimeLog =res['runetimeLog'] ).text = repr(res['trackList'])
 							print('@{0:5.1f}sec ({1:.1f} sec)'.format(time.clock()-runStart, simLog))
 							tree = ET.ElementTree(root)
+							if not os.path.exists(os.path.dirname(savefilePath)):
+								os.makedirs(os.path.dirname(savefilePath))
 							tree.write(savefilePath)
 						else:
 							print("Jumped:     ",printFile, flush = True)
