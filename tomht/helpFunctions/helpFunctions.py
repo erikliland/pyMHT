@@ -258,17 +258,19 @@ def parseSolver(solverString):
 		return pulp.PULP_CBC_CMD()
 	if s == "gurobi":
 		return pulp.GUROBI_CMD(None, 0,1,0,[])
-	return
+	return None
 
 def solverIsAvailable(solverString):
-	print("Testing solver",solverString)
-	sovler = parseSolver(solverString)
-	if solver is None:
-		print("Invalid solver")
-		return False
-	exist =  (solver.available() != False)
-	print("exist=",exsis)
-	return exist
+	s = solverString.strip().lower()
+	if s == "cplex":
+		return pulp.CPLEX_CMD().available()
+	if s == "glpk":
+		return pulp.GLPK_CMD().available()
+	if s == "cbc":
+		return pulp.PULP_CBC_CMD().available()
+	if s == "gurobi":
+		return pulp.GUROBI_CMD().available()
+	return False
 
 # import cProfile
 # import pstats
