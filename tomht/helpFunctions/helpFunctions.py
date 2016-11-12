@@ -261,11 +261,14 @@ def parseSolver(solverString):
 	return
 
 def solverIsAvailable(solverString):
-	try:
-		sovler = parseSolver(solverString)
-		return solver.available() != False
-	except:
+	print("Testing solver",solverString)
+	sovler = parseSolver(solverString)
+	if solver is None:
+		print("Invalid solver")
 		return False
+	exist =  (solver.available() != False)
+	print("exist=",exsis)
+	return exist
 
 # import cProfile
 # import pstats
