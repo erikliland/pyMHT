@@ -10,7 +10,7 @@ setup(
     license = 'BSD',
     keywords = 'mht tomht radar tracking track-split track split multi target multitarget',
     url = 'http://autosea.github.io/sf/2016/04/15/radar_ais/',
-    packages = find_packages(),
+    packages = find_packages(exclude=('examples', 'docs')),
     install_requires = [
         'pyplot',
         'numpy',
