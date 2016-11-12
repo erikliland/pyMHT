@@ -260,6 +260,12 @@ def parseSolver(solverString):
 		return pulp.GUROBI_CMD(None, 0,1,0,[])
 	return
 
+def solverIsAvailable(solverString):
+	try:
+		sovler = parseSolver(solverString)
+		return True
+	except:
+		return False
 
 # import cProfile
 # import pstats
