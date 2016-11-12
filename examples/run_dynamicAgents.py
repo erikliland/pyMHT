@@ -30,6 +30,11 @@ def runDynamicAgents(pool, **kwargs):
 		(initialTargets, simList) = sim.importFromFile(filePath)
 		(p0, radarRange) = sim.findCenterPositionAndRange(simList)
 		for solver in solvers:
+			print("Checking solver",solver)
+			if not hpf.solverIsAvailable(solver):
+				print("Failed")
+				break
+			print("Sucess")
 			for P_d in PdList:
 				for N in NList:
 					for lambda_phi in lambdaPhiList:
