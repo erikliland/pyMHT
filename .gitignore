@@ -9,6 +9,7 @@ test.py
 
 #Data log files
 .xml
+*.xml
 
 # C extensions
 *.so
