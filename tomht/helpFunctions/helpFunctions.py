@@ -263,7 +263,7 @@ def parseSolver(solverString):
 def solverIsAvailable(solverString):
 	try:
 		sovler = parseSolver(solverString)
-		return solver.available()
+		return solver.available() != False
 	except:
 		return False
 
