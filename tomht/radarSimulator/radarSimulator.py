@@ -17,10 +17,17 @@ class SimTarget:
 			print("Invalid arguments to SimTarget")
 
 	def __str__(self):
-		return (repr(Position(self.state[0],self.state[1]))+" "+
-				repr(Velocity(self.state[2],self.state[3])) )
+		return (repr(self.Position())+" "+
+				repr(self.Velocity()) )
 
-	__repr__ = __str__
+	def __repr__(self):
+		return '({:.3e},{:.3e},{:.3e},{:.3e})'.format(*self.state)
+
+	def Position(self):
+		return Position(self.state[0],self.state[1])
+
+	def Velocity(self):
+		return Velocity(self.state[2],self.state[3])
 
 	def calculateNextState(self, timeStep, Phi, Q, Gamma):
 		w = np.random.multivariate_normal(np.zeros(2), Q)
@@ -66,7 +73,7 @@ def simulateScans(randomSeed, simList, H, R, shuffle = True, lambda_phi = None, 
 	np.random.seed(randomSeed)
 	area = np.pi * np.power(rRange,2)
 	nClutter = int(np.floor(lambda_phi * area))
-	print("nClutter",nClutter)
+	#print("nClutter",nClutter)
 	scanList = []
 	for scan in simList:
 		measurementList = MeasurementList(scan[0].time)
