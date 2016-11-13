@@ -263,13 +263,13 @@ def parseSolver(solverString):
 def solverIsAvailable(solverString):
 	s = solverString.strip().lower()
 	if s == "cplex":
-		return pulp.CPLEX_CMD().available()
+		return pulp.CPLEX_CMD().available() != False
 	if s == "glpk":
-		return pulp.GLPK_CMD().available()
+		return pulp.GLPK_CMD().available() != False
 	if s == "cbc":
-		return pulp.PULP_CBC_CMD().available()
+		return pulp.PULP_CBC_CMD().available() != False
 	if s == "gurobi":
-		return pulp.GUROBI_CMD().available()
+		return pulp.GUROBI_CMD().available() != False
 	return False
 
 # import cProfile

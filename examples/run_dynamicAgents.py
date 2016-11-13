@@ -20,7 +20,7 @@ def runDynamicAgents(pool, **kwargs):
 	NList = [1, 3, 6]
 	lambdaPhiList = [0, 5e-5, 2e-4, 4e-4]
 	solvers = ["CPLEX","GLPK","CBC","GUROBI"]
-	nMonteCarlo = 1
+	nMonteCarlo = 10
 	nMonteCarlo = kwargs.get("nMonteCarlo", nMonteCarlo)
 	lambda_nu 	= 0.0001				#Expected number of new targets per unit volume 
 	sigma 		= 3						#Need to be changed to conficence
