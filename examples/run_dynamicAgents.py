@@ -4,7 +4,6 @@ import tomht
 from tomht.classDefinitions import Position
 import tomht.radarSimulator as sim
 import tomht.helpFunctions as hpf
-from tomht.stateSpace.pv import *
 import xml.etree.ElementTree as ET
 import multiprocessing as mp 
 import functools
@@ -30,11 +29,9 @@ def runDynamicAgents(pool, **kwargs):
 		(initialTargets, simList) = sim.importFromFile(filePath)
 		(p0, radarRange) = sim.findCenterPositionAndRange(simList)
 		for solver in solvers:
-			print("Checking solver",solver, end = " \t")
 			if not hpf.solverIsAvailable(solver):
-				print("Failed")
+				print("Checking solver",solver,": Failed")
 				continue
-			print("Sucess")
 			for P_d in PdList:
 				for N in NList:
 					for lambda_phi in lambdaPhiList:
@@ -64,10 +61,12 @@ def runDynamicAgents(pool, **kwargs):
 							print("Simulating: ",printFile, end = "", flush = True)
 							runStart = time.clock()
 							simLog = 0.0
-							results = pool.map(functools.partial(runSimulation,simList,initialTargets,C,R,Gamma,P0, lambda_phi,lambda_nu,radarRange,p0,P_d,sigma,N,solver, Phi),range(nMonteCarlo))
+							results = pool.map(functools.partial(runSimulation,simList,initialTargets,lambda_phi,lambda_nu,radarRange,p0,P_d,sigma,N,solver),range(nMonteCarlo))
 							for res in results:
-								simLog += res['time']
-								ET.SubElement( root, "Simulation", i = str(res['i']),seed = str(res['seed']), totalSimTime = '{:.3e}'.format(res['time']), runtimeLog =res['runetimeLog'] ).text = repr(res['trackList'])
+								if res is not None:
+									simLog += res['time']
+									ET.SubElement( root, "Simulation", i = str(res['i']),seed = str(res['seed']), totalSimTime = '{:.3e}'.format(res['time']), runtimeLog =res['runetimeLog'] ).text = repr(res['trackList'])
+
 							print('@{0:5.1f}sec ({1:.1f} sec)'.format(time.clock()-runStart, simLog))
 							tree = ET.ElementTree(root)
 							if not os.path.exists(os.path.dirname(savefilePath)):
@@ -76,19 +75,25 @@ def runDynamicAgents(pool, **kwargs):
 						else:
 							print("Jumped:     ",printFile, flush = True)
 
-def runSimulation(simList,initialTargets,C,R,Gamma,P0, lambda_phi,lambda_nu,radarRange,p0,P_d,sigma,N,solver, Phi, i):
-	seed = 5446 + i
-	scanList = sim.simulateScans(seed, simList, C, R, True, lambda_phi,radarRange, p0, P_d)
-	tracker = tomht.Tracker(Phi, C, Gamma, P_d, P0, R, Q, lambda_phi, lambda_nu, sigma, N, solver, logTime = True)
-	for initialTarget in initialTargets:
-	 	tracker.initiateTarget(initialTarget)
-	tic = time.clock()
-	for measurementList in scanList:
-		tracker.addMeasurementList(measurementList, multiThread = False)
-	toc = time.clock()-tic
-	trackList = hpf.backtrackNodePositions(tracker.__trackNodes__)
-	print(".",end = "", flush = True)
-	return {'i':i, 'seed':seed, 'trackList':trackList, 'time':toc, 'runetimeLog':tracker.getRuntimeAverage()}
+def runSimulation(simList,initialTargets, lambda_phi,lambda_nu,radarRange,p0,P_d,sigma,N,solver, i):
+	import pulp
+	try:
+		import tomht.stateSpace.pv as model
+		seed = 5446 + i
+		scanList = sim.simulateScans(seed, simList, model.C, model.R, True, lambda_phi,radarRange, p0, P_d)
+		tracker = tomht.Tracker(model.Phi, model.C, model.Gamma, P_d, model.P0, model.R, model.Q, lambda_phi, lambda_nu, sigma, N, solver, logTime = True)
+		for initialTarget in initialTargets:
+		 	tracker.initiateTarget(initialTarget)
+		tic = time.clock()
+		for measurementList in scanList:
+			tracker.addMeasurementList(measurementList, multiThread = False)
+		toc = time.clock()-tic
+		trackList = hpf.backtrackNodePositions(tracker.__trackNodes__)
+		print(".",end = "", flush = True)
+		return {'i':i, 'seed':seed, 'trackList':trackList, 'time':toc, 'runetimeLog':tracker.getRuntimeAverage()}
+	except pulp.solvers.PulpSolverError:
+		print("/",end = "", flush = True)
+		return 
 
 def initWorker():
     signal.signal(signal.SIGINT, signal.SIG_IGN)

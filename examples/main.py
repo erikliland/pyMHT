@@ -24,7 +24,7 @@ def runSimulation():
 	print("Initial targets:")
 	print(*initialTargets, sep='\n', end = "\n\n")
 
-	nScans = 4
+	nScans = 6
 	timeStep = 1.0
 	lambda_phi 	= 2e-4					#Expected number of false measurements per unit 
 										# volume of the measurement space per scan
@@ -47,7 +47,7 @@ def runSimulation():
 
 	scanList = sim.simulateScans(seed, simList, C, R, False, lambda_phi,radarRange, p0)
 	#solvers: CPLEX, GLPK, CBC, GUROBI
-	tracker = tomht.Tracker(Phi, C, Gamma, P_d, P0, R, Q, lambda_phi, lambda_nu, sigma, N, "CBC", logTime = True)
+	tracker = tomht.Tracker(Phi, C, Gamma, P_d, P0, R, Q, lambda_phi, lambda_nu, sigma, N, "GLPK", logTime = True)
 
 	# print("Scan list:")
 	# print(*scanList, sep = "\n", end = "\n\n")
@@ -66,7 +66,7 @@ def runSimulation():
 	association = hpf.backtrackMeasurementsIndices(tracker.__trackNodes__)
 	print("Association",*association, sep = "\n")
 
-	# fig1 = plt.figure(num=1, figsize = (9,9), dpi=100)
+	fig1 = plt.figure(num=1, figsize = (9,9), dpi=100)
 	# hpf.plotRadarOutline(p0, radarRange)
 	# hpf.plotVelocityArrowFromNode(tracker.__trackNodes__,2)
 	# hpf.plotValidationRegionFromNodes(tracker.__trackNodes__,sigma, 1)
@@ -74,12 +74,12 @@ def runSimulation():
 	# hpf.plotMeasurementsFromForest(tracker.__targetList__, real = True, dummy = True)
 	# hpf.plotMeasurementsFromList(tracker.__scanHistory__)
 	# hpf.plotMeasurementsFromNodes(trackNodes)
-	# hpf.plotHypothesesTrack(tracker.__targetList__)
-	# hpf.plotActiveTrack(trackNodes)
+	hpf.plotHypothesesTrack(tracker.__targetList__)
+	hpf.plotActiveTrack(tracker.__trackNodes__)
 	# plt.axis("equal")
-	# plt.xlim((p0.x-radarRange*1.05, p0.x + radarRange*1.05))
-	# plt.ylim((p0.y-radarRange*1.05, p0.y + radarRange*1.05))
-	# plt.show()
+	plt.xlim((p0.x-radarRange*1.05, p0.x + radarRange*1.05))
+	plt.ylim((p0.y-radarRange*1.05, p0.y + radarRange*1.05))
+	plt.show()
 
 if __name__ == '__main__':
 	runSimulation()
