@@ -19,7 +19,7 @@ def runDynamicAgents(pool, **kwargs):
 	NList = [1, 3, 6]
 	lambdaPhiList = [0, 5e-5, 2e-4, 4e-4]
 	solvers = ["CPLEX","GLPK","CBC","GUROBI"]
-	nMonteCarlo = 10
+	nMonteCarlo = 11
 	nMonteCarlo = kwargs.get("nMonteCarlo", nMonteCarlo)
 	lambda_nu 	= 0.0001				#Expected number of new targets per unit volume 
 	sigma 		= 3						#Need to be changed to conficence
@@ -44,7 +44,7 @@ def runDynamicAgents(pool, **kwargs):
 										+"]"
 										+".xml")
 						printFile = (	'{:43s}'.format(os.path.splitext(fileString)[0]) 
-										+solver
+										+'{:6s}'.format(solver)
 										+", P_d="+str(P_d)
 										+", N="+str(N)
 										+", lPhi="+'{:5.0e}'.format(lambda_phi)
@@ -66,7 +66,6 @@ def runDynamicAgents(pool, **kwargs):
 								if res is not None:
 									simLog += res['time']
 									ET.SubElement( root, "Simulation", i = str(res['i']),seed = str(res['seed']), totalSimTime = '{:.3e}'.format(res['time']), runtimeLog =res['runetimeLog'] ).text = repr(res['trackList'])
-
 							print('@{0:5.1f}sec ({1:.1f} sec)'.format(time.clock()-runStart, simLog))
 							tree = ET.ElementTree(root)
 							if not os.path.exists(os.path.dirname(savefilePath)):
