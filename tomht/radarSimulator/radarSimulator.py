@@ -17,8 +17,8 @@ class SimTarget:
 			print("Invalid arguments to SimTarget")
 
 	def __str__(self):
-		return (repr(self.Position())+" "+
-				repr(self.Velocity()) )
+		return (str(self.Position())+" "+
+				str(self.Velocity()) )
 
 	def __repr__(self):
 		return '({:.3e},{:.3e},{:.3e},{:.3e})'.format(*self.state)
@@ -119,8 +119,20 @@ def importFromFile(filename, **kwargs):
 			if localTime.is_integer():
 				targetList = [SimTarget(time = localTime,
 										position = Position(elements[i],elements[i+1]),
-										velocity = Velocity(0,0)) for i in range(1,len(elements),2)]
+										velocity = Velocity(0,0)
+										) for i in range(1,len(elements),2)
+							 ]
+
 				simList.append( targetList )
+	for scanIndex, scan in enumerate(simList):
+		for targetIndex, target in enumerate(scan):
+			if scanIndex == 0:
+				target.state[2:4] = target.state[0:2] - firstPositions[targetIndex].toarray()
+			elif scanIndex == (len(simList)-1):
+				target.state[2:4] = simList[scanIndex-1][targetIndex].state[2:4]
+			else:
+				target.state[2:4] = target.state[0:2] - simList[scanIndex-1][targetIndex].state[0:2]
+	
 	return initialTargets, simList
 
 def findCenterPositionAndRange(simList):

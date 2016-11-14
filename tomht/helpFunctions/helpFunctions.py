@@ -222,20 +222,30 @@ def backtrackMeasurementsIndices(selectedNodes, steps = None):
 		measurementsBacktracks.append(measurementBacktrack)
 	return measurementsBacktracks
 
-def backtrackNodePositions(selectedNodes):
+def backtrackNodePositions(selectedNodes, **kwargs):
 	from classDefinitions import Position
 	def recBacktrackNodePosition(node, measurementList):
 		measurementList.append(Position(node.filteredStateMean[0:2]))
 		if node.parent is not None:
+			if node.parent.scanNumber != node.scanNumber-1:
+				print()
+				print(node.backtrack(3))
+				raise ValueError("Inconsistent scanNumber-ing:", node.scanNumber,"->", node.parent.scanNumber)
 			recBacktrackNodePosition(node.parent, measurementList)
 
-	trackList = []
-	for i, leafNode in enumerate(selectedNodes):
-		measurementList = []
-		recBacktrackNodePosition(leafNode,measurementList)
-		measurementList.reverse()
-		trackList.append(measurementList)
-	return trackList
+	try:
+		trackList = []
+		for leafNode in selectedNodes:
+			measurementList = []
+			recBacktrackNodePosition(leafNode,measurementList)
+			measurementList.reverse()
+			trackList.append(measurementList)
+		return trackList
+	except ValueError as e:
+		if kwargs.get("debug",False):
+			print(e)
+		raise
+	
 
 def writeTracksToFile(filename,trackList, time, **kwargs):
 	f = open(filename,'w')

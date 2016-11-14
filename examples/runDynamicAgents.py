@@ -7,23 +7,12 @@ import tomht.helpFunctions as hpf
 import xml.etree.ElementTree as ET
 import multiprocessing as mp 
 import functools
+import pulp
+from simSettings import *
 
 def runDynamicAgents(pool, **kwargs):
-	loadLocation = os.path.join("..","data")
-	files = [	'dynamic_agents_full_cooperation.txt',
-				'dynamic_agents_partial_cooporation.txt',
-				'dynamic_and_static_agents_large_space.txt',
-				'dynamic_and_static_agents_narrow_space.txt'
-			]
-	PdList = [0.5, 0.7, 0.9]
-	NList = [1, 3, 6]
-	lambdaPhiList = [0, 5e-5, 2e-4, 4e-4]
-	solvers = ["CPLEX","GLPK","CBC","GUROBI"]
-	nMonteCarlo = 11
-	nMonteCarlo = kwargs.get("nMonteCarlo", nMonteCarlo)
-	lambda_nu 	= 0.0001				#Expected number of new targets per unit volume 
-	sigma 		= 3						#Need to be changed to conficence
-
+	for solver in solvers:
+		print('{:6s}'.format(solver),hpf.solverIsAvailable(solver))
 	for fileString in files:
 		filePath = os.path.join(loadLocation,os.path.splitext(fileString)[0],fileString)
 		(initialTargets, simList) = sim.importFromFile(filePath)
@@ -43,7 +32,7 @@ def runDynamicAgents(pool, **kwargs):
 										+",lPhi="+'{:7.5f}'.format(lambda_phi)
 										+"]"
 										+".xml")
-						printFile = (	'{:43s}'.format(os.path.splitext(fileString)[0]) 
+						printFile = (	'{:43s}'.format(os.path.splitext(fileString)[0])
 										+'{:6s}'.format(solver)
 										+", P_d="+str(P_d)
 										+", N="+str(N)
@@ -59,14 +48,20 @@ def runDynamicAgents(pool, **kwargs):
 												initialTargets = repr(initialTargets)
 												)
 							print("Simulating: ",printFile, end = "", flush = True)
-							runStart = time.clock()
+							runStart = time.time()
 							simLog = 0.0
 							results = pool.map(functools.partial(runSimulation,simList,initialTargets,lambda_phi,lambda_nu,radarRange,p0,P_d,sigma,N,solver),range(nMonteCarlo))
 							for res in results:
 								if res is not None:
 									simLog += res['time']
-									ET.SubElement( root, "Simulation", i = str(res['i']),seed = str(res['seed']), totalSimTime = '{:.3e}'.format(res['time']), runtimeLog =res['runetimeLog'] ).text = repr(res['trackList'])
-							print('@{0:5.1f}sec ({1:.1f} sec)'.format(time.clock()-runStart, simLog))
+									ET.SubElement( root, "Simulation", 
+													i 				= repr(res.get('i')),
+													seed 			= repr(res.get('seed')), 
+													totalSimTime 	= repr(res.get('time')), 
+													runtimeLog 		= res.get('runetimeLog'), 
+													covConsistence 	= [['{:.3e}'.format(v) for v in row] for row in res.get('covConsistence',[[]])],
+													).text 			= repr(res.get('trackList'))
+							print('@{0:5.1f}sec ({1:.1f} sec)'.format(time.time()-runStart, simLog))
 							tree = ET.ElementTree(root)
 							if not os.path.exists(os.path.dirname(savefilePath)):
 								os.makedirs(os.path.dirname(savefilePath))
@@ -75,7 +70,6 @@ def runDynamicAgents(pool, **kwargs):
 							print("Jumped:     ",printFile, flush = True)
 
 def runSimulation(simList,initialTargets, lambda_phi,lambda_nu,radarRange,p0,P_d,sigma,N,solver, i):
-	import pulp
 	try:
 		import tomht.stateSpace.pv as model
 		seed = 5446 + i
@@ -83,13 +77,18 @@ def runSimulation(simList,initialTargets, lambda_phi,lambda_nu,radarRange,p0,P_d
 		tracker = tomht.Tracker(model.Phi, model.C, model.Gamma, P_d, model.P0, model.R, model.Q, lambda_phi, lambda_nu, sigma, N, solver, logTime = True)
 		for initialTarget in initialTargets:
 		 	tracker.initiateTarget(initialTarget)
+
+		covConsistenceList = []
 		tic = time.clock()
-		for measurementList in scanList:
-			tracker.addMeasurementList(measurementList, multiThread = False)
+		for scanIndex, measurementList in enumerate(scanList):
+			covConsistenceList.append( tracker.addMeasurementList(measurementList, trueState = simList[scanIndex], multiThread = False) )
 		toc = time.clock()-tic
-		trackList = hpf.backtrackNodePositions(tracker.__trackNodes__)
-		print(".",end = "", flush = True)
-		return {'i':i, 'seed':seed, 'trackList':trackList, 'time':toc, 'runetimeLog':tracker.getRuntimeAverage()}
+		trackList = hpf.backtrackNodePositions(tracker.__trackNodes__, debug = True)
+		if any ( len(track) != 303 for track in trackList):
+			print(",",end = "", flush = True)
+		else: 
+			print(".",end = "", flush = True)
+		return {'i':i, 'seed':seed, 'trackList':trackList, 'time':toc, 'runetimeLog':tracker.getRuntimeAverage(), 'covConsistence': covConsistenceList}
 	except pulp.solvers.PulpSolverError:
 		print("/",end = "", flush = True)
 		return 
@@ -98,6 +97,8 @@ def initWorker():
     signal.signal(signal.SIGINT, signal.SIG_IGN)
 
 if __name__ == '__main__':
+	import time
+	tic = time.clock()
 	try:
 		argv = sys.argv[1:]
 		nIterations = None
@@ -116,8 +117,8 @@ if __name__ == '__main__':
 	except KeyboardInterrupt:
 		pool.terminate()
 		pool.join()
-		print("Terminated")
+		print("Terminated", time.ctime())
 	else:
 		pool.close()
 		pool.join()
-		print("Finish")
+		print("Finished(",round(time.clock()-tic,1),"sec )@", time.ctime())
