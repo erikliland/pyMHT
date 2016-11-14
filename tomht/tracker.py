@@ -357,7 +357,7 @@ class Tracker():
 		self.__trackNodes__ = np.empty(len(self.__targetList__),dtype = np.dtype(object))
 		for cluster in clusterList:
 			if len(cluster) == 1:
-				self._pruneSmilarState(self.__targetList__[cluster[0]], 1)
+				# self._pruneSmilarState(self.__targetList__[cluster[0]], 1)
 				self.__trackNodes__[cluster] = self.__targetList__[cluster[0]]._selectBestHypothesis()
 			else:
 				self.__trackNodes__[cluster] = self._solveOptimumAssociation(cluster)
@@ -383,6 +383,14 @@ class Tracker():
 					"\tOptim ",	'{:5.4f}'.format(toc4),
 					"\tPrune ",	'{:5.4f}'.format(toc5),
 					sep = "")
+
+		#Covariance consistance
+		if "trueState" in kwargs:
+			xTrue = kwargs.get("trueState")
+			return [(target.filteredStateMean-xTrue[targetIndex].state).T.dot(
+					np.linalg.inv(target.filteredStateCovariance)).dot(
+					(target.filteredStateMean-xTrue[targetIndex].state) )
+			  for targetIndex, target in enumerate(self.__trackNodes__)]
 
 	def getRuntimeAverage(self, **kwargs):
 		p = kwargs.get("precision", 3)

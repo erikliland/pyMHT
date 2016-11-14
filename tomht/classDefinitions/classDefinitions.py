@@ -54,10 +54,10 @@ class Velocity:
 			raise ValueError("Invalid arguments to Position")
 
 	def __str__(self):
-		return "("+'{: 6.2f}'.format(self.x)+","+'{: 6.2f}'.format(self.y)+")"
+		return 'Vel: ({: 9.2f},{: 9.2f})'.format(self.x, self.y)
 
 	def __repr__(self):
-		return "Vel: " + str(self)
+		return '({:.3e},{:.3e})'.format(self.x, self.y)
 
 	def __mul__(self,other):
 		return Velocity(self.x * other, self.y * other)
