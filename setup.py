@@ -12,7 +12,7 @@ setup(
     url = 'http://autosea.github.io/sf/2016/04/15/radar_ais/',
     packages = find_packages(exclude=('examples', 'docs')),
     install_requires = [
-        'pyplot',
+        'matplotlib',
         'numpy',
         'scipy',
         'pulp',
