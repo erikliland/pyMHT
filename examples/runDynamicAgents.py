@@ -11,7 +11,8 @@ import pulp
 from simSettings import *
 
 def runDynamicAgents(pool, **kwargs):
-	# nMonteCarlo = kwargs.get("nMonteCarlo", nMonteCarlo)
+	for solver in solvers:
+		print('{:6s}'.format(solver),hpf.solverIsAvailable(solver))
 	for fileString in files:
 		filePath = os.path.join(loadLocation,os.path.splitext(fileString)[0],fileString)
 		(initialTargets, simList) = sim.importFromFile(filePath)
