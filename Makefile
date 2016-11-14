@@ -29,8 +29,8 @@ init:
 	sudo -H pip install -r requirements.txt
 	sudo apt-get install wget
 	wget -nc -r -np -R *html,index.* -nH --cut-dirs=2 http://folk.ntnu.no/eriklil/linux/solvers/
-
-test:
-	nosetests tests
+	chmod +x solvers/cplex*
+	./solvers/cplex*
+	
 
 endif
