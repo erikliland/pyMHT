@@ -47,7 +47,7 @@ def runDynamicAgents(pool, **kwargs):
 												initialTargets = repr(initialTargets)
 												)
 							print("Simulating: ",printFile, end = "", flush = True)
-							runStart = time.clock()
+							runStart = time.time()
 							simLog = 0.0
 							results = pool.map(functools.partial(runSimulation,simList,initialTargets,lambda_phi,lambda_nu,radarRange,p0,P_d,sigma,N,solver),range(nMonteCarlo))
 							for res in results:
@@ -60,7 +60,7 @@ def runDynamicAgents(pool, **kwargs):
 													runtimeLog 		= res.get('runetimeLog'), 
 													covConsistence 	= [['{:.3e}'.format(v) for v in row] for row in res.get('covConsistence',[[]])],
 													).text 			= repr(res.get('trackList'))
-							print('@{0:5.1f}sec ({1:.1f} sec)'.format(time.clock()-runStart, simLog))
+							print('@{0:5.1f}sec ({1:.1f} sec)'.format(time.time()-runStart, simLog))
 							tree = ET.ElementTree(root)
 							if not os.path.exists(os.path.dirname(savefilePath)):
 								os.makedirs(os.path.dirname(savefilePath))
