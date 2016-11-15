@@ -72,14 +72,13 @@ def simulateTargets(randomSeed, initialTargets, numOfSteps, timeStep, Phi, Q, Ga
 def simulateScans(randomSeed, simList, H, R, shuffle = True, lambda_phi = None, rRange = None, p0 = None, P_d = 1):	
 	np.random.seed(randomSeed)
 	area = np.pi * np.power(rRange,2)
-	nClutter = int(np.floor(lambda_phi * area))
-	#print("nClutter",nClutter)
+	lClutter = lambda_phi * area
 	scanList = []
 	for scan in simList:
 		measurementList = MeasurementList(scan[0].time)
 		measurementList.measurements = [target.positionWithNoiseAndLoss(H, R, P_d, p0, rRange) for target in scan]
 		if (lambda_phi is not None) and (rRange is not None) and (p0 is not None):
-			for i in range(int(nClutter * np.random.normal(1,0.05))):
+			for i in range( np.random.poisson(lClutter) ):
 				clutter = _generateClutter(p0, rRange)
 				measurementList.measurements.append( clutter)
 		scanList.append(measurementList)
