@@ -1,5 +1,5 @@
 import os, sys, signal, time, getopt
-sys.path.append(os.path.join(os.path.dirname(__file__),".."))
+#sys.path.append(os.path.join(os.path.dirname(__file__),".."))
 import tomht
 from tomht.classDefinitions import Position
 import tomht.radarSimulator as sim
