@@ -84,7 +84,7 @@ def runSimulation(simList,initialTargets, lambda_phi,lambda_nu,radarRange,p0,P_d
 			covConsistenceList.append( tracker.addMeasurementList(measurementList, trueState = simList[scanIndex], multiThread = False) )
 		toc = time.clock()-tic
 		trackList = hpf.backtrackNodePositions(tracker.__trackNodes__, debug = True)
-		if any ( len(track) != 303 for track in trackList):
+		if any ( len(track)-1 != len(simList) for track in trackList):
 			print(",",end = "", flush = True)
 		else: 
 			print(".",end = "", flush = True)

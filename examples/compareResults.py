@@ -102,7 +102,7 @@ def compareResults():
 							ET.SubElement(lambdaPhi,"nLostTracks").text = str(nLostTracks)
 							ET.SubElement(lambdaPhi,"totalTime").text 	= simulation.get("totalSimTime")
 							ET.SubElement(lambdaPhi,"runtimeLog").text 	= simulation.get("runtimeLog")
-							ET.SubElement(lambdaPhi,"covConsistence").text = simulation.get("covConsistence")
+							# ET.SubElement(lambdaPhi,"covConsistence").text = simulation.get("covConsistence")
 						else:
 							print()
 						# break
