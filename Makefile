@@ -14,11 +14,10 @@ init:
 	else git -C pulp/ pull ; \
 	fi;
 	sudo python3 pulp/setup.py install
-	
 	if [ ! -d $("solvers/") ]; \
 	then	brew install wget ; \
 			wget -r -np -R *html,index.* -nH --cut-dirs=2 http://folk.ntnu.no/eriklil/mac/solvers/ ; \
-	fi; 
+	fi;
 
 ifndef CPLEX
 	brew cask install java
@@ -38,6 +37,7 @@ ifeq ($(shell uname),Linux)
 init:
 	echo "Linux"
 	sudo apt-get update
+	sudo apt-get upgrade
 	sudo apt-get install python3-setuptools
 	sudo easy_install3 pip
 	sudo apt-get install python3-tk
@@ -53,17 +53,14 @@ init:
 	then 	sudo apt-get install wget; \
 			wget -nc -r -np -R *html,index.* -nH --cut-dirs=2 http://folk.ntnu.no/eriklil/linux/solvers/ ; \
 	fi;
+ifndef CPLEX
 	sudo apt-get install default-jre
 	sudo apt-get install default-jdk
 	chmod +x solvers/cplex*
 	sudo ./solvers/cplex*
-	sudo ln -s /opt/ibm/ILOG/CPLEX_Studio1263/cplex/bin/x86-64_linux/cplex /usr/bin/cplex
-
-	#sudo cp solvers/gurobi* /opt/
+	#sudo ln -s /opt/ibm/ILOG/CPLEX_Studio1263/cplex/bin/x86-64_linux/cplex /usr/bin/cplex
+endif
 	sudo chmod  +x solvers/gurobi*
 	sudo tar xvfz solvers/gurobi* -C /opt/
-	export GUROBI_HOME="/opt/gurobi7*/linux64"
-	export PATH="${PATH}:${GUROBI_HOME}/bin"
-	export LD_LIBRARY="${LD_LIBRARY_PATH}:${GUROBI_HOME}/lib"
-	
+	sudo cp gurobiVars.sh /etc/profile.d/
 endif
