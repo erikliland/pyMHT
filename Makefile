@@ -19,7 +19,7 @@ endif
 	#then $(shell sudo installer -pkg solvers/gurobi* -target /); \
 	#fi;
 
-else
+else ifeq($(OS),Linux)
 #Run Linux commands
 init:
 	sudo apt-get update
@@ -41,4 +41,5 @@ init:
 	export LD_LIBRARY="${LD_LIBRARY_PATH}:${GUROBI_HOME}/lib"
 	chmod +x solvers/cplex*
 	sudo ./solvers/cplex*
+	sudo ln -s /opt/ibm/ILOG/CPLEX_Studio1263/cplex/bin/x86-64_linux/cplex /usr/bin/cplex
 endif
