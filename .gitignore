@@ -6,6 +6,9 @@ __pycache__/
 #Solvers
 solvers/
 
+#Folders
+pulp/
+
 #Local test file
 test.py
 
