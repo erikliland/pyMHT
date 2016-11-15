@@ -3,7 +3,7 @@ CPLEX := $(shell command -v ~/Applications/IBM/ILOG/CPLEX_Studio1263/cplex/bin/x
 
 ifeq ($(OS),Darwin)
 #Run macOS commands
-init:	
+init:
 	sudo -H pip3 install --upgrade pip
 	sudo -H pip3 install -r requirements.txt
 	brew install homebrew/science/glpk
@@ -15,7 +15,6 @@ ifndef CPLEX
 	sudo chmod +x solvers/cplex*
 	sudo ./solvers/cplex*
 endif
-	
 	#if [ ! -d $("Applications/Gurobi*")]; \
 	#then $(shell sudo installer -pkg solvers/gurobi* -target /); \
 	#fi;
@@ -23,16 +22,25 @@ endif
 else
 #Run Linux commands
 init:
+	sudo apt-get update
 	sudo apt-get install python3-setuptools
 	sudo easy_install3 pip
 	sudo apt-get install python3-tk
+	sudo apt-get install python-glpk
+	sudo apt-get install glpk-utils
 	sudo -H pip install -r requirements.txt
 	git clone https://github.com/erikliland/pulp.git 
 	sudo python3 pulp/setup.py install
 	sudo apt-get install wget
 	wget -nc -r -np -R *html,index.* -nH --cut-dirs=2 http://folk.ntnu.no/eriklil/linux/solvers/
+	sudo apt-get install default-jre
+	sudo apt-get install default-jdk
+	#sudo cp solvers/gurobi* /opt/
+	sudo chmod  +x solvers/gurobi*
+	sudo tar xvfz solvers/gurobi* -C /opt/
+	export GUROBI_HOME="/opt/gurobi7*/linux64"
+	export PATH="${PATH}:${GUROBI_HOME}/bin"
+	export LD_LIBRARY="${LD_LIBRARY_PATH}:${GUROBI_HOME}/lib"
 	chmod +x solvers/cplex*
 	sudo ./solvers/cplex*
-	
-
 endif
