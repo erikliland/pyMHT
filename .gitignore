@@ -12,6 +12,11 @@ test.py
 #Data log files
 .xml
 *.xml
+.mps
+*.mps
+.sol
+*.sol
+
 
 # C extensions
 *.so

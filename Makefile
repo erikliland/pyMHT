@@ -12,8 +12,8 @@ init:
 	wget -r -np -R *html,index.* -nH --cut-dirs=2 http://folk.ntnu.no/eriklil/mac/solvers/
 ifndef CPLEX
 	brew cask install java
-	chmod +x solvers/cplex*
-	./solvers/cplex*
+	sudo chmod +x solvers/cplex*
+	sudo ./solvers/cplex*
 endif
 	#if [ ! -d $("Applications/Gurobi*")]; \
 	#then $(shell sudo installer -pkg solvers/gurobi* -target /); \

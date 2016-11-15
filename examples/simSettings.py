@@ -10,7 +10,7 @@ NList 		= [1, 3, 6]
 lambdaPhiList = [0, 5e-5, 1e-4, 2e-4]
 solvers 	= ["CPLEX","GLPK","CBC","GUROBI"]
 solvers.sort()
-nMonteCarlo = 34
+nMonteCarlo = 12
 lambda_nu 	= 0.0001 #Expected number of new targets per unit volume 
 sigma 		= 3		 #Need to be changed to conficence
 threshold 	= 2 #meter
