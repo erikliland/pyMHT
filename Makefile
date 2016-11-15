@@ -29,6 +29,8 @@ init:
 	sudo apt-get install python-glpk
 	sudo apt-get install glpk-utils
 	sudo -H pip install -r requirements.txt
+	git clone https://github.com/erikliland/pulp.git 
+	sudo python3 pulp/setup.py install
 	sudo apt-get install wget
 	wget -nc -r -np -R *html,index.* -nH --cut-dirs=2 http://folk.ntnu.no/eriklil/linux/solvers/
 	sudo apt-get install default-jre

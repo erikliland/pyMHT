@@ -15,6 +15,5 @@ setup(
         'matplotlib',
         'numpy',
         'scipy',
-        'pulp',
     ],
 )
