@@ -16,8 +16,8 @@ import simSettings as sim
 def runSimulation(simList, initialTargets, lambda_phi,lambda_nu,radarRange,p0,P_d,N,solver, i):
 	try:
 		seed = 5446 + i
-		scanList = radarSimulator.simulateScans(seed, simList, model.C, model.Rsim, lambda_phi,radarRange, p0, P_d = P_d, shuffle = True)
-		tracker = tomht.Tracker(model.Phi, model.C, model.Gamma, P_d, model.P0, model.R, model.Q, lambda_phi, lambda_nu, sim.confidence, N, solver, logTime = True)
+		scanList = radarSimulator.simulateScans(seed, simList, model.C, model.R(model.sigmaR_true), lambda_phi,radarRange, p0, P_d = P_d, shuffle = True)
+		tracker = tomht.Tracker(model.Phi, model.C, model.Gamma, P_d, model.P0, model.R(), model.Q, lambda_phi, lambda_nu, sim.eta2, model.sigmaR_tracker, N, solver, logTime = True)
 		for initialTarget in initialTargets:
 		 	tracker.initiateTarget(initialTarget)
 
@@ -57,11 +57,11 @@ def simulateFile(simList, loadLocation, fileString, solver, lambda_phi, P_d, N, 
 					+", N="+str(N)
 					+", lPhi="+'{:5.0e}'.format(lambda_phi)
 					)
-	if (not os.path.isfile(savefilePath)) or kwargs.get("overWrite",False):
+	if (not os.path.isfile(savefilePath)) or kwargs.get("F",False):
 		nMonteCarlo = kwargs.get("i",sim.nMonteCarlo)
 		root = ET.Element("Simulations",
 							lambda_nu = '{:.3e}'.format(sim.lambda_nu), 
-							confidence = '{:.2f}'.format(sim.confidence), 
+							eta2 = '{:.2f}'.format(sim.eta2), 
 							radarRange = '{:.3e}'.format(radarRange), 
 							p0 = repr(p0),
 							nMonteCarlo = str(nMonteCarlo),
