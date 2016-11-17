@@ -6,14 +6,27 @@ import pulp
 def binomial(n,k):
     return 1 if k==0 else (0 if n==0 else binomial(n-1, k) + binomial(n-1, k-1))
 
-def plotVelocityArrowFromNode(nodes, stepsBack = 1):
+def plotInitialTargets(initialTargets, **kwargs):
+	for i, initialTarget in enumerate(initialTargets):
+		index = kwargs.get("index",list(range(len(initialTargets))))
+		if len(index) != len(initialTargets):
+			raise ValueError("plotInitialTargets: Need equal number of targets and indecies")
+		plt.plot(initialTarget.state[0],initialTarget.state[1],"k+")
+		ax = plt.subplot(111)
+		normVelocity = initialTarget.state[2:4] / np.linalg.norm(initialTarget.state[2:4])
+		offset = 0.1 * normVelocity
+		position = initialTarget.state[0:2] - offset
+		ax.text(position[0], position[1], "T"+str(index[i]), 
+			fontsize=8, horizontalalignment = "center", verticalalignment = "center")
+
+def plotVelocityArrowFromNode(nodes, **kwargs):
 	def recPlotVelocityArrowFromNode(node, stepsLeft):
 		if node.predictedStateMean is not None:
 			plotVelocityArrow(node)
 		if stepsLeft > 0 and (node.parent is not None):
 			recPlotVelocityArrowFromNode(node.parent, stepsLeft-1)
 	for node in nodes:
-		recPlotVelocityArrowFromNode(node, stepsBack)
+		recPlotVelocityArrowFromNode(node, kwargs.get("stepsBack", 1))
 
 def plotVelocityArrow(target):
 	ax = plt.subplot(111)
@@ -22,21 +35,22 @@ def plotVelocityArrow(target):
 	head_width=0.1, head_length=0.1, fc= "None", ec='k', 
 	length_includes_head = "true", linestyle = "-", alpha = 0.3, linewidth = 1)
 
-def plotRadarOutline(centerPosition, radarRange):
+def plotRadarOutline(centerPosition, radarRange, **kwargs):
 	from matplotlib.patches import Ellipse
-	plt.plot(centerPosition.x, centerPosition.y,"bo")
+	if kwargs.get("center", True):
+		plt.plot(centerPosition.x, centerPosition.y,"bo")
 	ax = plt.subplot(111)
 	circle = Ellipse(centerPosition.toarray(), radarRange*2, radarRange*2)
 	circle.set_facecolor("none")
 	circle.set_linestyle("dotted")
 	ax.add_artist(circle)
 
-def plotCovarianceEllipse(cov, position, sigma):
+def plotCovarianceEllipse(cov, position, eta2):
 	from matplotlib.patches import Ellipse
 	lambda_, _ = np.linalg.eig(cov)
 	ell = Ellipse( xy	 = (position.x, position.y), 
-				   width = np.sqrt(lambda_[0])*sigma*2,
-				   height= np.sqrt(lambda_[1])*sigma*2,
+				   width = np.sqrt(lambda_[0])*eta2*2,
+				   height= np.sqrt(lambda_[1])*eta2*2,
 				   angle = np.rad2deg( np.arctan2( lambda_[1], lambda_[0]) ),
 				   linewidth = 2,
 				   )
@@ -80,53 +94,50 @@ def plotMeasurementsFromForest(targetList, plotReal = True, plotDummy = True, **
 		recPlotMeasurements(target,plottedMeasurements,plotReal, plotDummy)
 
 def plotMeasurementsFromNodes(nodes, **kwargs):
-	def recBactrackAndPlotMesurements(node, stepsBack = None, labels = True):
+	def recBactrackAndPlotMesurements(node, stepsBack = None, **kwargs):
 		if node.parent is not None:
 			if node.measurement is not None:
-				if labels:
-					plotMeasurement(node.measurement, node.measurementNumber, node.scanNumber)
-				else:
-					plotMeasurement(node.measurement)
+				plotMeasurement(node.measurement, node.measurementNumber, node.scanNumber, **kwargs)
+			elif kwargs.get("dummy",False):
+				plotMeasurement(node.getPosition(), node.measurementNumber, node.scanNumber, **kwargs)
 			if stepsBack is None:
-				recBactrackAndPlotMesurements(node.parent, None, labels)
+				recBactrackAndPlotMesurements(node.parent, None, **kwargs)
 			elif stepsBack > 0:
-				recBactrackAndPlotMesurements(node.parent, stepsBack-1, labels)
-	stepsBack = kwargs.get('stepsBack)')
-	labels = kwargs.get('labels', True)
+				recBactrackAndPlotMesurements(node.parent, stepsBack-1, **kwargs)
 	for node in nodes:
-		recBactrackAndPlotMesurements(node, stepsBack, labels)
+		recBactrackAndPlotMesurements(node, kwargs.get('stepsBack'), **kwargs)
 
-def plotMeasurement(position, measurementNumber = None, scanNumber = None):
+def plotMeasurement(position, measurementNumber = None, scanNumber = None, **kwargs):
 	x = position.x
 	y = position.y
 	if measurementNumber == 0:
 		plt.plot(x,y,color = "black",fillstyle = "none", marker = "o")
 	else:
 		plt.plot(x, y,'kx')
-	if (scanNumber is not None) and (measurementNumber is not None):
+	if (scanNumber is not None) and (measurementNumber is not None) and kwargs.get("labels",False):
 		ax = plt.subplot(111)
 		ax.text(x, y,str(scanNumber)+":"+str(measurementNumber), size = 7, ha = "left", va = "top") 
 
-def plotValidationRegionFromNodes(nodes,sigma, stepsBack = 1):
+def plotValidationRegionFromNodes(nodes,eta2, stepsBack = 1):
 	from classDefinitions import Position
-	def recPlotValidationRegionFromNode(node, sigma, stepsBack):
+	def recPlotValidationRegionFromNode(node, eta2, stepsBack):
 		if node.residualCovariance is not None:
-			plotCovarianceEllipse(node.residualCovariance, Position(node.predictedStateMean),sigma)
+			plotCovarianceEllipse(node.residualCovariance, Position(node.predictedStateMean),eta2)
 		if (node.parent is not None) and (stepsBack > 0):
-			recPlotValidationRegionFromNode(node.parent, sigma, stepsBack-1)
+			recPlotValidationRegionFromNode(node.parent, eta2, stepsBack-1)
 	for node in nodes:
-		recPlotValidationRegionFromNode(node, sigma, stepsBack)
+		recPlotValidationRegionFromNode(node, eta2, stepsBack)
 
-def plotValidationRegionFromForest(targets, sigma, stepsBack = 1):
-	def recPlotValidationRegionFromTarget(target, sigma, stepsBack):
+def plotValidationRegionFromForest(targets, eta2, stepsBack = 1):
+	def recPlotValidationRegionFromTarget(target, eta2, stepsBack):
 		if not target.trackHypotheses:
-			plotValidationRegionFromNodes([target], sigma, stepsBack)
+			plotValidationRegionFromNodes([target], eta2, stepsBack)
 		else:
 			for hyp in target.trackHypotheses:
-				recPlotValidationRegionFromTarget(hyp, sigma, stepsBack)
+				recPlotValidationRegionFromTarget(hyp, eta2, stepsBack)
 
 	for target in targets:
-		recPlotValidationRegionFromTarget(target, sigma, stepsBack)
+		recPlotValidationRegionFromTarget(target, eta2, stepsBack)
 
 def plotActiveTrack(associationHistory):
 	def recBacktrackPosition(target):
@@ -153,6 +164,17 @@ def plotHypothesesTrack(targets):
 	for target in targets:
 		recPlotHypothesesTrack(target, next(colors))
 
+def plotTrueTrack(simList, **kwargs):
+	nScan = len(simList)
+	nTargets = len(simList[0])
+	posArray = np.zeros((nScan, nTargets, 2))
+	for row, scan in enumerate(simList):
+		posArray[row,:,:] = np.array([target.state[0:2] for target in scan])
+	for col in range(nTargets):
+		# plt.plot(posArray[:,col,0], posArray[:,col,1],'-.')
+		# if kwargs.get("markers",False):
+		plt.plot(posArray[:,col,0], posArray[:,col,1],'.', alpha = 0.2,markeredgewidth = 0.6)
+
 def printScanList(scanList):
 	for index, measurement in enumerate(scanList):
 		print("\tMeasurement ", index, ":\t", end="", sep='')
@@ -167,7 +189,6 @@ def printTargetList(targetList):
 	print("TargetList:")
 	for targetIndex, target in enumerate(targetList):
 		print(target.__str__(targetIndex = targetIndex)) 
-		# print("T", str(targetIndex), ": \t", repr(target),"\n", target, sep = "")
 	print()
 
 def printHypothesesScore(targetList):
@@ -245,7 +266,6 @@ def backtrackNodePositions(selectedNodes, **kwargs):
 		if kwargs.get("debug",False):
 			print(e)
 		raise
-	
 
 def writeTracksToFile(filename,trackList, time, **kwargs):
 	f = open(filename,'w')

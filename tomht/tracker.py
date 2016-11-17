@@ -6,15 +6,17 @@ Trondheim, Norway
 Authumn 2016
 ========================================================================================
 """
-import numpy as np
-from scipy.sparse.csgraph import connected_components
+
+from . import helpFunctions as hpf
+from . import kalmanFilter as kf
+from .classDefinitions import Position, Velocity
+
 import time
-import helpFunctions as hpf
-import matplotlib.pyplot as plt
 import pulp
-from classDefinitions import Position, Velocity
-import kalmanFilter as kf
+import matplotlib.pyplot as plt
+import numpy as np
 from multiprocessing import Process
+from scipy.sparse.csgraph import connected_components
 
 class Target():
 	def __init__(self, **kwargs):
@@ -29,7 +31,6 @@ class Target():
 		Gamma 						= kwargs.get("Gamma")	
 		C 							= kwargs.get("C")
 		R 							= kwargs.get("R")
-		sigma 						= kwargs.get("sigma")
 
 		if (time is None) or (scanNumber is None) or (filteredStateMean is None) or (filteredStateCovariance is None):
 			raise TypeError("Target() need at least: time, scanNumber, state and covariance")
@@ -41,8 +42,6 @@ class Target():
 		self.measurement 				= kwargs.get("measurement")
 		self.cummulativeNLLR 			= kwargs.get("cummulativeNLLR", 0)
 		self.trackHypotheses 			= []	
-		self.sigma 						= sigma
-		self.sigma2 					= np.power(sigma,2)
 
 		#Kalman filter variables
 		##Parent KF "measurement update"
@@ -63,7 +62,6 @@ class Target():
 		self.R 							= R
 	
 	def __repr__(self):
-		from time import gmtime, strftime
 		if self.predictedStateMean is not None:
 			np.set_printoptions(precision = 4, suppress = True)
 			predStateStr = " \tPredState: " + str(self.predictedStateMean)
@@ -83,9 +81,9 @@ class Target():
 		else:
 			gateStr = ""
 
-		return ("Time: " + strftime("%H:%M:%S", gmtime(self.time))
-				+ " \t" + repr(self.getPosition())
-				+ " \t" + repr(self.getVelocity()) 
+		return ("Time: " + time.strftime("%H:%M:%S", time.gmtime(self.time))
+				+ "\t"  + str(self.getPosition())
+				+ " \t" + str(self.getVelocity()) 
 				+ " \tcNLLR:" + '{: 06.4f}'.format(self.cummulativeNLLR)
 				+ measStr
 				+ predStateStr
@@ -146,7 +144,7 @@ class Target():
 		self.addZeroHypothesis(time, scanNumber, P_d)
 
 		for measurementIndex, measurement in enumerate(measurementList.measurements):
-			if self.measurementIsInsideErrorEllipse(measurement):
+			if self.measurementIsInsideErrorEllipse(measurement,tracker.eta2):
 				(measRes, resCov, kalmanGain, filtState, filtCov) = kf.filterCorrect(
 					self.C, self.R, self.predictedStateMean, self.predictedStateCovariance, measurement.toarray() )
 				associatedMeasurements.add( (scanNumber, measurementIndex+1) )
@@ -191,7 +189,6 @@ class Target():
 		Gamma						=	kwargs.get("Gamma",	self.Gamma)
 		C							=	kwargs.get("C",		self.C)
 		R							=	kwargs.get("R",		self.R)
-		sigma						=	kwargs.get("sigma",	self.sigma)
 
 		return Target(
 			time 	 					= time,
@@ -207,12 +204,11 @@ class Target():
 			Gamma 						= Gamma,
 			C 							= C,
 			R 							= R,
-			sigma 						= sigma,
 			)
 
-	def measurementIsInsideErrorEllipse(self,measurement):
+	def measurementIsInsideErrorEllipse(self,measurement, eta2):
 		measRes = measurement.toarray()-self.C.dot(self.predictedStateMean)
-		return measRes.T.dot( np.linalg.inv(self.residualCovariance).dot( measRes ) ) <= self.sigma2
+		return measRes.T.dot( np.linalg.inv(self.residualCovariance).dot( measRes ) ) <= eta2
 
 	def addZeroHypothesis(self,time, scanNumber, P_d):
 		self.trackHypotheses.append(
@@ -229,15 +225,6 @@ class Target():
 		for hyp in self.trackHypotheses:
 			if hyp != keep:
 				self.trackHypotheses.remove(hyp)
-
-	def plotInitial(self, index):
-		plt.plot(self.filteredStateMean[0],self.filteredStateMean[1],"k+")
-		ax = plt.subplot(111)
-		normVelocity = self.filteredStateMean[2:4] / np.linalg.norm(self.filteredStateMean[2:4])
-		offset = 0.1 * normVelocity
-		position = self.filteredStateMean[0:2] - offset
-		ax.text(position[0], position[1], "T"+str(index), 
-			fontsize=8, horizontalalignment = "center", verticalalignment = "center")
 
 	def getMeasurementSet(self, root = True):
 		subSet = set()
@@ -272,7 +259,7 @@ class Target():
 
 class Tracker():
 	def __init__(self, Phi, C, Gamma, P_d, P0, R, Q, 
-						lambda_phi, lambda_nu, sigma, N, solverStr, **kwargs):
+						lambda_phi, lambda_nu, eta2, N, solverStr, **kwargs):
 
 		self.logTime 	= kwargs.get("logTime", False)
 		self.debug 		= kwargs.get("debug", False)
@@ -293,8 +280,7 @@ class Tracker():
 		self.lambda_phi = lambda_phi		
 		self.lambda_nu 	= lambda_nu		
 		self.lambda_ex 	= lambda_phi+lambda_nu
-		self.sigma 		= sigma
-		self.sigma2		= np.power(sigma,2)	
+		self.eta2		= eta2
 		self.N 		 	= N
 		self.solver  	= hpf.parseSolver(solverStr)
 
@@ -317,7 +303,6 @@ class Tracker():
 							Q  						= self.Q,
 							Gamma 					= self.Gamma,
 							C 						= self.C,
-							sigma 					= self.sigma,
 							R 						= self.R
 							)
 		self.__targetList__.append(target)

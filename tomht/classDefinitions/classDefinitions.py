@@ -20,7 +20,7 @@ class Position:
 		return Position(self.x+other.x, self.y + other.y)
 	
 	def __str__(self):
-		return 'Pos: ({: 9.2f},{: 9.2f})'.format(self.x, self.y)
+		return 'Pos: ({: .2f},{: .2f})'.format(self.x, self.y)
 	
 	def __repr__(self):
 		return '({:.3e},{:.3e})'.format(self.x, self.y)
@@ -54,7 +54,7 @@ class Velocity:
 			raise ValueError("Invalid arguments to Position")
 
 	def __str__(self):
-		return 'Vel: ({: 9.2f},{: 9.2f})'.format(self.x, self.y)
+		return 'Vel: ({: .2f},{: .2f})'.format(self.x, self.y)
 
 	def __repr__(self):
 		return '({:.3e},{:.3e})'.format(self.x, self.y)
