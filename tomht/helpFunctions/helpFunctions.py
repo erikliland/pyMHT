@@ -49,8 +49,8 @@ def plotCovarianceEllipse(cov, position, eta2):
 	from matplotlib.patches import Ellipse
 	lambda_, _ = np.linalg.eig(cov)
 	ell = Ellipse( xy	 = (position.x, position.y), 
-				   width = np.sqrt(lambda_[0])*eta2*2,
-				   height= np.sqrt(lambda_[1])*eta2*2,
+				   width = np.sqrt(lambda_[0])*np.sqrt(eta2)*2,
+				   height= np.sqrt(lambda_[1])*np.sqrt(eta2)*2,
 				   angle = np.rad2deg( np.arctan2( lambda_[1], lambda_[0]) ),
 				   linewidth = 2,
 				   )
@@ -185,10 +185,13 @@ def printClusterList(clusterList):
 	for clusterIndex, cluster in enumerate(clusterList):
 		print("Cluster ", clusterIndex, " contains target(s):\t", cluster, sep ="", end = "\n")
 	
-def printTargetList(targetList):
+def printTargetList(targetList, **kwargs):
 	print("TargetList:")
 	for targetIndex, target in enumerate(targetList):
-		print(target.__str__(targetIndex = targetIndex)) 
+		if kwargs.get("backtrack", False):
+			print(target.backtrack().__str__(targetIndex = targetIndex)) 
+		else:
+			print(target.__str__(targetIndex = targetIndex)) 
 	print()
 
 def printHypothesesScore(targetList):

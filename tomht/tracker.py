@@ -13,6 +13,7 @@ from .classDefinitions import Position, Velocity
 
 import time
 import pulp
+import scipy.sparse as sp
 import matplotlib.pyplot as plt
 import numpy as np
 from multiprocessing import Process
@@ -107,6 +108,9 @@ class Target():
 			ret += hyp.__str__(level = level+1, hypIndex = hypIndex + int(hasNotZeroHyp))
 		return ret
 
+	def __sub__(self,other):
+		return self.filteredStateMean - other.filteredStateMean
+
 	def getPosition(self):
 		pos = Position(self.filteredStateMean[0:2])
 		return pos
@@ -114,8 +118,8 @@ class Target():
 	def getVelocity(self):
 		return Velocity(self.filteredStateMean[2:4])
 
-	def backtrack(self,stepsBack):
-		if stepsBack == 0:
+	def backtrack(self,stepsBack = float('inf')):
+		if (stepsBack == 0) or (self.parent is None):
 			return self
 		return self.parent.backtrack(stepsBack-1)
 
@@ -257,9 +261,43 @@ class Target():
 		recSearchBestHypothesis(self, bestScore, bestHypothesis)
 		return bestHypothesis
 
+	def getLeafNodes(self):
+		def recGetLeafNode(node, nodes):
+			if len(node.trackHypotheses) == 0:
+				nodes.append(node)
+			else:
+				for hyp in node.trackHypotheses:
+					recGetLeafNode(hyp,nodes)
+		nodes = []
+		recGetLeafNode(self,nodes)
+		return nodes
+
+	def getLeafParents(self):
+		leafNodes = self.getLeafNodes()
+		parents = set()
+		for node in leafNodes:
+			parents.add(node.parent)
+		return parents
+
+	def pruneSimilarState(self, threshold):
+		for hyp in self.trackHypotheses[1:]:
+			deltaPos = np.linalg.norm(self.trackHypotheses[0]-hyp)
+			if deltaPos <= threshold:
+				self.trackHypotheses.pop(0)
+				break
+
+	def recursiveSubtractScore(self, score):
+		if score == 0:
+			return
+		self.cummulativeNLLR -= score
+		
+		for hyp in self.trackHypotheses:
+			hyp.recursiveSubtractScore(score)
+
+
 class Tracker():
-	def __init__(self, Phi, C, Gamma, P_d, P0, R, Q, 
-						lambda_phi, lambda_nu, eta2, N, solverStr, **kwargs):
+	def __init__(self, Phi, C, Gamma, P_d, P0, R, Q, lambda_phi, 
+		lambda_nu, eta2, pruneThreshold, N, solverStr, **kwargs):
 
 		self.logTime 	= kwargs.get("logTime", False)
 		self.debug 		= kwargs.get("debug", False)
@@ -268,7 +306,7 @@ class Tracker():
 		self.__targetList__ 			= []
 		self.__scanHistory__ 			= []
 		self.__associatedMeasurements__ = []
-		self.__trackNodes__ 			= None
+		self.__trackNodes__ 			= np.empty(0,dtype = np.dtype(object))
 		self.runtimeLog = {	'Process':	np.array([0.0,0]),
 							'Cluster':	np.array([0.0,0]),
 							'Optim':	np.array([0.0,0]),
@@ -283,6 +321,7 @@ class Tracker():
 		self.eta2		= eta2
 		self.N 		 	= N
 		self.solver  	= hpf.parseSolver(solverStr)
+		self.pruneThreshold = pruneThreshold
 
 		#State space model
 		self.Phi 		= Phi
@@ -307,51 +346,45 @@ class Tracker():
 							)
 		self.__targetList__.append(target)
 		self.__associatedMeasurements__.append( set() )
+		self.__trackNodes__ = np.append(self.__trackNodes__,target)
 
 	def addMeasurementList(self,measurementList, **kwargs):
-		tic1 = time.clock()
-		tic2 = time.clock()
+		tic1 = time.process_time()
+		tic2 = time.process_time()
 		self.__scanHistory__.append(measurementList)
 		nMeas = len(measurementList.measurements)
 		nTargets = len(self.__targetList__)
-		# if kwargs.get("multiThread", True):
-		# 	processes = []
-		# 	for targetIndex, target in enumerate(self.__targetList__):
-		# 		processes.append(addProcess(target, measurementList, self.__associatedMeasurements__[targetIndex],self))
-		# 	for process in processes:
-		# 		process.start()
-		# 	for process in processes:
-		# 		process.join()
-		# else:
 		for targetIndex, target in enumerate(self.__targetList__):
 			target.processNewMeasurement(measurementList, self.__associatedMeasurements__[targetIndex],self)
 
-		toc2 = time.clock() - tic2
+		toc2 = time.process_time() - tic2
 		if kwargs.get("printAssociation",False):
 			print(*__associatedMeasurements__, sep = "\n", end = "\n\n")
 		
 		#--Cluster targets--
-		tic3 = time.clock()
+		tic3 = time.process_time()
 		clusterList = self._findClustersFromSets()
-		toc3 = time.clock() - tic3
+		toc3 = time.process_time() - tic3
 		if kwargs.get("printCluster",False):
 			hpf.printClusterList(clusterList)
 
 		#--Maximize global (cluster vise) likelihood--
-		tic4 = time.clock()
-		self.__trackNodes__ = np.empty(len(self.__targetList__),dtype = np.dtype(object))
+		tic4 = time.process_time()
+		nOptimSolved = 0
 		for cluster in clusterList:
 			if len(cluster) == 1:
-				# self._pruneSmilarState(self.__targetList__[cluster[0]], 1)
+				self._pruneSmilarState(cluster, self.pruneThreshold)
 				self.__trackNodes__[cluster] = self.__targetList__[cluster[0]]._selectBestHypothesis()
 			else:
+				self._pruneSmilarState(cluster, self.pruneThreshold/2)
 				self.__trackNodes__[cluster] = self._solveOptimumAssociation(cluster)
-		toc4 = time.clock()-tic4
+				nOptimSolved += 1
+		toc4 = time.process_time()-tic4
 		
-		tic5 = time.clock()
+		tic5 = time.process_time()
 		self._nScanPruning()
-		toc5 = time.clock()-tic5
-		toc1 = time.clock() - tic1
+		toc5 = time.process_time()-tic5
+		toc1 = time.process_time() - tic1
 
 		if self.logTime:
 			self.runtimeLog['Process'] 	+= np.array([toc2,1])
@@ -365,7 +398,7 @@ class Tracker():
 					" \tTotal time ", '{:5.4f}'.format(toc1),
 					"\tProcess ",	'{:5.4f}'.format(toc2),
 					"\tCluster ",	'{:5.4f}'.format(toc3),
-					"\tOptim ",	'{:5.4f}'.format(toc4),
+					'\tOptim({0:g}) {1:5.4f}'.format(nOptimSolved ,toc4),
 					"\tPrune ",	'{:5.4f}'.format(toc5),
 					sep = "")
 
@@ -392,7 +425,7 @@ class Tracker():
 			for measurementIndex, measurement in enumerate(superSet):
 				adjacencyMatrix[targetIndex,measurementIndex+nTargets] = (measurement in targetSet)
 		(nClusters, labels) = connected_components(adjacencyMatrix)
-		return [np.where(labels[:nTargets]==clusterIndex)[0].tolist() for clusterIndex in range(nClusters)]
+		return [np.where(labels[:nTargets]==clusterIndex)[0] for clusterIndex in range(nClusters)]
 
 	def getTrackNodes(self):
 		return self.__trackNodes__
@@ -407,11 +440,11 @@ class Tracker():
 		# 	nHypInClusterArray = _getHypInCluster(cluster)
 		# 	nRealMeasurementsInCluster= len(set.union(*[__associatedMeasurements__[i] for i in cluster]))
 		# 	print("reduced problemSize:", nRealMeasurementsInCluster*sum(nHypInClusterArray))
-		# t0 = time.clock()
+		t0 = time.process_time()
 		(A1, measurementList) = self._createA1(nRealMeasurementsInCluster,sum(nHypInClusterArray), cluster)
 		A2 	= self._createA2(len(cluster), nHypInClusterArray)
 		C 	= self._createC(cluster)
-		# t1 = time.clock()-t0
+		t1 = time.process_time()-t0
 		# print("matricesTime\t", round(t1,3))
 
 		selectedHypotheses = self._solveBLP(A1,A2, C)
@@ -474,7 +507,8 @@ class Tracker():
 							measurementIndex = len(measurementList) -1
 						activeMeasurementsCpy[measurementIndex] = True
 					recActiveMeasurement(hyp, A1, measurementList, activeMeasurementsCpy, hypothesisIndex)
-		A1 	= np.zeros((nRow,nCol), dtype = bool)
+		A1 	= np.zeros((nRow,nCol), dtype = bool) #Numpy Array
+		# A1 = sp.dok_matrix((nRow,nCol),dtype = bool) #pulp.sparse Matrix
 		activeMeasurements = np.zeros(nRow, dtype = bool)
 		measurementList = []
 		hypothesisIndex = [0]
@@ -532,9 +566,9 @@ class Tracker():
 			prob += pulp.lpSum([ A1[row,col] * x[col] for col in range(nHyp) if A1[row,col]]) <= 1
 		for row in range(nTargets):
 			prob += pulp.lpSum([ A2[row,col] * x[col] for col in range(nHyp)  if A2[row,col] ]) == 1
-		tic = time.clock()
+		tic = time.process_time()
 		sol = prob.solve(self.solver)
-		toc = time.clock()-tic
+		toc = time.process_time()-tic
 		if self.debug:
 			print("n=",nHyp,"=>",round(toc,3))
 		def getSelectedHyp1(p):
@@ -548,48 +582,50 @@ class Tracker():
 		return getSelectedHyp2(prob)
 
 	def _nScanPruning(self):
-		#TODO: Should the cNLLR be "normalized" so that its zero at each root node?
-		def recPruneNScan(target, targetIndex, targetList, stepsLeft):
+		def recPruneNScan(node, targetIndex, targetList, stepsLeft):
 			if stepsLeft <= 0:
-				if target.parent is not None:
-					changed = (targetList[targetIndex] != target)
-					targetList[targetIndex] = target
-					target.parent._pruneAllHypothesisExeptThis(target)
-					return (changed, target.scanNumber)
+				if node.parent is not None:
+					changed = (targetList[targetIndex] != node)
+					targetList[targetIndex] = node
+					node.parent._pruneAllHypothesisExeptThis(node)
+					node.recursiveSubtractScore(node.cummulativeNLLR)
+					return changed
 				else:
-					return (False, None)
-			elif target.parent is not None:
-				return recPruneNScan(target.parent, targetIndex, targetList, stepsLeft-1)
+					return False
+			elif node.parent is not None:
+				return recPruneNScan(node.parent, targetIndex, targetList, stepsLeft-1)
 			else:
-				return (False, None)
-		for targetIndex, target in enumerate(self.__trackNodes__):
-			(changed, scanNumber) = recPruneNScan(target, targetIndex, self.__targetList__, self.N)
+				return False
+		
+		for targetIndex, node in enumerate(self.__trackNodes__):
+			changed = recPruneNScan(node, targetIndex, self.__targetList__, self.N)
 			if changed:
 				self.__associatedMeasurements__[targetIndex] = self.__targetList__[targetIndex].getMeasurementSet()
 
-	def _pruneSmilarState(self,target, errorNormLimit):
-		# print("Pruning")
-		
-		nHyp = len(target.trackHypotheses)
-		nDelta = int(hpf.binomial(nHyp,2))
-		deltaX = np.zeros([4,nDelta])
-		hypotheses = target.trackHypotheses[1:]
-		done = set()
-		for a in target.trackHypotheses[:-1]:
-			for b in hypotheses:
-				if a != b:
-					targetID = (a.measurementNumber,b.measurementNumber)
-					if targetID not in done:
-						deltaX[:,len(done)] = (a.filteredStateMean - b.filteredStateMean)
-						done.add( targetID )
-			hypotheses.pop(0)
-		for col in range(nDelta):
-			errorNorm = np.linalg.norm(deltaX[:,col])
-			# print("Norm",round(errorNorm,3))
-			if errorNorm < errorNormLimit:
-				# print("Found similar hypotheses")
-				if col < nHyp:
-					# print("Removing zero hypothesis")
-					target.trackHypotheses.pop(0)
+	def _pruneSmilarState(self,cluster, threshold):
+		for targetIndex in cluster:
+			leafParents = self.__targetList__[targetIndex].getLeafParents()
+			for node in leafParents:
+				node.pruneSimilarState(threshold)
 
-
+		# nHyp = len(target.trackHypotheses)
+		# nDelta = int(hpf.binomial(nHyp,2))
+		# deltaX = np.zeros([4,nDelta])
+		# hypotheses = target.trackHypotheses[1:]
+		# done = set()
+		# for a in target.trackHypotheses[:-1]:
+		# 	for b in hypotheses:
+		# 		if a != b:
+		# 			targetID = (a.measurementNumber,b.measurementNumber)
+		# 			if targetID not in done:
+		# 				deltaX[:,len(done)] = (a.filteredStateMean - b.filteredStateMean)
+		# 				done.add( targetID )
+		# 	hypotheses.pop(0)
+		# for col in range(nDelta):
+		# 	errorNorm = np.linalg.norm(deltaX[:,col])
+		# 	# print("Norm",round(errorNorm,3))
+		# 	if errorNorm < errorNormLimit:
+		# 		# print("Found similar hypotheses")
+		# 		if col < nHyp:
+		# 			# print("Removing zero hypothesis")
+		# 			target.trackHypotheses.pop(0)
