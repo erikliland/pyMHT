@@ -1,5 +1,4 @@
 import os, sys
-sys.path.append(os.path.join(os.path.dirname(__file__),".."))
 import matplotlib.pyplot as plt
 import tomht.radarSimulator as sim
 import numpy as np
@@ -114,4 +113,5 @@ def compareResults():
 	tree.write("compareResult.xml")
 
 if __name__ == '__main__':
+	os.chdir( os.path.dirname(os.path.abspath(__file__)) )
 	compareResults()

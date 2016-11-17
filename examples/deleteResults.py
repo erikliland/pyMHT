@@ -25,10 +25,14 @@ def deleteFiles(**kwargs):
 							pass
 
 if __name__ == '__main__':
-	deleteFiles(	loadLocation = s.loadLocation,
-					files = s.files,
-					solvers = s.solvers,
-					PdList = s.PdList,
-					NList = s.NList,
-					lambdaPhiList = s.lambdaPhiList
-					)
+	confirmation = input("Are you sure you want to delete all those files? [Yes/No]")
+	if confirmation == "Yes":
+		deleteFiles(	loadLocation = s.loadLocation,
+						files = s.files,
+						solvers = s.solvers,
+						PdList = s.PdList,
+						NList = s.NList,
+						lambdaPhiList = s.lambdaPhiList
+						)
+	else:
+		print("Phuuu! The files are still there... Smart choice!")
