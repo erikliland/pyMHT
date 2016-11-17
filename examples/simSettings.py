@@ -9,7 +9,6 @@ PdList 		= [0.5, 0.7, 0.9]
 NList 		= [1, 3, 6]
 lambdaPhiList = [0, 1e-4, 2e-4, 4e-4]
 solvers 	= ["CBC","CPLEX","GLPK","GUROBI"]
-solvers.sort()
 nMonteCarlo = 10	#Number of copies of each simulation (random)
 lambda_nu 	= 0.0001#Expected number of new targets per unit volume 
 confidence 	= 0.95	#Chi2 inverse cdf, df=2
