@@ -17,42 +17,49 @@ class SimTarget:
 			print("Invalid arguments to SimTarget")
 
 	def __str__(self):
-		return (str(self.Position())+" "+
-				str(self.Velocity()) )
+		return ('Pos: ({0: 6.1f},{1: 6.1f})'.format(self.state[0], self.state[1])+" "+
+				'Vel: ({0: 6.1f},{1: 6.1f})'.format(self.state[2], self.state[3])+" "+
+				'Speed: {:4.1f}m/s'.format(self.speed()) )
 
 	def __repr__(self):
 		return '({:.3e},{:.3e},{:.3e},{:.3e})'.format(*self.state)
 
-	def Position(self):
+	def position(self):
 		return Position(self.state[0],self.state[1])
 
-	def Velocity(self):
+	def velocity(self):
 		return Velocity(self.state[2],self.state[3])
+
+	def speed(self):
+		return np.linalg.norm(self.state[2:4])
 
 	def calculateNextState(self, timeStep, Phi, Q, Gamma):
 		w = np.random.multivariate_normal(np.zeros(2), Q)
 		nextState = Phi.dot(self.state) + Gamma.dot(w.T)
 		return SimTarget(nextState, self.time + timeStep)
 
-	def positionWithNoiseAndLoss(self, H,  R, P_d = 1, p0 = None, radarRange = None):
+	def positionWithNoiseAndLoss(self, H,  R, P_d = 1, p0 = Position(0,0), radarRange = None):
 		if np.random.uniform() < P_d:
 			v = np.random.multivariate_normal(np.zeros(2), R)
 			state = H.dot(self.state) + v
 			return Position(state[0], state[1])
 		else:
-			return _generateClutter(p0,radarRange)
+			if radarRange is None:
+				raise ValueError("If P_d < 1, p0 and radarRange is needed")
+			return _generateCartesianClutter(p0,radarRange)
 
-def generateInitialTargets(randomSeed, numOfTargets, centerPosition, radarRange, maxSpeed):
+def generateInitialTargets(randomSeed, numOfTargets, centerPosition, radarRange, meanSpeed):
 	np.random.seed(randomSeed)
 	initialTime = time.time()
 	initialList = []
+	speeds = np.array([1, 10, 12, 15, 28, 35]) * 0.5 #~knots to m/s
 	for targetIndex in range(numOfTargets):
 		heading = np.random.uniform(0,360)
 		distance= np.random.uniform(0,radarRange*0.8)
 		px,py 	= _pol2cart(heading,distance)
 		P0 		= centerPosition + Position(px,py)
 		heading = np.random.uniform(0,360)
-		speed 	= np.random.uniform(maxSpeed*0.2, maxSpeed)
+		speed 	= np.random.choice(speeds)
 		vx, vy 	= _pol2cart(heading, speed)
 		V0 		= Velocity(vx,vy)
 		target 	= SimTarget(np.array([px,py,vx,vy]),initialTime)
@@ -69,21 +76,21 @@ def simulateTargets(randomSeed, initialTargets, numOfSteps, timeStep, Phi, Q, Ga
 	simList.pop(0)
 	return simList
 
-def simulateScans(randomSeed, simList, H, R, shuffle = True, lambda_phi = None, rRange = None, p0 = None, P_d = 1):	
+def simulateScans(randomSeed, simList, H, R, lambda_phi = None, rRange = None, p0 = None, **kwargs):
 	np.random.seed(randomSeed)
 	area = np.pi * np.power(rRange,2)
-	nClutter = int(np.floor(lambda_phi * area))
-	#print("nClutter",nClutter)
+	lClutter = lambda_phi * area
 	scanList = []
 	for scan in simList:
 		measurementList = MeasurementList(scan[0].time)
-		measurementList.measurements = [target.positionWithNoiseAndLoss(H, R, P_d, p0, rRange) for target in scan]
+		measurementList.measurements = [target.positionWithNoiseAndLoss(H, R, kwargs.get("P_d",1), p0, rRange) for target in scan]
 		if (lambda_phi is not None) and (rRange is not None) and (p0 is not None):
-			for i in range(int(nClutter * np.random.normal(1,0.05))):
-				clutter = _generateClutter(p0, rRange)
+			nClutter = np.random.poisson(lClutter)
+			for i in range(nClutter):
+				clutter = _generateCartesianClutter(p0, rRange)
 				measurementList.measurements.append( clutter)
 		scanList.append(measurementList)
-	if shuffle:
+	if kwargs.get("shuffle",True):
 		for measurementList in scanList:
 			np.random.shuffle(measurementList.measurements)
 	return scanList
@@ -99,7 +106,7 @@ def importFromFile(filename, **kwargs):
 		f = open(filename,'r')
 	except:
 		print("Could not open the file:", filename)
-		raise
+		return [],[]
 	for lineIndex, line in enumerate(f):
 		lineIndex = lineIndex-startLine
 		elements = line.strip().split(',')
@@ -150,11 +157,19 @@ def findCenterPositionAndRange(simList):
 	R = max(xMax-xMin, yMax-yMin)
 	return p0,R
 
-def _generateClutter(centerPosition, radarRange):
+def _generateRadialClutter(centerPosition, radarRange):
 	heading = np.random.uniform(0,360)
 	distance= np.random.uniform(0,radarRange)
 	px,py 	= _pol2cart(heading,distance)
 	return centerPosition + Position(px,py)
+
+def _generateCartesianClutter(centerPosition, radarRange):
+	while True:
+		x 	= np.random.uniform(-radarRange,radarRange)
+		y	= np.random.uniform(-radarRange,radarRange)
+		pos = np.array([x,y])
+		if np.linalg.norm(pos) <= radarRange:
+			return centerPosition + Position(pos)
 
 def _pol2cart(bearingDEG,distance):
 	angleDEG = 90 - bearingDEG
