@@ -39,18 +39,13 @@ def runDynamicAgent(fileString,solver,P_d, N, lambda_phi,**kwargs):
 	
 	for scanIndex, measurementList in enumerate(scanList):
 		tracker.addMeasurementList(measurementList, trueState = simList[scanIndex])
-		if scanIndex == 150:
+		if scanIndex == 50:
 			break
 
 	trackList = hpf.backtrackNodePositions(tracker.__trackNodes__, debug = True)
-	if any ( len(track)-1 != len(simList) for track in trackList):
-		print(",",end = "", flush = True)
-	else: 
-		print(".",end = "", flush = True)
-	print('@{0:5.1f}sec ({1:.1f} sec)'.format(time.time()-runStart, simLog))
 	
 	association = hpf.backtrackMeasurementsIndices(tracker.__trackNodes__)
-	print("Association",*association, sep = "\n")
+	#print("Association",*association, sep = "\n")
 
 	fig1 = plt.figure(num=1, figsize = (9,9), dpi=100)
 	hpf.plotRadarOutline(p0, radarRange, center = False)
@@ -59,7 +54,7 @@ def runDynamicAgent(fileString,solver,P_d, N, lambda_phi,**kwargs):
 	hpf.plotValidationRegionFromNodes(tracker.__trackNodes__,tracker.eta2, 1)
 	# hpf.plotValidationRegionFromForest(tracker.__targetList__, sigma, 1)
 	# hpf.plotMeasurementsFromForest(tracker.__targetList__, real = True, dummy = True)
-	# hpf.plotMeasurementsFromList(tracker.__scanHistory__)
+	hpf.plotMeasurementsFromList(tracker.__scanHistory__[-2:-1])
 	hpf.plotMeasurementsFromNodes(tracker.__trackNodes__, labels = False, dummy = True)
 	# hpf.plotHypothesesTrack(tracker.__targetList__)
 	hpf.plotActiveTrack(tracker.__trackNodes__)
@@ -71,4 +66,4 @@ def runDynamicAgent(fileString,solver,P_d, N, lambda_phi,**kwargs):
 
 if __name__ == '__main__':
 	os.chdir(os.path.dirname(os.path.abspath(__file__)))
-	runDynamicAgent(croppedFiles[0], solvers[0], 0.7,3,lambdaPhiList[3])
+	runDynamicAgent(croppedFiles[0], solvers[0], 0.7,3,lambdaPhiList[2])

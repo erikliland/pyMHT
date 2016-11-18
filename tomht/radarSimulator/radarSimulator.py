@@ -154,7 +154,7 @@ def findCenterPositionAndRange(simList):
 			xMax = simTarget.state[0] if simTarget.state[0] > xMax else xMax
 			yMax = simTarget.state[1] if simTarget.state[1] > yMax else yMax
 	p0 = Position( xMin+(xMax-xMin)/2 , yMin + (yMax-yMin)/2 )
-	R = max(xMax-xMin, yMax-yMin)
+	R = np.sqrt(np.power(max(abs(xMax-p0.x),abs(xMin-p0.x)),2)  + np.power(max(abs(yMax-p0.y),abs(yMin-p0.y)),2) )
 	return p0,R
 
 def _generateRadialClutter(centerPosition, radarRange):
