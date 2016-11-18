@@ -109,6 +109,7 @@ if __name__ == '__main__':
 		for opt, arg in opts:
 			if opt == "-i":
 				nIterations = int(arg)
+		print("Using", os.cpu_count(), "workers")
 		pool = mp.Pool(os.cpu_count(),initWorker)
 		if nIterations is not None:
 			runDynamicAgents(pool, nMonteCarlo = nIterations)
