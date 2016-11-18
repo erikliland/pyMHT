@@ -40,7 +40,7 @@ def runDynamicAgent(fileString,solver,P_d, N, lambda_phi,**kwargs):
 	for scanIndex, measurementList in enumerate(scanList):
 		tracker.addMeasurementList(measurementList, trueState = simList[scanIndex])
 		if scanIndex == 50:
-			break
+			pass
 
 	trackList = hpf.backtrackNodePositions(tracker.__trackNodes__, debug = True)
 	
