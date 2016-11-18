@@ -36,15 +36,16 @@ def openGroundTruth(filename):
 
 def compareResults():
 	root = ET.Element("simulations", nMonteCarlo = str(nMonteCarlo))
-	for fileString in files:
+	for fileString in croppedFiles:
 		filePath = os.path.join(loadLocation,os.path.splitext(fileString)[0],fileString)
 		doc = ET.SubElement(root,"file", name = os.path.basename(fileString))
 		trueTracks = openGroundTruth(filePath)
 		trueTrackLength = len(trueTracks[0])
 		nTracksTrue = trueTracks.shape[0]
 		for solver in solvers:
+			solv = ET.SubElement(doc, "Solver", name = solver)
 			for P_d in PdList:
-				prob = ET.SubElement(doc, "P_d", value = str(P_d))
+				prob = ET.SubElement(solv, "P_d", value = str(P_d))
 				for N in NList:
 					num = ET.SubElement(prob, "N", value = str(N))
 					for lambda_phi in lambdaPhiList:
@@ -104,11 +105,6 @@ def compareResults():
 							# ET.SubElement(lambdaPhi,"covConsistence").text = simulation.get("covConsistence")
 						else:
 							print()
-						# break
-		# 			break
-		# 		break
-		# 	break
-		# break
 	tree = ET.ElementTree(root)
 	tree.write("compareResult.xml")
 
