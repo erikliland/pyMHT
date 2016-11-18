@@ -5,6 +5,7 @@ files 		= [	'dynamic_agents_full_cooperation.txt',
 				'dynamic_and_static_agents_large_space.txt',
 				'dynamic_and_static_agents_narrow_space.txt'
 				]
+croppedFiles = [os.path.join(os.path.splitext(file)[0]+"_cropped.txt") for file in files]
 PdList 		= [0.5, 0.7, 0.9]
 NList 		= [1, 3, 6]
 lambdaPhiList = [0, 1e-4, 2e-4, 4e-4]

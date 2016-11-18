@@ -122,8 +122,21 @@ if __name__ == '__main__':
 	print(args)
 	tic = time.clock()
 	try:
-		pool = mp.Pool(args.get("c",os.cpu_count()),initWorker)
-		runDynamicAgents(pool, **args)
+		argv = sys.argv[1:]
+		nIterations = None
+		try:
+			opts, args = getopt.getopt(argv,"i:",["n="])
+		except getopt.GetoptError:
+			pass
+		for opt, arg in opts:
+			if opt == "-i":
+				nIterations = int(arg)
+		print("Using", os.cpu_count(), "workers")
+		pool = mp.Pool(os.cpu_count(),initWorker)
+		if nIterations is not None:
+			runDynamicAgents(pool, nMonteCarlo = nIterations)
+		else:
+			runDynamicAgents(pool)
 	except KeyboardInterrupt:
 		pool.terminate()
 		pool.join()

@@ -31,8 +31,8 @@ def runDynamicAgent(fileString,solver,P_d, N, lambda_phi,**kwargs):
 	simLog = 0.0
 	
 	seed = 5446
-	scanList = sim.simulateScans(seed, simList, model.C, model.Rsim, lambda_phi,radarRange, p0, P_d = P_d, shuffle = False)
-	tracker = tomht.Tracker(model.Phi, model.C, model.Gamma, P_d, model.P0, model.R, model.Q, lambda_phi, lambda_nu, eta2, N, solver, logTime = True)
+	scanList = sim.simulateScans(seed, simList, model.C, model.R(model.sigmaR_true), lambda_phi,radarRange, p0, P_d = P_d, shuffle = False)
+	tracker = tomht.Tracker(model.Phi, model.C, model.Gamma, P_d, model.P0, model.R(), model.Q, lambda_phi, lambda_nu, eta2, N, 1, solver, logTime = True)
 	for initialTarget in initialTargets:
 	 	tracker.initiateTarget(initialTarget)
 
@@ -71,4 +71,4 @@ def runDynamicAgent(fileString,solver,P_d, N, lambda_phi,**kwargs):
 
 if __name__ == '__main__':
 	os.chdir(os.path.dirname(os.path.abspath(__file__)))
-	runDynamicAgent(files[0], solvers[1], 0.9,6,lambdaPhiList[2])
+	runDynamicAgent(croppedFiles[0], solvers[0], 0.7,3,lambdaPhiList[3])
