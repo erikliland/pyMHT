@@ -96,7 +96,7 @@ def simulateFile(simList, loadLocation, fileString, solver, lambda_phi, P_d, N, 
 def runDynamicAgents(pool, **kwargs):
 	for solver in sim.solvers:
 		print('{:6s}'.format(solver),hpf.solverIsAvailable(solver))
-	for fileString in sim.files:
+	for fileString in sim.croppedFiles:
 		filePath = os.path.join(sim.loadLocation,os.path.splitext(fileString)[0],fileString)
 		(initialTargets, simList) = radarSimulator.importFromFile(filePath)
 		(p0, radarRange) = radarSimulator.findCenterPositionAndRange(simList)
@@ -122,21 +122,9 @@ if __name__ == '__main__':
 	print(args)
 	tic = time.clock()
 	try:
-		argv = sys.argv[1:]
-		nIterations = None
-		try:
-			opts, args = getopt.getopt(argv,"i:",["n="])
-		except getopt.GetoptError:
-			pass
-		for opt, arg in opts:
-			if opt == "-i":
-				nIterations = int(arg)
 		print("Using", os.cpu_count(), "workers")
 		pool = mp.Pool(os.cpu_count(),initWorker)
-		if nIterations is not None:
-			runDynamicAgents(pool, nMonteCarlo = nIterations)
-		else:
-			runDynamicAgents(pool)
+		runDynamicAgents(pool, **args)
 	except KeyboardInterrupt:
 		pool.terminate()
 		pool.join()
