@@ -373,10 +373,10 @@ class Tracker():
 		nOptimSolved = 0
 		for cluster in clusterList:
 			if len(cluster) == 1:
-				self._pruneSmilarState(cluster, self.pruneThreshold)
+				#self._pruneSmilarState(cluster, self.pruneThreshold)
 				self.__trackNodes__[cluster] = self.__targetList__[cluster[0]]._selectBestHypothesis()
 			else:
-				self._pruneSmilarState(cluster, self.pruneThreshold/2)
+				#self._pruneSmilarState(cluster, self.pruneThreshold/2)
 				self.__trackNodes__[cluster] = self._solveOptimumAssociation(cluster)
 				nOptimSolved += 1
 		toc4 = time.process_time()-tic4

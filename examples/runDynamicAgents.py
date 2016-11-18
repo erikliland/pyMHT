@@ -13,11 +13,11 @@ import xml.etree.ElementTree as ET
 import multiprocessing as mp 
 import simSettings as sim
 
-def runSimulation(simList, initialTargets, lambda_phi,lambda_nu,radarRange,p0,P_d,N,solver, i):
+def runSimulation(simList, initialTargets, lambda_phi,lambda_nu,radarRange,p0,P_d,N,solver,timeoutDuration, i):
 	try:
 		seed = 5446 + i
 		scanList = radarSimulator.simulateScans(seed, simList, model.C, model.R(model.sigmaR_true), lambda_phi,radarRange, p0, P_d = P_d, shuffle = True)
-		tracker = tomht.Tracker(model.Phi, model.C, model.Gamma, P_d, model.P0, model.R(), model.Q, lambda_phi, lambda_nu, sim.eta2, model.sigmaR_tracker, N, solver, logTime = True)
+		tracker = tomht.Tracker(model.Phi, model.C, model.Gamma, P_d, model.P0, model.R(), model.Q, lambda_phi, lambda_nu, sim.eta2, model.sigmaR_tracker, N, solver, logTime = True, timeLimit = 60)
 		for initialTarget in initialTargets:
 		 	tracker.initiateTarget(initialTarget)
 
@@ -26,12 +26,12 @@ def runSimulation(simList, initialTargets, lambda_phi,lambda_nu,radarRange,p0,P_
 		for scanIndex, measurementList in enumerate(scanList):
 			covConsistenceList.append( tracker.addMeasurementList(measurementList, trueState = simList[scanIndex], multiThread = False) )
 		toc = time.clock()-tic
-		trackList = hpf.backtrackNodePositions(tracker.__trackNodes__, debug = True)
+		trackList = hpf.backtrackNodePositions(tracker.__trackNodes__, debug = False)
 		if any ( len(track)-1 != len(simList) for track in trackList):
 			print(",",end = "", flush = True)
 		else: 
 			print(".",end = "", flush = True)
-		return {'i':i, 
+		res =  {'i':i, 
 				'seed':seed, 
 				'trackList':trackList, 
 				'time':toc, 
@@ -40,7 +40,11 @@ def runSimulation(simList, initialTargets, lambda_phi,lambda_nu,radarRange,p0,P_
 				}
 	except pulp.solvers.PulpSolverError:
 		print("/",end = "", flush = True)
-		return 
+		res = None 
+	except ValueError:
+		print("v",end = "", flush = True)
+		res = None 
+	return res
 
 def simulateFile(simList, loadLocation, fileString, solver, lambda_phi, P_d, N, radarRange,p0,initialTargets, **kwargs):
 	savefilePath = (os.path.join(loadLocation,os.path.splitext(fileString)[0],"results",os.path.splitext(fileString)[0])
@@ -70,7 +74,7 @@ def simulateFile(simList, loadLocation, fileString, solver, lambda_phi, P_d, N, 
 		print("Simulating: ",printFile, end = "", flush = True)
 		runStart = time.time()
 		simLog = 0.0
-		results = pool.map(functools.partial(runSimulation,simList,initialTargets,lambda_phi,sim.lambda_nu,radarRange,p0,P_d,N,solver),range(nMonteCarlo))
+		results = pool.map(functools.partial(runSimulation,simList,initialTargets,lambda_phi,sim.lambda_nu,radarRange,p0,P_d,N,solver,1),range(nMonteCarlo))
 		for res in results:
 			if res is not None:
 				simLog += res['time']

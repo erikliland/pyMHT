@@ -252,9 +252,9 @@ def backtrackNodePositions(selectedNodes, **kwargs):
 		measurementList.append(Position(node.filteredStateMean[0:2]))
 		if node.parent is not None:
 			if node.parent.scanNumber != node.scanNumber-1:
-				print()
-				print(node.backtrack(3))
-				raise ValueError("Inconsistent scanNumber-ing:", node.scanNumber,"->", node.parent.scanNumber)
+				#print()
+				#print(node.backtrack(3))
+				raise ValueError("Inconsistent scanNumber-ing:", node.parent.scanNumber,"->", node.scanNumber)
 			recBacktrackNodePosition(node.parent, measurementList)
 
 	try:

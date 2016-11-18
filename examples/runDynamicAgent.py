@@ -71,4 +71,4 @@ def runDynamicAgent(fileString,solver,P_d, N, lambda_phi,**kwargs):
 
 if __name__ == '__main__':
 	os.chdir(os.path.dirname(os.path.abspath(__file__)))
-	runDynamicAgent(files[0], solvers[0], 0.7,3,lambdaPhiList[3])
+	runDynamicAgent(files[0], solvers[1], 0.9,6,lambdaPhiList[2])
