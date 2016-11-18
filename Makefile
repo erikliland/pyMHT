@@ -49,6 +49,7 @@ init:
 	else git -C pulp/ pull ; \
 	fi;
 	sudo python3 pulp/setup.py install
+	sudo python3 setup.py install
 	if [ ! -d $("solvers/") ]; \
 	then 	sudo apt-get install wget; \
 			wget -nc -r -np -R *html,index.* -nH --cut-dirs=2 http://folk.ntnu.no/eriklil/linux/solvers/ ; \
