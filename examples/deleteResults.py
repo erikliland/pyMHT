@@ -28,7 +28,7 @@ if __name__ == '__main__':
 	confirmation = input("Are you sure you want to delete all those files? [Yes/No]")
 	if confirmation == "Yes":
 		deleteFiles(	loadLocation = s.loadLocation,
-						files = s.files,
+						files = s.croppedFiles,
 						solvers = s.solvers,
 						PdList = s.PdList,
 						NList = s.NList,
