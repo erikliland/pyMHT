@@ -1,4 +1,5 @@
 import numpy as np
+import matplotlib.pyplot as plt
 
 class Position:
 	def __init__(self,*args,**kwargs):
@@ -36,6 +37,15 @@ class Position:
 
 	def __div__(self, other):
 		return Position(self.x / other, self.y / other)
+
+	def plot(self, measurementNumber, scanNumber = None, **kwargs):
+		if measurementNumber == 0:
+			plt.plot(self.x,self.y,color = "black",fillstyle = "none", marker = "o")
+		else:
+			plt.plot(self.x, self.y,'kx')
+		if (scanNumber is not None) and (measurementNumber is not None) and kwargs.get("labels",False):
+			ax = plt.subplot(111)
+			ax.text(self.x, self.y,str(scanNumber)+":"+str(measurementNumber), size = 7, ha = "left", va = "top") 
 
 class Velocity:
 	def __init__(self,*args,**kwargs):
@@ -82,3 +92,7 @@ class MeasurementList:
 		return "Time: "+timeString+"\tMeasurements:\t"+repr(self.measurements)
 
 	__repr__ = __str__
+
+	def plot(self, **kwargs):
+		for measurementIndex, measurement in enumerate(self.measurements):
+			measurement.plot(measurementIndex+1,**kwargs)

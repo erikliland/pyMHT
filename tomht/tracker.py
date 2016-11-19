@@ -13,6 +13,7 @@ from .classDefinitions import Position, Velocity
 
 import time
 import pulp
+import itertools
 import scipy.sparse as sp
 import matplotlib.pyplot as plt
 import numpy as np
@@ -118,10 +119,13 @@ class Target():
 	def getVelocity(self):
 		return Velocity(self.filteredStateMean[2:4])
 
-	def backtrack(self,stepsBack = float('inf')):
+	def stepBack(self,stepsBack = 1):
 		if (stepsBack == 0) or (self.parent is None):
 			return self
-		return self.parent.backtrack(stepsBack-1)
+		return self.parent.stepBack(stepsBack-1)
+
+	def getRoot(self):
+		return self.stepBack(float('inf'))
 
 	def depth(self, count = 0):
 		if len(self.trackHypotheses):
@@ -294,6 +298,57 @@ class Target():
 		for hyp in self.trackHypotheses:
 			hyp.recursiveSubtractScore(score)
 
+
+	def plotValidationRegion(self, eta2, stepsBack = 0):
+		if self.residualCovariance is not None:
+			self._plotCovarianceEllipse(eta2)
+		if (self.parent is not None) and (stepsBack > 0):
+			self.parent.plotValidationRegion(eta2,stepsBack-1)
+
+	def _plotCovarianceEllipse(self, eta2):
+		from matplotlib.patches import Ellipse
+		lambda_, _ = np.linalg.eig(self.residualCovariance)
+		ell = Ellipse( xy	 = (self.predictedStateMean[0], self.predictedStateMean[1]), 
+					   width = np.sqrt(lambda_[0])*np.sqrt(eta2)*2,
+					   height= np.sqrt(lambda_[1])*np.sqrt(eta2)*2,
+					   angle = np.rad2deg( np.arctan2( lambda_[1], lambda_[0]) ),
+					   linewidth = 2,
+					   )
+		ell.set_facecolor('none')
+		ell.set_linestyle("dotted")
+		ell.set_alpha(0.5)
+		ax = plt.subplot(111)
+		ax.add_artist(ell)
+
+	def backtrackPosition(self, stepsBack = float('inf')):
+		if self.parent is None:
+			return [self.getPosition()]
+		else:
+			return self.parent.backtrackPosition(stepsBack) + [self.getPosition()]
+
+	def plotTrack(self, stepsBack = float('inf'), **kwargs):		
+		colors = itertools.cycle(["r", "b", "g"])
+		track = self.backtrackPosition(stepsBack)
+		plt.plot([p.x for p in track], [p.y for p in track], **kwargs)
+
+	def plotMeasurement(self, stepsBack = 0, **kwargs):
+		if self.measurement is not None:
+			self.measurement.plot(self.measurementNumber, self.scanNumber,**kwargs)
+		elif kwargs.get("dummy",False):
+			self.getPosition().plot(self.measurementNumber, self.scanNumber,**kwargs)
+
+		if (self.parent is not None) and (stepsBack > 0):
+			self.parent.plotMeasurement(stepsBack-1, **kwargs)
+
+	def plotVelocityArrow(self, stepsBack = 1):
+		if self.predictedStateMean is not None:
+			ax = plt.subplot(111)
+			deltaPos = self.predictedStateMean[0:2] - self.filteredStateMean[0:2]
+			ax.arrow(self.filteredStateMean[0], self.filteredStateMean[1], deltaPos[0], deltaPos[1],
+			head_width=0.1, head_length=0.1, fc= "None", ec='k', 
+			length_includes_head = "true", linestyle = "-", alpha = 0.3, linewidth = 1)
+		if (self.parent is not None) and (stepsBack > 0):
+			self.parent.plotVelocityArrow(stepsBack-1)
 
 class Tracker():
 	def __init__(self, Phi, C, Gamma, P_d, P0, R, Q, lambda_phi, 
@@ -629,3 +684,82 @@ class Tracker():
 		# 		if col < nHyp:
 		# 			# print("Removing zero hypothesis")
 		# 			target.trackHypotheses.pop(0)
+
+	
+	def plotValidationRegionFromRoot(self, stepsBack = 1):
+		def recPlotValidationRegionFromTarget(target, eta2, stepsBack):
+			if not target.trackHypotheses:
+				target.plotValidationRegion(eta2, stepsBack)
+			else:
+				for hyp in target.trackHypotheses:
+					recPlotValidationRegionFromTarget(hyp, eta2, stepsBack)
+
+		for target in self.__targetList__:
+			recPlotValidationRegionFromTarget(target, self.eta2, stepsBack)
+
+	def plotValidationRegionFromTracks(self,stepsBack = 1):
+		for node in self.__trackNodes__:
+			node.plotValidationRegion(self.eta2, stepsBack)
+
+	def plotHypothesesTrack(self):
+		def recPlotHypothesesTrack(target, track = [], **kwargs):
+			newTrack = track[:] + [target.getPosition()]
+			if not target.trackHypotheses:
+				plt.plot([p.x for p in newTrack], [p.y for p in newTrack], "--", **kwargs)
+			else:
+				for hyp in target.trackHypotheses:
+					recPlotHypothesesTrack(hyp,  newTrack, **kwargs)
+		colors = itertools.cycle(["r", "b", "g"])
+		for target in self.__targetList__:
+			recPlotHypothesesTrack(target, c = next(colors))
+
+	def plotActiveTracks(self):
+		colors = itertools.cycle(["r", "b", "g"])
+		for track in self.__trackNodes__:
+			track.plotTrack(c = next(colors))
+
+	def plotMeasurementsFromTracks(self, stepsBack = float('inf'), **kwargs):
+		for node in self.__trackNodes__:
+			node.plotMeasurement(stepsBack, **kwargs)
+
+	def plotMeasurementsFromRoot(self,**kwargs):
+		def recPlotMeasurements(target, plottedMeasurements, plotReal, plotDummy):
+			if target.parent is not None:
+				if target.measurementNumber == 0:
+					if plotDummy:
+						target.plotMeasurement(**kwargs)
+				else:
+					if plotReal:
+						measurementID = (target.scanNumber,target.measurementNumber)
+						if measurementID not in plottedMeasurements:
+							target.plotMeasurement(**kwargs)
+							plottedMeasurements.add( measurementID )
+			for hyp in target.trackHypotheses:
+				recPlotMeasurements(hyp, plottedMeasurements, plotReal, plotDummy)
+		
+		if not (("real" in kwargs) or ("dummy" in kwargs)):
+			return
+		plottedMeasurements = set()
+		for target in self.__targetList__:
+			recPlotMeasurements(target,plottedMeasurements,kwargs.get("real",True), kwargs.get("dummy",True))
+
+	def plotScan(self, index = -1, **kwargs):
+		self.__scanHistory__[index].plot(**kwargs)
+
+	def plotVelocityArrowForTrack(self, stepsBack = 1):
+		for track in self.__trackNodes__:
+			track.plotVelocityArrow(stepsBack)
+
+	def plotInitialTargets(self, **kwargs):
+		initialTargets = [target.getRoot() for target in self.__targetList__]
+		for i, initialTarget in enumerate(initialTargets):
+			index = kwargs.get("index",list(range(len(initialTargets))))
+			if len(index) != len(initialTargets):
+				raise ValueError("plotInitialTargets: Need equal number of targets and indecies")
+			plt.plot(initialTarget.filteredStateMean[0],initialTarget.filteredStateMean[1],"k+")
+			ax = plt.subplot(111)
+			normVelocity = initialTarget.filteredStateMean[2:4] / np.linalg.norm(initialTarget.filteredStateMean[2:4])
+			offset = 0.1 * normVelocity
+			position = initialTarget.filteredStateMean[0:2] - offset
+			ax.text(position[0], position[1], "T"+str(index[i]), 
+				fontsize=8, horizontalalignment = "center", verticalalignment = "center")

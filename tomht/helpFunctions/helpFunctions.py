@@ -1,23 +1,10 @@
 import matplotlib.pyplot as plt
 import numpy as np
-import itertools
 import pulp
+import itertools
 
 def binomial(n,k):
     return 1 if k==0 else (0 if n==0 else binomial(n-1, k) + binomial(n-1, k-1))
-
-def plotInitialTargets(initialTargets, **kwargs):
-	for i, initialTarget in enumerate(initialTargets):
-		index = kwargs.get("index",list(range(len(initialTargets))))
-		if len(index) != len(initialTargets):
-			raise ValueError("plotInitialTargets: Need equal number of targets and indecies")
-		plt.plot(initialTarget.state[0],initialTarget.state[1],"k+")
-		ax = plt.subplot(111)
-		normVelocity = initialTarget.state[2:4] / np.linalg.norm(initialTarget.state[2:4])
-		offset = 0.1 * normVelocity
-		position = initialTarget.state[0:2] - offset
-		ax.text(position[0], position[1], "T"+str(index[i]), 
-			fontsize=8, horizontalalignment = "center", verticalalignment = "center")
 
 def plotVelocityArrowFromNode(nodes, **kwargs):
 	def recPlotVelocityArrowFromNode(node, stepsLeft):
@@ -27,13 +14,6 @@ def plotVelocityArrowFromNode(nodes, **kwargs):
 			recPlotVelocityArrowFromNode(node.parent, stepsLeft-1)
 	for node in nodes:
 		recPlotVelocityArrowFromNode(node, kwargs.get("stepsBack", 1))
-
-def plotVelocityArrow(target):
-	ax = plt.subplot(111)
-	deltaPos = target.predictedStateMean[0:2] - target.filteredStateMean[0:2]
-	ax.arrow(target.filteredStateMean[0], target.filteredStateMean[1], deltaPos[0], deltaPos[1],
-	head_width=0.1, head_length=0.1, fc= "None", ec='k', 
-	length_includes_head = "true", linestyle = "-", alpha = 0.3, linewidth = 1)
 
 def plotRadarOutline(centerPosition, radarRange, **kwargs):
 	from matplotlib.patches import Ellipse
@@ -45,124 +25,51 @@ def plotRadarOutline(centerPosition, radarRange, **kwargs):
 	circle.set_linestyle("dotted")
 	ax.add_artist(circle)
 
-def plotCovarianceEllipse(cov, position, eta2):
-	from matplotlib.patches import Ellipse
-	lambda_, _ = np.linalg.eig(cov)
-	ell = Ellipse( xy	 = (position.x, position.y), 
-				   width = np.sqrt(lambda_[0])*np.sqrt(eta2)*2,
-				   height= np.sqrt(lambda_[1])*np.sqrt(eta2)*2,
-				   angle = np.rad2deg( np.arctan2( lambda_[1], lambda_[0]) ),
-				   linewidth = 2,
-				   )
-	ell.set_facecolor('none')
-	ell.set_linestyle("dotted")
-	ell.set_alpha(0.5)
-	ax = plt.subplot(111)
-	ax.add_artist(ell)
+#def plotMeasurementList(measurmentList, scanNumber = None):
+#	for measurementIndex, measurement in enumerate(measurmentList.measurements):
+#		plotMeasurement(measurement, measurementIndex+1, scanNumber)
 
-def plotMeasurementList(measurmentList, scanNumber = None):
-	for measurementIndex, measurement in enumerate(measurmentList.measurements):
-		plotMeasurement(measurmentList, measurementIndex+1, scanNumber)
+#def plotMeasurementsFromList(scanHistory):
+#	for scanIndex, scan in enumerate(scanHistory):
+#		for measurementIndex, measurement in enumerate(scan.measurements):
+#			plotMeasurement(measurement, measurementIndex+1, scanIndex+1)
 
-def plotMeasurementsFromList(scanHistory):
-	for scanIndex, scan in enumerate(scanHistory):
-		for measurementIndex, measurement in enumerate(scan.measurements):
-			plotMeasurement(measurement, measurementIndex+1, scanIndex+1)
+# def plotMeasurementsFromForest(targetList, plotReal = True, plotDummy = True, **kwargs):
+# 	from classDefinitions import Position
+# 	def recPlotMeasurements(target, plottedMeasurements, plotReal, plotDummy):
+# 		if target.parent is not None:
+# 			if target.measurementNumber == 0:
+# 				if plotDummy:
+# 					plotMeasurement(target.getPosition(), target.measurementNumber, target.scanNumber)
+# 			else:
+# 				if plotReal:
+# 					measurementID = (target.scanNumber,target.measurementNumber)
+# 					if measurementID not in plottedMeasurements:
+# 						plotMeasurement(target.measurement, target.measurementNumber, target.scanNumber)
+# 						plottedMeasurements.add( measurementID )
+# 		for hyp in target.trackHypotheses:
+# 			recPlotMeasurements(hyp, plottedMeasurements, plotReal, plotDummy)
+# 	plotReal = kwargs.get('real', plotReal)
+# 	plotDummy = kwargs.get('dummy', plotDummy)
+# 	if not (plotReal or plotDummy):
+# 		return
+# 	plottedMeasurements = set()
+# 	for target in targetList:
+# 		recPlotMeasurements(target,plottedMeasurements,plotReal, plotDummy)
 
-def plotMeasurementsFromForest(targetList, plotReal = True, plotDummy = True, **kwargs):
-	from classDefinitions import Position
-	def recPlotMeasurements(target, plottedMeasurements, plotReal, plotDummy):
-		if target.parent is not None:
-			if target.measurementNumber == 0:
-				if plotDummy:
-					plotMeasurement(target.getPosition(), target.measurementNumber, target.scanNumber)
-			else:
-				if plotReal:
-					measurementID = (target.scanNumber,target.measurementNumber)
-					if measurementID not in plottedMeasurements:
-						plotMeasurement(target.measurement, target.measurementNumber, target.scanNumber)
-						plottedMeasurements.add( measurementID )
-		for hyp in target.trackHypotheses:
-			recPlotMeasurements(hyp, plottedMeasurements, plotReal, plotDummy)
-	
-	plotReal = kwargs.get('real', plotReal)
-	plotDummy = kwargs.get('dummy', plotDummy)
-	if not (plotReal or plotDummy):
-		return
-	plottedMeasurements = set()
-	for target in targetList:
-		recPlotMeasurements(target,plottedMeasurements,plotReal, plotDummy)
-
-def plotMeasurementsFromNodes(nodes, **kwargs):
-	def recBactrackAndPlotMesurements(node, stepsBack = None, **kwargs):
-		if node.parent is not None:
-			if node.measurement is not None:
-				plotMeasurement(node.measurement, node.measurementNumber, node.scanNumber, **kwargs)
-			elif kwargs.get("dummy",False):
-				plotMeasurement(node.getPosition(), node.measurementNumber, node.scanNumber, **kwargs)
-			if stepsBack is None:
-				recBactrackAndPlotMesurements(node.parent, None, **kwargs)
-			elif stepsBack > 0:
-				recBactrackAndPlotMesurements(node.parent, stepsBack-1, **kwargs)
-	for node in nodes:
-		recBactrackAndPlotMesurements(node, kwargs.get('stepsBack'), **kwargs)
-
-def plotMeasurement(position, measurementNumber = None, scanNumber = None, **kwargs):
-	x = position.x
-	y = position.y
-	if measurementNumber == 0:
-		plt.plot(x,y,color = "black",fillstyle = "none", marker = "o")
-	else:
-		plt.plot(x, y,'kx')
-	if (scanNumber is not None) and (measurementNumber is not None) and kwargs.get("labels",False):
-		ax = plt.subplot(111)
-		ax.text(x, y,str(scanNumber)+":"+str(measurementNumber), size = 7, ha = "left", va = "top") 
-
-def plotValidationRegionFromNodes(nodes,eta2, stepsBack = 1):
-	from classDefinitions import Position
-	def recPlotValidationRegionFromNode(node, eta2, stepsBack):
-		if node.residualCovariance is not None:
-			plotCovarianceEllipse(node.residualCovariance, Position(node.predictedStateMean),eta2)
-		if (node.parent is not None) and (stepsBack > 0):
-			recPlotValidationRegionFromNode(node.parent, eta2, stepsBack-1)
-	for node in nodes:
-		recPlotValidationRegionFromNode(node, eta2, stepsBack)
-
-def plotValidationRegionFromForest(targets, eta2, stepsBack = 1):
-	def recPlotValidationRegionFromTarget(target, eta2, stepsBack):
-		if not target.trackHypotheses:
-			plotValidationRegionFromNodes([target], eta2, stepsBack)
-		else:
-			for hyp in target.trackHypotheses:
-				recPlotValidationRegionFromTarget(hyp, eta2, stepsBack)
-
-	for target in targets:
-		recPlotValidationRegionFromTarget(target, eta2, stepsBack)
-
-def plotActiveTrack(associationHistory):
-	def recBacktrackPosition(target):
-		if target.parent is None:
-			return [target.getPosition()]
-		return recBacktrackPosition(target.parent) + [target.getPosition()]
-	colors = itertools.cycle(["r", "b", "g"])
-	for hyp in associationHistory:
-		positions = recBacktrackPosition(hyp)
-		plt.plot([p.x for p in positions], [p.y for p in positions], c = next(colors))
-
-def plotHypothesesTrack(targets):
-	def recPlotHypothesesTrack(target, color = None, track = []):
-		newTrack = track[:] + [target.getPosition()]
-		if not target.trackHypotheses:
-			if color is not None:
-				plt.plot([p.x for p in newTrack], [p.y for p in newTrack], "--", c = color)
-			else:
-				plt.plot([p.x for p in newTrack], [p.y for p in newTrack], "--")
-		else:
-			for hyp in target.trackHypotheses:
-				recPlotHypothesesTrack(hyp, color,  newTrack)
-	colors = itertools.cycle(["r", "b", "g"])
-	for target in targets:
-		recPlotHypothesesTrack(target, next(colors))
+# def plotMeasurementsFromNodes(nodes, **kwargs):
+# 	def recBactrackAndPlotMesurements(node, stepsBack = None, **kwargs):
+# 		if node.parent is not None:
+# 			if node.measurement is not None:
+# 				plotMeasurement(node.measurement, node.measurementNumber, node.scanNumber, **kwargs)
+# 			elif kwargs.get("dummy",False):
+# 				plotMeasurement(node.getPosition(), node.measurementNumber, node.scanNumber, **kwargs)
+# 			if stepsBack is None:
+# 				recBactrackAndPlotMesurements(node.parent, None, **kwargs)
+# 			elif stepsBack > 0:
+# 				recBactrackAndPlotMesurements(node.parent, stepsBack-1, **kwargs)
+# 	for node in nodes:
+# 		recBactrackAndPlotMesurements(node, kwargs.get('stepsBack'), **kwargs)
 
 def plotTrueTrack(simList, **kwargs):
 	nScan = len(simList)
@@ -189,7 +96,7 @@ def printTargetList(targetList, **kwargs):
 	print("TargetList:")
 	for targetIndex, target in enumerate(targetList):
 		if kwargs.get("backtrack", False):
-			print(target.backtrack().__str__(targetIndex = targetIndex)) 
+			print(target.stepBack().__str__(targetIndex = targetIndex)) 
 		else:
 			print(target.__str__(targetIndex = targetIndex)) 
 	print()
@@ -252,11 +159,8 @@ def backtrackNodePositions(selectedNodes, **kwargs):
 		measurementList.append(Position(node.filteredStateMean[0:2]))
 		if node.parent is not None:
 			if node.parent.scanNumber != node.scanNumber-1:
-				#print()
-				#print(node.backtrack(3))
 				raise ValueError("Inconsistent scanNumber-ing:", node.parent.scanNumber,"->", node.scanNumber)
 			recBacktrackNodePosition(node.parent, measurementList)
-
 	try:
 		trackList = []
 		for leafNode in selectedNodes:
