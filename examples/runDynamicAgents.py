@@ -82,7 +82,7 @@ def runSimulation(simList, initialTargets, lambda_phi,lambda_nu,radarRange,
 
 def simulateFile(simList, loadLocation, fileString, solver, lambda_phi, P_d, N, 
 										radarRange,p0,initialTargets, **kwargs):
-	timeout = kwargs.get("timeout",100)
+	timeout = kwargs.get("t",60*5)
 	try:
 		savefilePath = (os.path.join(loadLocation,os.path.splitext(fileString)[0],"results",os.path.splitext(fileString)[0])
 						+"["
@@ -199,6 +199,7 @@ if __name__ == '__main__':
 	parser.add_argument('-s', help = "Solver for ILP problem",		nargs = '+')
 	parser.add_argument('-p', help = "Probability of detection", 	nargs = '+', type = float)
 	parser.add_argument('-l', help = "Lambda_Phi (noise)", 			nargs = '+', type = float)
+	parser.add_argument('-t', help = "File simulation timeout",		type = float)
 	args = vars(parser.parse_args())
 	tic = time.time()
 	try:
