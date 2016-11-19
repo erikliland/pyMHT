@@ -202,7 +202,7 @@ if __name__ == '__main__':
 	args = vars(parser.parse_args())
 	tic = time.time()
 	try:
-		nCores = args.get("c", os.cpu_count() -1 )
+		nCores = max(1, args.get("c", os.cpu_count() -1 ))
 		print("Using", nCores, "workers")
 		pool = mp.Pool(nCores,initWorker)
 		runDynamicAgents(pool, **args)
