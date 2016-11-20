@@ -467,7 +467,7 @@ class Tracker():
 
 	def getRuntimeAverage(self, **kwargs):
 		p = kwargs.get("precision", 3)
-		return {k:'{1:.{0}e}'.format(p, v[0]/v[1]) for k,v in self.runtimeLog.items()}
+		return {k: v[0]/v[1] for k,v in self.runtimeLog.items{}}
 
 	def _findClustersFromSets(self):
 		superSet = set()

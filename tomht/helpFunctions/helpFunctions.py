@@ -25,52 +25,6 @@ def plotRadarOutline(centerPosition, radarRange, **kwargs):
 	circle.set_linestyle("dotted")
 	ax.add_artist(circle)
 
-#def plotMeasurementList(measurmentList, scanNumber = None):
-#	for measurementIndex, measurement in enumerate(measurmentList.measurements):
-#		plotMeasurement(measurement, measurementIndex+1, scanNumber)
-
-#def plotMeasurementsFromList(scanHistory):
-#	for scanIndex, scan in enumerate(scanHistory):
-#		for measurementIndex, measurement in enumerate(scan.measurements):
-#			plotMeasurement(measurement, measurementIndex+1, scanIndex+1)
-
-# def plotMeasurementsFromForest(targetList, plotReal = True, plotDummy = True, **kwargs):
-# 	from classDefinitions import Position
-# 	def recPlotMeasurements(target, plottedMeasurements, plotReal, plotDummy):
-# 		if target.parent is not None:
-# 			if target.measurementNumber == 0:
-# 				if plotDummy:
-# 					plotMeasurement(target.getPosition(), target.measurementNumber, target.scanNumber)
-# 			else:
-# 				if plotReal:
-# 					measurementID = (target.scanNumber,target.measurementNumber)
-# 					if measurementID not in plottedMeasurements:
-# 						plotMeasurement(target.measurement, target.measurementNumber, target.scanNumber)
-# 						plottedMeasurements.add( measurementID )
-# 		for hyp in target.trackHypotheses:
-# 			recPlotMeasurements(hyp, plottedMeasurements, plotReal, plotDummy)
-# 	plotReal = kwargs.get('real', plotReal)
-# 	plotDummy = kwargs.get('dummy', plotDummy)
-# 	if not (plotReal or plotDummy):
-# 		return
-# 	plottedMeasurements = set()
-# 	for target in targetList:
-# 		recPlotMeasurements(target,plottedMeasurements,plotReal, plotDummy)
-
-# def plotMeasurementsFromNodes(nodes, **kwargs):
-# 	def recBactrackAndPlotMesurements(node, stepsBack = None, **kwargs):
-# 		if node.parent is not None:
-# 			if node.measurement is not None:
-# 				plotMeasurement(node.measurement, node.measurementNumber, node.scanNumber, **kwargs)
-# 			elif kwargs.get("dummy",False):
-# 				plotMeasurement(node.getPosition(), node.measurementNumber, node.scanNumber, **kwargs)
-# 			if stepsBack is None:
-# 				recBactrackAndPlotMesurements(node.parent, None, **kwargs)
-# 			elif stepsBack > 0:
-# 				recBactrackAndPlotMesurements(node.parent, stepsBack-1, **kwargs)
-# 	for node in nodes:
-# 		recBactrackAndPlotMesurements(node, kwargs.get('stepsBack'), **kwargs)
-
 def plotTrueTrack(simList, **kwargs):
 	nScan = len(simList)
 	nTargets = len(simList[0])
@@ -208,9 +162,3 @@ def solverIsAvailable(solverString):
 	if s == "gurobi":
 		return pulp.GUROBI_CMD().available() != False
 	return False
-
-# import cProfile
-# import pstats
-# p = cProfile.runctx('_solveBLP(A1,A2, C)',None,locals(), filename = 'restats')
-# p = pstats.Stats('restats')
-# p.sort_stats('cumulative').print_stats(20)

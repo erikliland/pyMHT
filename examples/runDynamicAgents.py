@@ -6,6 +6,8 @@ import functools
 import pulp
 import argparse
 import tomht
+import ast
+from collections import namedtuple
 import tomht.radarSimulator as radarSimulator
 import tomht.helpFunctions as hpf
 import tomht.stateSpace.pv as model
@@ -13,52 +15,54 @@ import xml.etree.ElementTree as ET
 import multiprocessing as mp 
 import simSettings as sim
 
+simArgs = namedtuple('simArgs',['simList','loadLocation', 'fileString',
+								'solver', 'lambda_phi', 'P_d', 'N', 
+								'radarRange','p0','initialTargets'])
+
 def initWorker():
     signal.signal(signal.SIGINT, signal.SIG_IGN)
 
-def runSimulation(simList, initialTargets, lambda_phi,lambda_nu,radarRange,
-							p0,P_d,N,solver,timeoutDuration, i):
+def runSimulation(sArgs,i):
+	#simList, initialTargets, lambda_phi,lambda_nu,radarRange,p0,P_d,N,solver, i):
 	try:
 		seed = 5446 + i
 		scanList = radarSimulator.simulateScans(
 												seed, 
-												simList, 
+												sArgs.simList, 
 												model.C, 
 												model.R(model.sigmaR_true), 
-												lambda_phi,
-												radarRange, 
-												p0, 
-												P_d = P_d, 
+												sArgs.lambda_phi,
+												sArgs.radarRange, 
+												sArgs.p0, 
+												P_d = sArgs.P_d, 
 												shuffle = True)
 		tracker = tomht.Tracker(
 								model.Phi, 
 								model.C, 
 								model.Gamma, 
-								P_d, 
+								sArgs.P_d, 
 								model.P0, 
 								model.R(), 
 								model.Q, 
-								lambda_phi, 
-								lambda_nu, 
+								sArgs.lambda_phi, 
+								sim.lambda_nu, 
 								sim.eta2, 
 								model.sigmaR_tracker, 
-								N, 
-								solver, 
+								sArgs.N, 
+								sArgs.solver, 
 								logTime = True
 								)
-		for initialTarget in initialTargets:
+		for initialTarget in sArgs.initialTargets:
 		 	tracker.initiateTarget(initialTarget)
 
 		covConsistenceList = []
 		tic = time.process_time()
 		for scanIndex, measurementList in enumerate(scanList):
 			covConsistenceList.append( 
-				tracker.addMeasurementList(
-					measurementList, trueState = simList[scanIndex], multiThread = False)
-				)
+				tracker.addMeasurementList(measurementList, trueState = sArgs.simList[scanIndex]))
 		toc = time.process_time()-tic
-		trackList = hpf.backtrackNodePositions(tracker.__trackNodes__, debug = False)
-		if any ( len(track)-1 != len(simList) for track in trackList):
+		trackList = hpf.backtrackNodePositions(tracker.__trackNodes__)
+		if any ( len(track)-1 != len(sArgs.simList) for track in trackList):
 			print(",",end = "", flush = True)
 		else: 
 			print(".",end = "", flush = True)
@@ -66,7 +70,7 @@ def runSimulation(simList, initialTargets, lambda_phi,lambda_nu,radarRange,
 				'seed':seed, 
 				'trackList':trackList, 
 				'time':toc, 
-				'runetimeLog':tracker.getRuntimeAverage(), 
+				'runetimeLog': tracker.getRuntimeAverage(), 
 				'covConsistence': covConsistenceList
 				}
 	except pulp.solvers.PulpSolverError:
@@ -81,91 +85,110 @@ def runSimulation(simList, initialTargets, lambda_phi,lambda_nu,radarRange,
 		raise
 	except:
 		print("?",end = "", flush = True)
+		raise
+		res = None
 	return res
 
-def simulateFile(simList, loadLocation, fileString, solver, lambda_phi, P_d, N, 
-										radarRange,p0,initialTargets, **kwargs):
+def runFile(root,iIter,sArgs,**kwargs):
+	timeout = kwargs.get("t",60*5)
+	runStart = time.time()
+	simLog = 0.0
+	nCores = min(max(1, kwargs.get("c", os.cpu_count() -1 )),os.cpu_count())
+	pool = mp.Pool(nCores,initWorker)
+	results = pool.imap_unordered(functools.partial(runSimulation,sArgs),iIter,1)
+	while True:
+		try:
+			if time.time()-runStart > timeout*len(iIter):
+				raise mp.TimeoutError 
+			res = results.next(timeout=timeout)
+			if res is not None:
+				simLog += res['time']
+				ET.SubElement(
+					root, "Simulation", 
+					i 				= repr(res.get('i')),
+					seed 			= repr(res.get('seed')),
+					totalSimTime 	= '{:.3}'.format((res.get('time'))), 
+					runtimeLog 		= res.get('runetimeLog'), 
+					covConsistence 	= [['{:.3e}'.format(v) for v in row] for row in res.get('covConsistence',[[]])],
+					).text 			= repr(res.get('trackList'))
+		except mp.TimeoutError:
+			pool.close()
+			pool.terminate()
+			print(" Timed out after waiting", round(time.time()-runStart,1), "seconds")
+			pool.join()
+			time.sleep(1)
+			break
+		except StopIteration:
+			pool.terminate()
+			pool.join()
+			break
+	return (simLog, time.time()-runStart)
+
+def simulateFile(sArgs,**kwargs):
+	#simList, loadLocation, fileString, solver, lambda_phi, P_d, N, radarRange,p0,initialTargets, **kwargs):
 	timeout = kwargs.get("t",60*5)
 	try:
-		savefilePath = (os.path.join(loadLocation,os.path.splitext(fileString)[0],"results",os.path.splitext(fileString)[0])
+		savefilePath = (os.path.join(sArgs.loadLocation,os.path.splitext(sArgs.fileString)[0],"results",os.path.splitext(sArgs.fileString)[0])
 						+"["
-						+solver.upper()
-						+",Pd="+str(P_d)
-						+",N="+str(N)
-						+",lPhi="+'{:7.5f}'.format(lambda_phi)
+						+sArgs.solver.upper()
+						+",Pd="+str(sArgs.P_d)
+						+",N="+str(sArgs.N)
+						+",lPhi="+'{:7.5f}'.format(sArgs.lambda_phi)
 						+"]"
 						+".xml")
-		printFile = (	'{:51s}'.format(os.path.splitext(fileString)[0])
-						+", "+'{:6s}'.format(solver)
-						+", P_d="+str(P_d)
-						+", N="+str(N)
-						+", lPhi="+'{:5.0e}'.format(lambda_phi)
+		printFile = (	'{:51s}'.format(os.path.splitext(sArgs.fileString)[0])
+						+", "+'{:6s}'.format(sArgs.solver)
+						+", P_d="+str(sArgs.P_d)
+						+", N="+str(sArgs.N)
+						+", lPhi="+'{:5.0e}'.format(sArgs.lambda_phi)
 						)
+		nMonteCarlo = kwargs.get("i",sim.nMonteCarlo)
 		if not os.path.exists(os.path.dirname(savefilePath)):
 			os.makedirs(os.path.dirname(savefilePath))
 		if (not os.path.isfile(savefilePath)) or kwargs.get("F",False):
-			nMonteCarlo = kwargs.get("i",sim.nMonteCarlo)
 			root = ET.Element("Simulations",
 								lambda_nu = '{:.3e}'.format(sim.lambda_nu), 
 								eta2 = '{:.2f}'.format(sim.eta2), 
-								radarRange = '{:.3e}'.format(radarRange), 
-								p0 = repr(p0),
+								radarRange = '{:.3e}'.format(sArgs.radarRange), 
+								p0 = repr(sArgs.p0),
 								nMonteCarlo = str(nMonteCarlo),
-								initialTargets = repr(initialTargets)
+								initialTargets = repr(sArgs.initialTargets)
 								)
 			print("Simulating:",printFile, end = "", flush = True)
-			runStart = time.time()
-			simLog = 0.0
-			nCores = min(max(1, args.get("c", os.cpu_count() -1 )),os.cpu_count())
-			pool = mp.Pool(nCores,initWorker)
-			results = pool.imap_unordered(
-				functools.partial(runSimulation,simList,initialTargets,lambda_phi,sim.lambda_nu,radarRange,p0,P_d,N,solver,1),
-				range(nMonteCarlo),
-				1)
-			while True:
-				try:
-					if time.time()-runStart > timeout:
-						raise mp.TimeoutError 
-					res = results.next(timeout=timeout/2)
-					if res is not None:
-						simLog += res['time']
-						ET.SubElement(
-							root, "Simulation", 
-							i 				= repr(res.get('i')),
-							seed 			= repr(res.get('seed')), 
-							totalSimTime 	= '{:.3}'.format((res.get('time'))), 
-							runtimeLog 		= res.get('runetimeLog'), 
-							covConsistence 	= [['{:.3e}'.format(v) for v in row] for row in res.get('covConsistence',[[]])],
-							).text 			= repr(res.get('trackList'))
-				except mp.TimeoutError:
-					pool.close()
-					pool.terminate()
-					print(" Timed out after waiting", round(time.time()-runStart,1), "seconds")
-					pool.join()
-					time.sleep(1)
-					break
-				except StopIteration:
-					print('@{0:5.0f} sec ({1:.0f} sec)'.format(time.time()-runStart, simLog))
-					tree = ET.ElementTree(root)
-					if not kwargs.get("D",False):
-						tree.write(savefilePath)
-					pool.terminate()
-					pool.join()
-					break
+			(simTime, runTime) = runFile(root, range(nMonteCarlo), sArgs, **kwargs)
+			print('@{0:5.0f} sec ({1:3.0f} sec)'.format(runTime, simTime))
+			root.attrib["wallRunTime"] = repr(runTime)
+			tree = ET.ElementTree(root)
+			if not kwargs.get("D",False):
+				tree.write(savefilePath)
+			
 		else:
 			root 		= ET.parse(savefilePath).getroot()
-			iList 		= [int(sim.get("i")) 		 						for sim in root.findall("Simulation")]
-			runTList 	= [float(sim.get("totalSimTime")) 					for sim in root.findall("Simulation")]
-			print( [sim.get("runtimeLog") for sim in root.findall("Simulation")] )
-			computeCList= [sum([float(v) for k,v in sim.get("runtimeLog")])	for sim in root.findall("Simulation")]
+			iList 		= [int(sim.get("i")) 		 		for sim in root.findall("Simulation")]
 			iList.sort()
-			statusStringList = ['.' if i in iList else 'x' for i in range(len(iList))]
-			timeStatus = '@{0:5.0f} sec ({1:.0f} sec)'.format(sum(runTList), sum(computeCList))
-			print("Jumped:     ",printFile, "".join(statusStringList),timeStatus,sep = "", flush = True)
+			missingSimulationIndecies = set(range(nMonteCarlo)).difference(set(iList))
+			if missingSimulationIndecies:
+				print("Partial:    ", printFile,"."*len(iList), sep = "", end = "", flush = True)
+				(simTime, runTime) = runFile(root, missingSimulationIndecies, sArgs, **kwargs)
+				print('@{0:5.0f} sec ({1:3.0f} sec)'.format(runTime, simTime))
+				
+				root.attrib["wallRunTime"] = repr(float(root.attrib.get("wallRunTime",0)) + runTime)
+				root.attrib["totalSimTime"]= repr(float(root.attrib.get("totalSimTime",0))+ simTime)
+				root.attrib["nMonteCarlo"] = repr(nMonteCarlo)
+				if not kwargs.get("D",False):
+					tree = ET.ElementTree(root)
+					tree.write(savefilePath)
+			else:
+				computeTList= [float(sim.get("totalSimTime")) 	for sim in root.findall("Simulation")]
+				runTime 	= root.attrib.get("wallRunTime")
+				runTimeString = '{:5.0f}'.format(float(runTime)) if runTime is not None else "    ?"
+				statusStringList = ['.' if i in iList else 'x' for i in range(len(iList))]
+				timeStatus = '@'+runTimeString+' sec ({:3.0f} sec)'.format(sum(computeTList))
+				print("Jumped:     ",printFile, "".join(statusStringList),timeStatus,sep = "", flush = True)
 	except KeyboardInterrupt:
-		print("Killed by keyboard after", round(time.time()-runStart,1), "seconds")
-		pool.terminate()
-		pool.join()
+		print("Killed by keyboard")
+		#pool.terminate()
+		#pool.join()
 		raise
 	except Exception as e :
 		raise
@@ -194,7 +217,7 @@ def runDynamicAgents(**kwargs):
 			for P_d in PdList:
 				for N in NList:
 					for lambda_phi in lambdaPhiList:
-						simulateFile(	simList, 
+						args = simArgs(	simList, 
 										sim.loadLocation, 
 										fileString, 
 										solver, 
@@ -203,8 +226,10 @@ def runDynamicAgents(**kwargs):
 										N, 
 										radarRange,
 										p0,
-										initialTargets,
-										**kwargs)
+										initialTargets
+										)
+						simulateFile(args,**kwargs)
+
 
 if __name__ == '__main__':
 	os.chdir(os.path.dirname(os.path.abspath(__file__)))
