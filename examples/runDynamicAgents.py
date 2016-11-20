@@ -1,24 +1,27 @@
-import os
-import sys
-import signal 
-import time
-import functools
-import pulp
-import argparse
-import tomht
-import ast
-from collections import namedtuple
-import tomht.radarSimulator as radarSimulator
-import tomht.helpFunctions as hpf
-import tomht.stateSpace.pv as model
-import xml.etree.ElementTree as ET
-import multiprocessing as mp 
-import simSettings as sim
+try:
+	import os
+	import sys
+	import signal 
+	import time
+	import functools
+	import pulp
+	import argparse
+	import tomht
+	import ast
+	from collections import namedtuple
+	import tomht.radarSimulator as radarSimulator
+	import tomht.helpFunctions as hpf
+	import tomht.stateSpace.pv as model
+	import xml.etree.ElementTree as ET
+	import multiprocessing as mp 
+	import simSettings as sim
+except KeyboardInterrupt:
+	print("Leaving already? Goodbye!")
+	sys.exit()
 
 simArgs = namedtuple('simArgs',['simList','loadLocation', 'fileString',
 								'solver', 'lambda_phi', 'P_d', 'N', 
 								'radarRange','p0','initialTargets'])
-
 def initWorker():
     signal.signal(signal.SIGINT, signal.SIG_IGN)
 
@@ -230,31 +233,28 @@ def runDynamicAgents(**kwargs):
 										)
 						simulateFile(args,**kwargs)
 
-
 if __name__ == '__main__':
-	os.chdir(os.path.dirname(os.path.abspath(__file__)))
-	parser = argparse.ArgumentParser(description = "Run MHT tracker simulations", argument_default=argparse.SUPPRESS)
-	parser.add_argument('-F', help = "Force run of files (if exist)",action = 'store_true')
-	parser.add_argument('-D', help = "Discard result", 				action = 'store_true') 
-	parser.add_argument('-f', help = "File number to simulate", 	nargs = '+', type = int )
-	parser.add_argument('-i', help = "Number of simulations", 		type = int )
-	parser.add_argument('-c', help = "Number of cores to use",		type = int )
-	parser.add_argument('-n', help = "Number of steps to remember",	nargs = '+', type = int )
-	parser.add_argument('-s', help = "Solver for ILP problem",		nargs = '+')
-	parser.add_argument('-p', help = "Probability of detection", 	nargs = '+', type = float)
-	parser.add_argument('-l', help = "Lambda_Phi (noise)", 			nargs = '+', type = float)
-	parser.add_argument('-t', help = "File simulation timeout",		type = float)
-	args = vars(parser.parse_args())
-	tic = time.time()
 	try:
+		os.chdir(os.path.dirname(os.path.abspath(__file__)))
+		parser = argparse.ArgumentParser(description = "Run MHT tracker simulations", argument_default=argparse.SUPPRESS)
+		parser.add_argument('-F', help = "Force run of files (if exist)",action = 'store_true')
+		parser.add_argument('-D', help = "Discard result", 				action = 'store_true') 
+		parser.add_argument('-f', help = "File number to simulate", 	nargs = '+', type = int )
+		parser.add_argument('-i', help = "Number of simulations", 		type = int )
+		parser.add_argument('-c', help = "Number of cores to use",		type = int )
+		parser.add_argument('-n', help = "Number of steps to remember",	nargs = '+', type = int )
+		parser.add_argument('-s', help = "Solver for ILP problem",		nargs = '+')
+		parser.add_argument('-p', help = "Probability of detection", 	nargs = '+', type = float)
+		parser.add_argument('-l', help = "Lambda_Phi (noise)", 			nargs = '+', type = float)
+		parser.add_argument('-t', help = "File simulation timeout",		type = float)
+		args = vars(parser.parse_args())
+		tic = time.time()
 		nCores = min(max(1, args.get("c", os.cpu_count() -1 )),os.cpu_count())
 		print("Using", nCores, "workers")
 		runDynamicAgents(**args)
 	except KeyboardInterrupt:
-		#pool.terminate()
-		#pool.join()
 		print("Terminated", time.ctime())
+		sys.exit()
 	else:
-		#pool.close()
-		#pool.join()
 		print("Finished(",round(time.time()-tic,1),"sec )@", time.ctime())
+		sys.exit()
