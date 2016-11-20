@@ -131,7 +131,11 @@ def simulateFile(sArgs,**kwargs):
 	#simList, loadLocation, fileString, solver, lambda_phi, P_d, N, radarRange,p0,initialTargets, **kwargs):
 	timeout = kwargs.get("t",60*5)
 	try:
-		savefilePath = (os.path.join(sArgs.loadLocation,os.path.splitext(sArgs.fileString)[0],"results",os.path.splitext(sArgs.fileString)[0])
+		savefilePath = (
+			os.path.join(sArgs.loadLocation,
+						os.path.splitext(sArgs.fileString)[0],
+						"results",
+						os.path.splitext(sArgs.fileString)[0])
 						+"["
 						+sArgs.solver.upper()
 						+",Pd="+str(sArgs.P_d)

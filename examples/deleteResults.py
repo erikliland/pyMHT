@@ -11,20 +11,22 @@ def deleteFiles(**kwargs):
 	PdList 			= kwargs.get("PdList",[])
 	NList 			= kwargs.get("NList",[])
 	lambdaPhiList 	= kwargs.get("lambdaPhiList",[])
-
 	for fileString in files:
 		for solver in solvers:
 			for P_d in PdList:
 				for N in NList:
 					for lambda_phi in lambdaPhiList:
-						savefilePath = generateFilePath(fileString, solver, P_d, N, lambda_phi)
+						relativePath = generateFilePath(fileString, solver, P_d, N, lambda_phi)
+						absPath = os.path.abspath(relativePath)
 						try:
-							os.remove(savefilePath) 
-							print("Removing", savefilePath)
+							os.remove(absPath) 
+							print("Removed", absPath)
 						except OSError:
+							print("Failed to remove",absPath)
 							pass
 
 if __name__ == '__main__':
+	os.chdir(os.path.dirname(os.path.abspath(__file__)))
 	confirmation = input("Are you sure you want to delete all those files? [Yes/No]")
 	if confirmation == "Yes":
 		deleteFiles(	loadLocation = s.loadLocation,
