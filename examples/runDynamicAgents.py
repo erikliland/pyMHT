@@ -113,7 +113,7 @@ def simulateFile(simList, loadLocation, fileString, solver, lambda_phi, P_d, N,
 								nMonteCarlo = str(nMonteCarlo),
 								initialTargets = repr(initialTargets)
 								)
-			print("Simulating: ",printFile, end = "", flush = True)
+			print("Simulating:",printFile, end = "", flush = True)
 			runStart = time.time()
 			simLog = 0.0
 			nCores = min(max(1, args.get("c", os.cpu_count() -1 )),os.cpu_count())
@@ -145,29 +145,28 @@ def simulateFile(simList, loadLocation, fileString, solver, lambda_phi, P_d, N,
 					time.sleep(1)
 					break
 				except StopIteration:
-					print('@{0:5.0f}sec ({1:.0f} sec)'.format(time.time()-runStart, simLog))
+					print('@{0:5.0f} sec ({1:.0f} sec)'.format(time.time()-runStart, simLog))
 					tree = ET.ElementTree(root)
 					if not kwargs.get("D",False):
 						tree.write(savefilePath)
 					pool.terminate()
 					pool.join()
 					break
-				#except KeyboardInterrupt:
-				#	raise
-				# except Exception as excp:
-				# 	print("Exeption",excp)
-				# 	break
 		else:
-			print("Jumped:     ",printFile, flush = True)
+			root 		= ET.parse(savefilePath).getroot()
+			iList 		= [int(sim.get("i")) 		 						for sim in root.findall("Simulation")]
+			runTList 	= [float(sim.get("totalSimTime")) 					for sim in root.findall("Simulation")]
+			print( [sim.get("runtimeLog") for sim in root.findall("Simulation")] )
+			computeCList= [sum([float(v) for k,v in sim.get("runtimeLog")])	for sim in root.findall("Simulation")]
+			iList.sort()
+			statusStringList = ['.' if i in iList else 'x' for i in range(len(iList))]
+			timeStatus = '@{0:5.0f} sec ({1:.0f} sec)'.format(sum(runTList), sum(computeCList))
+			print("Jumped:     ",printFile, "".join(statusStringList),timeStatus,sep = "", flush = True)
 	except KeyboardInterrupt:
 		print("Killed by keyboard after", round(time.time()-runStart,1), "seconds")
 		pool.terminate()
 		pool.join()
 		raise
-	# except mp.TimeoutError:
-	# 	print("Timed out after", timeout, "seconds")
-	# 	pool.terminate()
-	# 	pool.join()
 	except Exception as e :
 		raise
 		print("Failed", e)
