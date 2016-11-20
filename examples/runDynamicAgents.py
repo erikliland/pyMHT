@@ -13,6 +13,9 @@ import xml.etree.ElementTree as ET
 import multiprocessing as mp 
 import simSettings as sim
 
+def initWorker():
+    signal.signal(signal.SIGINT, signal.SIG_IGN)
+
 def runSimulation(simList, initialTargets, lambda_phi,lambda_nu,radarRange,
 							p0,P_d,N,solver,timeoutDuration, i):
 	try:
@@ -92,12 +95,14 @@ def simulateFile(simList, loadLocation, fileString, solver, lambda_phi, P_d, N,
 						+",lPhi="+'{:7.5f}'.format(lambda_phi)
 						+"]"
 						+".xml")
-		printFile = (	'{:43s}'.format(os.path.splitext(fileString)[0])
-						+'{:6s}'.format(solver)
+		printFile = (	'{:51s}'.format(os.path.splitext(fileString)[0])
+						+", "+'{:6s}'.format(solver)
 						+", P_d="+str(P_d)
 						+", N="+str(N)
 						+", lPhi="+'{:5.0e}'.format(lambda_phi)
 						)
+		if not os.path.exists(os.path.dirname(savefilePath)):
+			os.makedirs(os.path.dirname(savefilePath))
 		if (not os.path.isfile(savefilePath)) or kwargs.get("F",False):
 			nMonteCarlo = kwargs.get("i",sim.nMonteCarlo)
 			root = ET.Element("Simulations",
@@ -111,45 +116,63 @@ def simulateFile(simList, loadLocation, fileString, solver, lambda_phi, P_d, N,
 			print("Simulating: ",printFile, end = "", flush = True)
 			runStart = time.time()
 			simLog = 0.0
-			results = pool.map_async(
+			nCores = min(max(1, args.get("c", os.cpu_count() -1 )),os.cpu_count())
+			pool = mp.Pool(nCores,initWorker)
+			results = pool.imap_unordered(
 				functools.partial(runSimulation,simList,initialTargets,lambda_phi,sim.lambda_nu,radarRange,p0,P_d,N,solver,1),
 				range(nMonteCarlo),
 				1)
-			results.wait(timeout = timeout)
-			if results.ready():
-				for res in results.get(timeout = 1):
+			while True:
+				try:
+					if time.time()-runStart > timeout:
+						raise mp.TimeoutError 
+					res = results.next(timeout=timeout/2)
 					if res is not None:
 						simLog += res['time']
-						ET.SubElement( root, "Simulation", 
-										i 				= repr(res.get('i')),
-										seed 			= repr(res.get('seed')), 
-										totalSimTime 	= '{:.3}'.format((res.get('time'))), 
-										runtimeLog 		= res.get('runetimeLog'), 
-										covConsistence 	= [['{:.3e}'.format(v) for v in row] for row in res.get('covConsistence',[[]])],
-										).text 			= repr(res.get('trackList'))
-				print('@{0:5.1f}sec ({1:.1f} sec)'.format(time.time()-runStart, simLog))
-				tree = ET.ElementTree(root)
-				if not kwargs.get("D",False):
-					if not os.path.exists(os.path.dirname(savefilePath)):
-						os.makedirs(os.path.dirname(savefilePath))
-					tree.write(savefilePath)
-			else:
-				print("Timed out after",timeout, "seconds")
+						ET.SubElement(
+							root, "Simulation", 
+							i 				= repr(res.get('i')),
+							seed 			= repr(res.get('seed')), 
+							totalSimTime 	= '{:.3}'.format((res.get('time'))), 
+							runtimeLog 		= res.get('runetimeLog'), 
+							covConsistence 	= [['{:.3e}'.format(v) for v in row] for row in res.get('covConsistence',[[]])],
+							).text 			= repr(res.get('trackList'))
+				except mp.TimeoutError:
+					pool.close()
+					pool.terminate()
+					print(" Timed out after waiting", round(time.time()-runStart,1), "seconds")
+					pool.join()
+					time.sleep(1)
+					break
+				except StopIteration:
+					print('@{0:5.0f}sec ({1:.0f} sec)'.format(time.time()-runStart, simLog))
+					tree = ET.ElementTree(root)
+					if not kwargs.get("D",False):
+						tree.write(savefilePath)
+					pool.terminate()
+					pool.join()
+					break
+				#except KeyboardInterrupt:
+				#	raise
+				# except Exception as excp:
+				# 	print("Exeption",excp)
+				# 	break
 		else:
 			print("Jumped:     ",printFile, flush = True)
 	except KeyboardInterrupt:
+		print("Killed by keyboard after", round(time.time()-runStart,1), "seconds")
 		pool.terminate()
 		pool.join()
 		raise
-	except mp.TimeoutError:
-		print("Timed out after", timeout, "seconds")
-		pool.terminate()
-		pool.join()
+	# except mp.TimeoutError:
+	# 	print("Timed out after", timeout, "seconds")
+	# 	pool.terminate()
+	# 	pool.join()
 	except Exception as e :
 		raise
 		print("Failed", e)
 
-def runDynamicAgents(pool, **kwargs):
+def runDynamicAgents(**kwargs):
 	fileIndex = kwargs.get("f")
 	if fileIndex is not None:
 		files = [sim.croppedFiles[i] for i in fileIndex]
@@ -184,9 +207,6 @@ def runDynamicAgents(pool, **kwargs):
 										initialTargets,
 										**kwargs)
 
-def initWorker():
-    signal.signal(signal.SIGINT, signal.SIG_IGN)
-
 if __name__ == '__main__':
 	os.chdir(os.path.dirname(os.path.abspath(__file__)))
 	parser = argparse.ArgumentParser(description = "Run MHT tracker simulations", argument_default=argparse.SUPPRESS)
@@ -203,15 +223,14 @@ if __name__ == '__main__':
 	args = vars(parser.parse_args())
 	tic = time.time()
 	try:
-		nCores = max(1, args.get("c", os.cpu_count() -1 ))
+		nCores = min(max(1, args.get("c", os.cpu_count() -1 )),os.cpu_count())
 		print("Using", nCores, "workers")
-		pool = mp.Pool(nCores,initWorker)
-		runDynamicAgents(pool, **args)
+		runDynamicAgents(**args)
 	except KeyboardInterrupt:
-		pool.terminate()
-		pool.join()
+		#pool.terminate()
+		#pool.join()
 		print("Terminated", time.ctime())
 	else:
-		pool.close()
-		pool.join()
+		#pool.close()
+		#pool.join()
 		print("Finished(",round(time.time()-tic,1),"sec )@", time.ctime())
