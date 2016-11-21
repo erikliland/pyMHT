@@ -90,7 +90,7 @@ def runSimulation(sArgs,i):
 		print("O",end = "", flush = True)
 	except KeyboardInterrupt:
 		raise
-	except as e:
+	except Exception as e:
 		print("tracker had an Exeption", e)
 		print("?",end = "", flush = True)
 		raise
