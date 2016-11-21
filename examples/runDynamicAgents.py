@@ -78,20 +78,20 @@ def runSimulation(sArgs,i):
 				'covConsistence': covConsistenceList
 				}
 	except pulp.solvers.PulpSolverError as e:
-		logging.error("tacker had en pulp.solvers.PulpSolverError", e)
+		logging.error("tacker had en pulp.solvers.PulpSolverError" + str(e))
 		print("/",end = "", flush = True)
 		res = None 
 	except ValueError as e:
-		logging.error("tracker had a ValueError", e)
+		logging.error("tracker had a ValueError" + str(e))
 		print("v",end = "", flush = True)
 		res = None 
 	except OSError as e:
-		logging.error("tracker had an OSError", e)
+		logging.error("tracker had an OSError" + str(e))
 		print("O",end = "", flush = True)
 	except KeyboardInterrupt:
 		raise
 	except Exception as e:
-		print("tracker had an Exeption", e)
+		print("tracker had an Exeption" + str(e))
 		print("?",end = "", flush = True)
 		raise
 		res = None
@@ -203,9 +203,9 @@ def simulateFile(sArgs,**kwargs):
 		#pool.join()
 		raise
 	except Exception as e :
-		logging.error("simulateFile had en exception", e)
+		logging.error("simulateFile had en exception" + str(e))
 		raise
-		print("Failed", e)
+		print("Failed" + e)
 
 def runDynamicAgents(**kwargs):
 	fileIndex = kwargs.get("f")
@@ -262,7 +262,7 @@ if __name__ == '__main__':
 		logging.basicConfig(filename = "Log_DynamicAgents-"+time.strftime("%Y-%m-%d_%H.%M.%S", time.gmtime(time.time()))+".log",
 							filemode = 'w',
 							level 	 = logging.DEBUG)
-		logging.info("Starting with these cmd arguments",args)
+		logging.info("Starting with these cmd arguments" + str(args))
 
 		tic = time.time()
 		nCores = min(max(1, args.get("c", os.cpu_count() -1 )),os.cpu_count())
