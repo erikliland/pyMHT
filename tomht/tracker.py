@@ -14,6 +14,7 @@ from .classDefinitions import Position, Velocity
 import time
 import pulp
 import itertools
+import logging
 import scipy.sparse as sp
 import matplotlib.pyplot as plt
 import numpy as np

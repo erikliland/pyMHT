@@ -8,6 +8,7 @@ try:
 	import argparse
 	import tomht
 	import ast
+	import logging
 	from collections import namedtuple
 	import tomht.radarSimulator as radarSimulator
 	import tomht.helpFunctions as hpf
@@ -76,17 +77,21 @@ def runSimulation(sArgs,i):
 				'runetimeLog': tracker.getRuntimeAverage(), 
 				'covConsistence': covConsistenceList
 				}
-	except pulp.solvers.PulpSolverError:
+	except pulp.solvers.PulpSolverError as e:
+		logging.error("tacker had en pulp.solvers.PulpSolverError", e)
 		print("/",end = "", flush = True)
 		res = None 
-	except ValueError:
+	except ValueError as e:
+		logging.error("tracker had a ValueError", e)
 		print("v",end = "", flush = True)
 		res = None 
-	except OSError:
+	except OSError as e:
+		logging.error("tracker had an OSError", e)
 		print("O",end = "", flush = True)
 	except KeyboardInterrupt:
 		raise
-	except:
+	except as e:
+		print("tracker had an Exeption", e)
 		print("?",end = "", flush = True)
 		raise
 		res = None
@@ -198,6 +203,7 @@ def simulateFile(sArgs,**kwargs):
 		#pool.join()
 		raise
 	except Exception as e :
+		logging.error("simulateFile had en exception", e)
 		raise
 		print("Failed", e)
 
@@ -252,6 +258,12 @@ if __name__ == '__main__':
 		parser.add_argument('-l', help = "Lambda_Phi (noise)", 			nargs = '+', type = float)
 		parser.add_argument('-t', help = "File simulation timeout",		type = float)
 		args = vars(parser.parse_args())
+
+		logging.basicConfig(filename = "Log_DynamicAgents-"+time.strftime("%Y-%m-%d_%H.%M.%S", time.gmtime(time.time()))+".log",
+							filemode = 'w',
+							level 	 = logging.DEBUG)
+		logging.info("Starting with these cmd arguments",args)
+
 		tic = time.time()
 		nCores = min(max(1, args.get("c", os.cpu_count() -1 )),os.cpu_count())
 		print("Using", nCores, "workers")
