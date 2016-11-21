@@ -34,7 +34,6 @@ def openGroundTruth(filename):
 				targetTracks[target,timestep,:] = simList[timestep-1][target].state[0:2]
 	return np.asarray(targetTracks)
 
-
 def compareResults():
 	root = ET.Element("simulations", nMonteCarlo = str(nMonteCarlo))
 	for fileString in croppedFiles:
@@ -99,7 +98,7 @@ def compareResults():
 							nLostTracks += sum(permanentLostTracks)
 							nTracks += len(estimatedTracks)
 							print(".", end = "")
-						print("x"*(nMonteCarlo-nSimulations),sep = "",end = "", flush = True)
+						# print("x"*(nMonteCarlo-nSimulations),sep = "",end = "", flush = True)
 						if nTracks != 0:
 							print("\t",'{:3.0f}'.format(nLostTracks),"/",'{:3.0f}'.format(nTracks),"=>",'{:4.1f}'.format((nLostTracks/nTracks)*100),"%")
 							lambdaPhi = ET.SubElement(num,"lambda_phi", value = '{:5.0e}'.format(lambda_phi))
