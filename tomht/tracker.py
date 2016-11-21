@@ -148,6 +148,8 @@ class Target():
 	
 	def gateAndCreateNewHypotheses(self, measurementList, associatedMeasurements, tracker):
 		scanNumber = len(tracker.__scanHistory__)
+		if scanNumber != (self.scanNumber-1):
+			raise ValueEroor("gateAndCreateNewMeasurement: from scan number", self.scanNumber,"to",scanNumber)
 		P_d = tracker.P_d
 		lambda_ex = tracker.lambda_ex
 		time = measurementList.time
