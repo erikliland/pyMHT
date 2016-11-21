@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 try:
 	import os
 	import sys
@@ -176,7 +177,7 @@ def simulateFile(sArgs,**kwargs):
 			
 		else:
 			root 		= ET.parse(savefilePath).getroot()
-			iList 		= [int(sim.get("i")) 		 		for sim in root.findall("Simulation")]
+			iList 		= [int(sim.get("i")) for sim in root.findall("Simulation")]
 			iList.sort()
 			missingSimulationIndecies = set(range(nMonteCarlo)).difference(set(iList))
 			if missingSimulationIndecies:

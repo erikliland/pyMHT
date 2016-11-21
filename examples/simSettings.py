@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 import os
 loadLocation = os.path.join("..","data")
 files 		= [	'dynamic_agents_full_cooperation.txt',

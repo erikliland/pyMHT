@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 import matplotlib.pyplot as plt
 import numpy as np
 import pulp
@@ -142,7 +143,7 @@ def writeTracksToFile(filename,trackList, time, **kwargs):
 def parseSolver(solverString):
 	s = solverString.strip().lower()
 	if s == "cplex":
-		return pulp.CPLEX_CMD(None, 0,1,0,[],0.05)
+		return pulp.CPLEX_CMD(None, 0,1,0,[])
 	if s == "glpk":
 		return pulp.GLPK_CMD(None, 0,1,0,[])
 	if s == "cbc":

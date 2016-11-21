@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 import os, sys
 import matplotlib.pyplot as plt
 import tomht.radarSimulator as sim
@@ -49,10 +50,9 @@ def compareResults():
 				for N in NList:
 					num = ET.SubElement(prob, "N", value = str(N))
 					for lambda_phi in lambdaPhiList:
-						lambdaPhi = ET.SubElement(num,"lambda_phi", value = '{:5.0e}'.format(lambda_phi))
 						nTracks = 0
 						nLostTracks = 0
-						print('{:39s}'.format(os.path.splitext(fileString)[0]),'{:6s}'.format(solver),"P_d =",P_d,"N =",N,"lPhi =",'{:5.0e}'.format(lambda_phi), end = "\t")
+						print('{:45s}'.format(os.path.splitext(fileString)[0]),'{:6s}'.format(solver),"P_d =",P_d,"N =",N,"lPhi =",'{:5.0e}'.format(lambda_phi), end = "\t")
 						savefilePath = (os.path.join(loadLocation,os.path.splitext(fileString)[0],"results",os.path.splitext(fileString)[0])
 											+"["
 											+solver.upper()
@@ -66,6 +66,10 @@ def compareResults():
 						except FileNotFoundError:
 							print("x"*nMonteCarlo)
 							continue
+						iList = [int(sim.get("i")) for sim in simulations.findall("Simulation")]
+						iList.sort()
+						missingSimulationIndecies = set(range(nMonteCarlo)).difference(set(iList))
+
 						nSimulations = int(simulations.attrib.get('nMonteCarlo'))
 						for simulation in simulations:
 							parsedTracks = ast.literal_eval(simulation.text)
@@ -98,6 +102,7 @@ def compareResults():
 						print("x"*(nMonteCarlo-nSimulations),sep = "",end = "", flush = True)
 						if nTracks != 0:
 							print("\t",'{:3.0f}'.format(nLostTracks),"/",'{:3.0f}'.format(nTracks),"=>",'{:4.1f}'.format((nLostTracks/nTracks)*100),"%")
+							lambdaPhi = ET.SubElement(num,"lambda_phi", value = '{:5.0e}'.format(lambda_phi))
 							ET.SubElement(lambdaPhi,"nTracks").text 	= str(nTracks)
 							ET.SubElement(lambdaPhi,"nLostTracks").text = str(nLostTracks)
 							ET.SubElement(lambdaPhi,"totalTime").text 	= simulation.get("totalSimTime")
