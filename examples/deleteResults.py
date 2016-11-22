@@ -17,7 +17,8 @@ def deleteFiles(**kwargs):
 			for P_d in PdList:
 				for N in NList:
 					for lambda_phi in lambdaPhiList:
-						relativePath = generateFilePath(fileString, solver, P_d, N, lambda_phi)
+
+						relativePath = s.generateResultFilePath(fileString, solver, P_d, N, lambda_phi)
 						absPath = os.path.abspath(relativePath)
 						try:
 							os.remove(absPath) 
