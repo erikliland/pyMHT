@@ -170,7 +170,7 @@ def simulateFile(sArgs,**kwargs):
 			(simTime, runTime) = runFile(root, range(nMonteCarlo), sArgs, **kwargs)
 			print('@{0:5.0f} sec ({1:3.0f} sec)'.format(runTime, simTime))
 			root.attrib["wallRunTime"] = repr(runTime)
-			root.attrib["totalSimTime"]= repr(totalSimTime)
+			root.attrib["totalSimTime"]= repr(simTime)
 			tree = ET.ElementTree(root)
 			if not kwargs.get("D",False):
 				tree.write(savefilePath)
@@ -274,7 +274,7 @@ if __name__ == '__main__':
 			iCurrent = 0
 			while iCurrent < iMax:
 				iCurrent += nCores
-				runDynamicAgents(**args.update({"i":iCurrent}))
+				runDynamicAgents(**dict(args, i = iCurrent))
 		else:
 			runDynamicAgents(**args)
 	except KeyboardInterrupt:
