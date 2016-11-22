@@ -32,37 +32,6 @@ def generateCroppedFileName(fileName):
 def generateCroppedFilePath(croppedFileName):
 	return os.path.join(loadLocation,os.path.splitext(croppedFileName)[0], croppedFileName)
 
-def generateResultFilePath(fileString, solver, P_d, N, lambda_phi):
-	return (
-		os.path.join(	loadLocation,
-						os.path.splitext(fileString)[0],
-						"results",
-						os.path.splitext(fileString)[0]
-						) 	+"["
-							+solver.upper()
-							+",Pd="+str(P_d)
-							+",N="+str(N)
-							+",lPhi="+'{:7.5f}'.format(lambda_phi)
-							+"]"
-							+".xml"
-			)
-
-def generateRawFileName(fileName):
-	return os.path.splitext(fileName)[0]+"-RAW.txt"
-
-def generateRawFilePath(fileName, rawFileName):
-	return os.path.join(loadLocation,os.path.splitext(fileName)[0],rawFileName)
-
-def generateFilePath(fileName):
-	return os.path.join(loadLocation,os.path.splitext(fileName)[0],fileName)
-
-def generateCroppedFileName(fileName):
-	return os.path.splitext(os.path.basename(fileName))[0]+"_cropped.txt"
-
-def generateCroppedFilePath(croppedFileName):
-	return os.path.join(loadLocation,os.path.splitext(croppedFileName)[0], croppedFileName)
-
-
 loadLocation = os.path.join("..","data")
 files 		= [	'dynamic_agents_full_cooperation.txt',
 				'dynamic_agents_partial_cooporation.txt',
