@@ -170,6 +170,7 @@ def simulateFile(sArgs,**kwargs):
 			(simTime, runTime) = runFile(root, range(nMonteCarlo), sArgs, **kwargs)
 			print('@{0:5.0f} sec ({1:3.0f} sec)'.format(runTime, simTime))
 			root.attrib["wallRunTime"] = repr(runTime)
+			root.attrib["totalSimTime"]= repr(totalSimTime)
 			tree = ET.ElementTree(root)
 			if not kwargs.get("D",False):
 				tree.write(savefilePath)
