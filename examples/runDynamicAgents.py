@@ -258,6 +258,7 @@ if __name__ == '__main__':
 		parser.add_argument('-p', help = "Probability of detection", 	nargs = '+', type = float)
 		parser.add_argument('-l', help = "Lambda_Phi (noise)", 			nargs = '+', type = float)
 		parser.add_argument('-t', help = "File simulation timeout",		type = float)
+		parser.add_argument('-A', help = "Accumulate mode: continous loop of all files with increment of nCores", action = 'store_true')
 		args = vars(parser.parse_args())
 
 		logging.basicConfig(filename = "Log_DynamicAgents-"+time.strftime("%Y-%m-%d_%H.%M.%S", time.gmtime(time.time()))+".log",
@@ -268,7 +269,14 @@ if __name__ == '__main__':
 		tic = time.time()
 		nCores = min(max(1, args.get("c", os.cpu_count() -1 )),os.cpu_count())
 		print("Using", nCores, "workers")
-		runDynamicAgents(**args)
+		if args.get("A", False):
+			iMax = args.get("i",float('inf'))
+			iCurrent = 0
+			while iCurrent < iMax:
+				iCurrent += nCores
+				runDynamicAgents(**args.update({"i":iCurrent}))
+		else:
+			runDynamicAgents(**args)
 	except KeyboardInterrupt:
 		print("Terminated", time.ctime())
 		sys.exit()
