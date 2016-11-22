@@ -17,12 +17,12 @@ def deleteFiles(**kwargs):
 			for P_d in PdList:
 				for N in NList:
 					for lambda_phi in lambdaPhiList:
-
 						relativePath = s.generateResultFilePath(fileString, solver, P_d, N, lambda_phi)
 						absPath = os.path.abspath(relativePath)
 						try:
-							os.remove(absPath) 
-							print("Removed", absPath)
+							if os.path.isfile(absPath):
+								os.remove(absPath) 
+								print("Removed", absPath)
 						except OSError:
 							print("Failed to remove",absPath)
 							pass
@@ -38,5 +38,6 @@ if __name__ == '__main__':
 						NList = s.NList,
 						lambdaPhiList = s.lambdaPhiList
 						)
+		print("There you go! All these files are gone...")
 	else:
 		print("Phuuu! The files are still there... Smart choice!")
