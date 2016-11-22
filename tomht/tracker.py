@@ -148,8 +148,7 @@ class Target():
 	
 	def gateAndCreateNewHypotheses(self, measurementList, associatedMeasurements, tracker):
 		scanNumber = len(tracker.__scanHistory__)
-		if scanNumber != (self.scanNumber-1):
-			raise ValueEroor("gateAndCreateNewMeasurement: from scan number", self.scanNumber,"to",scanNumber)
+		assert self.scanNumber == scanNumber-1, "gateAndCreateNewMeasurement: inconsistent scan numbering"
 		P_d = tracker.P_d
 		lambda_ex = tracker.lambda_ex
 		time = measurementList.time
@@ -302,6 +301,16 @@ class Target():
 		for hyp in self.trackHypotheses:
 			hyp.recursiveSubtractScore(score)
 
+	def _checkScanNumberIntegrety(self):
+		assert type(self.scanNumber) is int, "self.scanNumber is not an integer %r" % self.scanNumber
+
+		if self.parent is not None:
+			assert type(self.parent.scanNumber) is int, "self.parent.scanNumber is not an integer %r" % self.parent.scanNumber
+			assert self.parent.scanNumber  == self.scanNumber -1, "self.parent.scanNumber(%r) == self.scanNumber-1(%r)" % (self.parent.scanNumber, self.scanNumber)
+
+		for hyp in self.trackHypotheses:
+			hyp._checkScanNumberIntegrety()
+
 
 	def plotValidationRegion(self, eta2, stepsBack = 0):
 		if self.residualCovariance is not None:
@@ -409,24 +418,26 @@ class Tracker():
 
 	def addMeasurementList(self,measurementList, **kwargs):
 		tic1 = time.process_time()
+		
+		self._checkTrackerIntegrety()
+
 		tic2 = time.process_time()
 		self.__scanHistory__.append(measurementList)
 		nMeas = len(measurementList.measurements)
 		nTargets = len(self.__targetList__)
 		for targetIndex, target in enumerate(self.__targetList__):
 			target.processNewMeasurement(measurementList, self.__associatedMeasurements__[targetIndex],self)
-
 		toc2 = time.process_time() - tic2
 		if kwargs.get("printAssociation",False):
 			print(*__associatedMeasurements__, sep = "\n", end = "\n\n")
-		
+
 		#--Cluster targets--
 		tic3 = time.process_time()
 		clusterList = self._findClustersFromSets()
 		toc3 = time.process_time() - tic3
 		if kwargs.get("printCluster",False):
 			hpf.printClusterList(clusterList)
-
+		
 		#--Maximize global (cluster vise) likelihood--
 		tic4 = time.process_time()
 		nOptimSolved = 0
@@ -439,11 +450,13 @@ class Tracker():
 				self.__trackNodes__[cluster] = self._solveOptimumAssociation(cluster)
 				nOptimSolved += 1
 		toc4 = time.process_time()-tic4
-		
+
 		tic5 = time.process_time()
 		self._nScanPruning()
 		toc5 = time.process_time()-tic5
 		toc1 = time.process_time() - tic1
+
+		self._checkTrackerIntegrety()
 
 		if self.logTime:
 			self.runtimeLog['Process'] 	+= np.array([toc2,1])
@@ -493,12 +506,7 @@ class Tracker():
 		nHypInClusterArray = self._getHypInCluster(cluster)
 		nRealMeasurementsInCluster= len(set.union(*[self.__associatedMeasurements__[i] for i in cluster]))
 		problemSize = nRealMeasurementsInCluster*sum(nHypInClusterArray)
-		# print("problemSize", problemSize)
-		# if problemSize > problemSizeLimit:
-		# 	_nScanPruning(, N-1)
-		# 	nHypInClusterArray = _getHypInCluster(cluster)
-		# 	nRealMeasurementsInCluster= len(set.union(*[__associatedMeasurements__[i] for i in cluster]))
-		# 	print("reduced problemSize:", nRealMeasurementsInCluster*sum(nHypInClusterArray))
+
 		t0 = time.process_time()
 		(A1, measurementList) = self._createA1(nRealMeasurementsInCluster,sum(nHypInClusterArray), cluster)
 		A2 	= self._createA2(len(cluster), nHypInClusterArray)
@@ -506,8 +514,9 @@ class Tracker():
 		t1 = time.process_time()-t0
 		# print("matricesTime\t", round(t1,3))
 
-		selectedHypotheses = self._solveBLP(A1,A2, C)
+		selectedHypotheses = self._solveBLP(A1,A2, C, len(cluster))
 		selectedNodes = self._hypotheses2Nodes(selectedHypotheses,cluster)
+		selectedNodesArray = np.array(selectedNodes)
 		# print("Solving optimal association in cluster with targets",cluster,",   \t",
 		# sum(nHypInClusterArray)," hypotheses and",nRealMeasurementsInCluster,"real measurements.",sep = " ")
 		# print("nHypothesesInCluster",sum(nHypInClusterArray))
@@ -520,13 +529,19 @@ class Tracker():
 		# print("A2", A2, sep = "\n")
 		# print("measurementList",measurementList)
 		# print("selectedHypotheses",selectedHypotheses)
-		# print("selectedMeasurements",selectedMeasurements)
-		#return np.array(selectedMeasurements, dtype = int, ndmin = 2).T
-		return np.array(selectedNodes)
+		# print("selectedNodes",*selectedNodes, sep = "\n")
+		# print("selectedNodesArray",*selectedNodesArray, sep = "\n")
+
+		assert len(selectedHypotheses) == len(cluster), "__solveOptimumAssociation did not find the correct number of hypotheses"
+		assert len(selectedNodes) == len(cluster), "__solveOptimumAssociation did not find the correct number of nodes"
+		assert len(selectedHypotheses) == len(set(selectedHypotheses)), "_solveOptimumAssociation selected two or more equal hyptheses"
+		assert len(selectedNodes) == len(set(selectedNodes)), "_solveOptimumAssociation found same node in more than one track in selectedNodes"
+		assert len(selectedNodesArray) == len(set(selectedNodesArray)), "_solveOptimumAssociation found same node in more than one track in selectedNodesArray"
+		return selectedNodesArray
 
 	def _getHypInCluster(self,cluster):
 		def nLeafNodes(target):
-			if len(target.trackHypotheses) == 0:
+			if not target.trackHypotheses:
 				return 1
 			else:
 				return sum(nLeafNodes(hyp) for hyp in target.trackHypotheses)
@@ -612,7 +627,7 @@ class Tracker():
 			recDFS(self.__targetList__[targetIndex], selectedHypotheses, nodeList, counter)
 		return nodeList
 
-	def _solveBLP(self, A1, A2, f):
+	def _solveBLP(self, A1, A2, f, nHyp):
 		(nMeas, nHyp) = A1.shape
 		(nTargets, _) = A2.shape
 		prob = pulp.LpProblem("Association problem", pulp.LpMinimize)
@@ -628,26 +643,34 @@ class Tracker():
 		tic = time.process_time()
 		sol = prob.solve(self.solver)
 		toc = time.process_time()-tic
-		if self.debug:
-			print("n=",nHyp,"=>",round(toc,3))
-		def getSelectedHyp1(p):
-			hyp = [int(v.name[2:]) for v in p.variables() if v.varValue ==1]
+
+		def getSelectedHyp1(p, threshold = 0):
+			hyp = [int(v.name[2:]) for v in p.variables() if abs(v.varValue-1) <= threshold]
 			hyp.sort()
 			return hyp
-		def getSelectedHyp2(p):
-			hyp = [int(v[0][2:]) for v in p.variablesDict().items() if v[1].varValue==1]
+		def getSelectedHyp2(p, threshold = 0):
+			hyp = [int(v[0][2:]) for v in p.variablesDict().items() if abs(v[1].varValue-1) <= threshold]
 			hyp.sort()
 			return hyp
-		return getSelectedHyp2(prob)
+
+		for threshold in [0, 1e-10, 1e-8, 1e-6, 1e-4, 1e-2]:
+			selectedHypotheses = getSelectedHyp2(prob, threshold)
+			if len(selectedHypotheses) == nHyp:
+				break
+		return selectedHypotheses
 
 	def _nScanPruning(self):
 		def recPruneNScan(node, targetIndex, targetList, stepsLeft):
 			if stepsLeft <= 0:
 				if node.parent is not None:
+					if targetList[targetIndex].scanNumber != node.scanNumber-1:
+						raise ValueError("nScanPruning1: from scanNumber",targetList[targetIndex].scanNumber,"->",node.scanNumber)
 					changed = (targetList[targetIndex] != node)
 					targetList[targetIndex] = node
 					node.parent._pruneAllHypothesisExeptThis(node)
 					node.recursiveSubtractScore(node.cummulativeNLLR)
+					if node.parent.scanNumber != node.scanNumber-1:
+						raise ValueError("nScanPruning2: from scanNumber",node.parent.scanNumber,"->",node.scanNumber)
 					return changed
 				else:
 					return False
@@ -657,7 +680,9 @@ class Tracker():
 				return False
 		
 		for targetIndex, node in enumerate(self.__trackNodes__):
+			self._checkTrackerIntegrety()
 			changed = recPruneNScan(node, targetIndex, self.__targetList__, self.N)
+			self._checkTrackerIntegrety()
 			if changed:
 				self.__associatedMeasurements__[targetIndex] = self.__targetList__[targetIndex].getMeasurementSet()
 
@@ -688,6 +713,13 @@ class Tracker():
 		# 		if col < nHyp:
 		# 			# print("Removing zero hypothesis")
 		# 			target.trackHypotheses.pop(0)
+
+	def _checkTrackerIntegrety(self):
+		assert len(self.__trackNodes__) == len(self.__targetList__), "There are not the same number trackNodes as targets"
+		assert len(self.__targetList__) == len(set(self.__targetList__)), "There are copies of targets in the target list"
+		assert len(self.__trackNodes__) == len(set(self.__trackNodes__)), "There are copies of track nodes in __trackNodes__"
+		for target in self.__targetList__:
+			target._checkScanNumberIntegrety()
 
 	
 	def plotValidationRegionFromRoot(self, stepsBack = 1):
@@ -767,3 +799,13 @@ class Tracker():
 			position = initialTarget.filteredStateMean[0:2] - offset
 			ax.text(position[0], position[1], "T"+str(index[i]), 
 				fontsize=8, horizontalalignment = "center", verticalalignment = "center")
+
+
+	def printTargetList(self, **kwargs):
+		print("TargetList:")
+		for targetIndex, target in enumerate(self.__targetList__):
+			if kwargs.get("backtrack", False):
+				print(target.stepBack().__str__(targetIndex = targetIndex)) 
+			else:
+				print(target.__str__(targetIndex = targetIndex)) 
+		print()
