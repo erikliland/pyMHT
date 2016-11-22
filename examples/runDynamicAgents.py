@@ -61,11 +61,11 @@ def runSimulation(sArgs,i):
 		 	tracker.initiateTarget(initialTarget)
 
 		covConsistenceList = []
-		tic = time.process_time()
+		tic = time.time()
 		for scanIndex, measurementList in enumerate(scanList):
 			covConsistenceList.append( 
 				tracker.addMeasurementList(measurementList, trueState = sArgs.simList[scanIndex]))
-		toc = time.process_time()-tic
+		toc = time.time()-tic
 		trackList = hpf.backtrackNodePositions(tracker.__trackNodes__)
 		if any ( len(track)-1 != len(sArgs.simList) for track in trackList):
 			print(",",end = "", flush = True)

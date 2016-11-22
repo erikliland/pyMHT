@@ -439,7 +439,7 @@ class Tracker():
 			hpf.printClusterList(clusterList)
 		
 		#--Maximize global (cluster vise) likelihood--
-		tic4 = time.process_time()
+		tic4 = time.time()
 		nOptimSolved = 0
 		for cluster in clusterList:
 			if len(cluster) == 1:
@@ -449,7 +449,7 @@ class Tracker():
 				#self._pruneSmilarState(cluster, self.pruneThreshold/2)
 				self.__trackNodes__[cluster] = self._solveOptimumAssociation(cluster)
 				nOptimSolved += 1
-		toc4 = time.process_time()-tic4
+		toc4 = time.time()-tic4
 
 		tic5 = time.process_time()
 		self._nScanPruning()
