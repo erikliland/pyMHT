@@ -46,8 +46,15 @@ def runDynamicAgent(fileString,solver,P_d, N, lambda_phi,**kwargs):
 		plt.show(block = False)
 		timestep = kwargs.get("t")
 
-	for scanIndex, measurementList in enumerate(scanList):
-		tracker.addMeasurementList(measurementList, trueState = simList[scanIndex])
+	try:
+		for scanIndex, measurementList in enumerate(scanList):
+			tracker.addMeasurementList(measurementList, trueState = simList[scanIndex])
+			if scanIndex == kwargs.get("k",1e15):
+				break
+	except ValueError as e:
+		tracker.printTargetList()
+		print(e)
+		raise
 
 		if "t" in kwargs:
 			plt.gca().cla()
@@ -72,17 +79,16 @@ def runDynamicAgent(fileString,solver,P_d, N, lambda_phi,**kwargs):
 	
 	plt.close()
 	fig1 = plt.figure(num=1, figsize = (9,9), dpi=100)	
-#	hpf.plotRadarOutline(p0, radarRange, center = False)
+	hpf.plotRadarOutline(p0, radarRange, center = False)
 	hpf.plotTrueTrack(simList, markers = True)
 	tracker.plotInitialTargets()
-#	tracker.plotVelocityArrowForTrack()
+	tracker.plotVelocityArrowForTrack()
 	# tracker.plotValidationRegionFromRoot()
 	# tracker.plotValidationRegionFromTracks()
-	# hpf.plotMeasurementsFromForest(tracker.__targetList__, real = True, dummy = True)
-	# hpf.plotMeasurementsFromList(tracker.__scanHistory__)
-#	tracker.plotMeasurementsFromTracks(labels = False, dummy = True)
-#	tracker.plotHypothesesTrack()
-#	tracker.plotActiveTracks()
+	# tracker.plotMeasurementsFromRoot(dummy = True)
+	tracker.plotMeasurementsFromTracks(labels = False, dummy = True)
+	# tracker.plotHypothesesTrack()
+	tracker.plotActiveTracks()
 	plt.axis("equal")
 	plt.xlim((p0.x-radarRange*1.05, p0.x + radarRange*1.05))
 	plt.ylim((p0.y-radarRange*1.05, p0.y + radarRange*1.05))
@@ -100,6 +106,7 @@ if __name__ == '__main__':
 	parser.add_argument('l', help = "Lambda_Phi value (noise)", type = float)
 	parser.add_argument('-i',help = "Random iteration selector", type = int) 
 	parser.add_argument('-t',help = "Step through the simulation", type = float )
+	parser.add_argument('-k',help = "Measurement number to stop at", type = int )
 	args = vars(parser.parse_args())
 	print(args)
 	runDynamicAgent(croppedFiles[args.get('f')],args.get('s'),args.get('p'),args.get('n'),args.get('l'), **args)
