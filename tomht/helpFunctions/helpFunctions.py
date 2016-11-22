@@ -47,14 +47,6 @@ def printClusterList(clusterList):
 	for clusterIndex, cluster in enumerate(clusterList):
 		print("Cluster ", clusterIndex, " contains target(s):\t", cluster, sep ="", end = "\n")
 	
-def printTargetList(targetList, **kwargs):
-	print("TargetList:")
-	for targetIndex, target in enumerate(targetList):
-		if kwargs.get("backtrack", False):
-			print(target.stepBack().__str__(targetIndex = targetIndex)) 
-		else:
-			print(target.__str__(targetIndex = targetIndex)) 
-	print()
 
 def printHypothesesScore(targetList):
 	def recPrint(target, targetIndex):
