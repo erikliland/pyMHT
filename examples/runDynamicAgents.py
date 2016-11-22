@@ -178,14 +178,16 @@ def simulateFile(sArgs,**kwargs):
 			root 		= ET.parse(savefilePath).getroot()
 			iList 		= [int(sim.get("i")) for sim in root.findall("Simulation")]
 			iList.sort()
+			preliminaryWallRunTime = float(root.attrib.get("wallRunTime",0))
+			preliminaryTotalSimTime = float(root.attrib.get("totalSimTime",0))
 			missingSimulationIndecies = set(range(nMonteCarlo)).difference(set(iList))
 			if missingSimulationIndecies:
 				print("Partial:    ", printFile,"."*len(iList), sep = "", end = "", flush = True)
 				(simTime, runTime) = runFile(root, missingSimulationIndecies, sArgs, **kwargs)
-				print('@{0:5.0f} sec ({1:3.0f} sec)'.format(runTime, simTime))
+				print('@{0:5.0f} sec ({1:3.0f} sec) [{2:3.0f},{3:3.0f}] sec'.format(preliminaryWallRunTime+runTime, preliminaryTotalSimTime+simTime,preliminaryWallRunTime,preliminaryTotalSimTime))
 				
-				root.attrib["wallRunTime"] = repr(float(root.attrib.get("wallRunTime",0)) + runTime)
-				root.attrib["totalSimTime"]= repr(float(root.attrib.get("totalSimTime",0))+ simTime)
+				root.attrib["wallRunTime"] = repr(preliminaryWallRunTime + runTime)
+				root.attrib["totalSimTime"]= repr(preliminaryTotalSimTime+ simTime)
 				root.attrib["nMonteCarlo"] = repr(nMonteCarlo)
 				if not kwargs.get("D",False):
 					tree = ET.ElementTree(root)
@@ -199,8 +201,6 @@ def simulateFile(sArgs,**kwargs):
 				print("Jumped:     ",printFile, "".join(statusStringList),timeStatus,sep = "", flush = True)
 	except KeyboardInterrupt:
 		print("Killed by keyboard")
-		#pool.terminate()
-		#pool.join()
 		raise
 	except Exception as e :
 		logging.error("simulateFile had en exception" + str(e))
