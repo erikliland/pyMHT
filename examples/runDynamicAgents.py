@@ -79,15 +79,15 @@ def runSimulation(sArgs,i):
 				'covConsistence': covConsistenceList
 				}
 	except pulp.solvers.PulpSolverError as e:
-		logging.error("tacker had en pulp.solvers.PulpSolverError" + str(e))
+		#logging.error("tacker had en pulp.solvers.PulpSolverError" + str(e))
 		print("/",end = "", flush = True)
 		res = None 
 	except ValueError as e:
-		logging.error("tracker had a ValueError" + str(e))
+		#logging.error("tracker had a ValueError" + str(e))
 		print("v",end = "", flush = True)
 		res = None 
 	except OSError as e:
-		logging.error("tracker had an OSError" + str(e))
+		#logging.error("tracker had an OSError" + str(e))
 		print("O",end = "", flush = True)
 	except KeyboardInterrupt:
 		raise

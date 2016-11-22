@@ -65,6 +65,7 @@ def compareResults():
 						except FileNotFoundError:
 							print("x"*nMonteCarlo)
 							continue
+
 						iList = [int(sim.get("i")) for sim in simulations.findall("Simulation")]
 						iList.sort()
 						missingSimulationIndecies = set(range(nMonteCarlo)).difference(set(iList))
