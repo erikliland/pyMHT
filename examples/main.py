@@ -46,10 +46,10 @@ def runSimulation():
 	pruneThreshold = sigmaR_tracker
 
 	simList = sim.simulateTargets(seed, initialTargets, nScans, timeStep, Phi(timeStep), Q(timeStep,sigmaQ_true), Gamma)
-
 	# print("Sim list:")
 	# print(*simList, sep = "\n", end = "\n\n")
-
+	sim.writeSimList(initialTargets, simList, "parallel_targets.txt")
+	return
 	scanList = sim.simulateScans(seed, simList, C, R(sigmaR_true), lambda_phi,radarRange, p0, P_d = P_d, shuffle = False)
 	#solvers: CPLEX, GLPK, CBC, GUROBI
 	tracker = tomht.Tracker(Phi, C, Gamma, P_d, P0, R(), Q, lambda_phi, lambda_nu, eta2, pruneThreshold, N, "CBC", logTime = True)
@@ -85,5 +85,6 @@ def runSimulation():
 	plt.show()
 
 if __name__ == '__main__':
+	os.chdir( os.path.dirname(os.path.abspath(__file__)) )
 	runSimulation()
 	print("Done :)")

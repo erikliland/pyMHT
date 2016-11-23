@@ -36,7 +36,8 @@ loadLocation = os.path.join("..","data")
 files 		= [	'dynamic_agents_full_cooperation.txt',
 				'dynamic_agents_partial_cooporation.txt',
 				'dynamic_and_static_agents_large_space.txt',
-				'dynamic_and_static_agents_narrow_space.txt'
+				'dynamic_and_static_agents_narrow_space.txt',
+				'parallel_targets.txt'
 				]
 rawFiles 	= [generateRawFileName(file) for file in files]
 croppedFiles= [generateCroppedFileName(file) for file in files]
