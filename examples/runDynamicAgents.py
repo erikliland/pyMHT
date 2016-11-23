@@ -71,7 +71,7 @@ def runSimulation(sArgs,i):
 			print(",",end = "", flush = True)
 		else: 
 			print(".",end = "", flush = True)
-		res =  {'i':i, 
+		return {'i':i, 
 				'seed':seed, 
 				'trackList':trackList, 
 				'time':toc, 
@@ -81,22 +81,23 @@ def runSimulation(sArgs,i):
 	except pulp.solvers.PulpSolverError as e:
 		#logging.error("tacker had en pulp.solvers.PulpSolverError" + str(e))
 		print("/",end = "", flush = True)
-		res = None 
+		return None 
 	except ValueError as e:
 		#logging.error("tracker had a ValueError" + str(e))
 		print("v",end = "", flush = True)
-		res = None 
+		return None 
 	except OSError as e:
 		#logging.error("tracker had an OSError" + str(e))
 		print("O",end = "", flush = True)
 	except KeyboardInterrupt:
 		raise
+		return Nones
 	except Exception as e:
 		print("tracker had an Exeption" + str(e))
 		print("?",end = "", flush = True)
 		raise
-		res = None
-	return res
+		return None
+	return None
 
 def runFile(root,iIter,sArgs,**kwargs):
 	timeout = kwargs.get("t",60*5)
