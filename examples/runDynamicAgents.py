@@ -259,6 +259,7 @@ if __name__ == '__main__':
 		parser.add_argument('-l', help = "Lambda_Phi (noise)", 			nargs = '+', type = float)
 		parser.add_argument('-t', help = "File simulation timeout",		type = float)
 		parser.add_argument('-A', help = "Accumulate mode: continous loop of all files with increment of nCores", action = 'store_true')
+		parser.add_argument('-b', help = "Batch size for accumulate mode in x*nCores, default = 1", type = int)
 		args = vars(parser.parse_args())
 
 		logging.basicConfig(filename = "Log_DynamicAgents-"+time.strftime("%Y-%m-%d_%H.%M.%S", time.gmtime(time.time()))+".log",
@@ -271,9 +272,10 @@ if __name__ == '__main__':
 		print("Using", nCores, "workers")
 		if args.get("A", False):
 			iMax = args.get("i",float('inf'))
+			iStep = nCores * args.get("b",1)
 			iCurrent = 0
 			while iCurrent < iMax:
-				iCurrent += nCores
+				iCurrent += iStep
 				runDynamicAgents(**dict(args, i = iCurrent))
 		else:
 			runDynamicAgents(**args)
