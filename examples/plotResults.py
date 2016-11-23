@@ -4,6 +4,7 @@ import itertools
 import seaborn as sns
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
+from matplotlib.ticker import FormatStrFormatter
 from mpl_toolkits.mplot3d import Axes3D
 import numpy as np
 import xml.etree.ElementTree as ET
@@ -35,24 +36,38 @@ def plotResults():
 					if plotArray.any():
 						x = plotArray[:,0]
 						y = np.ones(len(lambdaPhiList))*PdValue*100
-						z = plotArray[:,1]#*np.random.normal(loc = 1, scale = 0.5)
-						ax.plot(x,y,z,'--', label = "N="+str(Nvalue) if j == 0 else None, c = colors[i])
-						# ax.plot(np.flipud(x),np.flipud(y),np.flipud(z),'o',c = colors[i], alpha = 0.7)
-						# print(x,y,z)
+						z = plotArray[:,1]*100#*np.random.normal(loc = 1, scale = 0.5)
+						ax.plot(x,y,z,'-', label = "N="+str(Nvalue) if j == 0 else None, c = colors[i], linewidth = 4)
 						# print(np.flipud(x),np.flipud(y),np.flipud(z))
 						
-			ax.legend()
-			ax.view_init(15, -150)
-			ax.set_xlabel("$\lambda_{\phi}$")
-			ax.set_zlabel("Track loss (%)")
-			ax.set_ylabel("Probability of detection (%)")
-			ax.ticklabel_format(style = "sci", axsis = "x", scilimits=(0,0))
-			ax.set_zlim(0,1)
+			ax.legend(loc = 10, fontsize = 18)
+			ax.view_init(15, -155)
+			ax.set_xlabel("\n$\lambda_{\phi}$", fontsize = 18, linespacing = 3)
+			ax.set_zlabel("\nTrack loss (%)", fontsize = 18, linespacing = 3)
+			ax.set_ylabel("\nProbability of detection (%)", fontsize = 18, linespacing = 2)
+			# ax.ticklabel_format(style = "sci", axsis = "x", scilimits=(0,0))
+			ax.xaxis.set_major_formatter(FormatStrFormatter('%.1e'))
+			# ax.xaxis.set_label_coords(5, -5)
+			ax.set_zlim(0,45)
+			ax.tick_params(labelsize = 16, pad = 1)
+			yStart, yEnd = ax.get_ylim()
+			ax.yaxis.set_ticks(np.arange(yStart, yEnd*1.1, 10))
+
+			xStart, xEnd = ax.get_xlim()
+			ax.xaxis.set_ticks(np.arange(xStart, xEnd*1.1, 1e-4))
+			xTickLabels = ax.xaxis.get_ticklabels()
+			for label in xTickLabels:
+				label.set_verticalalignment('bottom')
+				label.set_horizontalalignment('left')
+				label.set_rotation(0)
+
 			plt.title(os.path.splitext(fileString)[0] + "-" + solverString)
 			savefilePath = os.path.join("plots",os.path.splitext(fileString)[0] + "-" + solverString+".png")
+			latexSaveFilePath = os.path.join("..","..","02 Latex","Figures",os.path.splitext(fileString)[0] + "-" + solverString+".png")
 			if not os.path.exists(os.path.dirname(savefilePath)):
 						os.makedirs(os.path.dirname(savefilePath))
 			figure.savefig(savefilePath, bbox_inches='tight')
+			figure.savefig(latexSaveFilePath, bbox_inches='tight')
 			# plt.show()
 
 if __name__ == '__main__':
