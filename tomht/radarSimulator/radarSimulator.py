@@ -25,6 +25,9 @@ class SimTarget:
 	def __repr__(self):
 		return '({:.3e},{:.3e},{:.3e},{:.3e})'.format(*self.state)
 
+	def storeString(self):
+		return ',{0:.2f},{1:.2f}'.format(*self.state[0:2])
+
 	def position(self):
 		return Position(self.state[0],self.state[1])
 
@@ -95,6 +98,17 @@ def simulateScans(randomSeed, simList, H, R, lambda_phi = None, rRange = None, p
 		for measurementList in scanList:
 			np.random.shuffle(measurementList.measurements)
 	return scanList
+
+def writeSimList(initialTargets, simList, filename):
+	startTime = initialTargets[0].time
+	try:
+		f = open(filename,'w')
+		f.write("0"+"".join([target.storeString() for target in initialTargets])+"\n")
+		for scan in simList:
+			f.write('{:.2f}'.format(scan[0].time-startTime)+"".join([target.storeString() for target in scan])+"\n")
+		f.close()
+	except:
+		pass
 
 def importFromFile(filename, **kwargs):
 	startLine = kwargs.get('startLine', 0)
