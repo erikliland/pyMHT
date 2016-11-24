@@ -35,7 +35,7 @@ def plotTrueTrack(simList, **kwargs):
 	for col in range(nTargets):
 		# plt.plot(posArray[:,col,0], posArray[:,col,1],'-.')
 		# if kwargs.get("markers",False):
-		plt.plot(posArray[:,col,0], posArray[:,col,1],'.', alpha = 0.2,markeredgewidth = 0.6)
+		plt.plot(posArray[:,col,0], posArray[:,col,1],'.', alpha = 0.7,markeredgewidth = 0.6)
 
 def printScanList(scanList):
 	for index, measurement in enumerate(scanList):
