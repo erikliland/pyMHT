@@ -41,7 +41,7 @@ files 		= [	'dynamic_agents_full_cooperation.txt',
 				]
 rawFiles 	= [generateRawFileName(file) for file in files]
 croppedFiles= [generateCroppedFileName(file) for file in files]
-PdList 		= [0.5, 0.7, 0.9]
+PdList 		= [0.5, 0.6, 0.7, 0.9]
 NList 		= [1, 3, 6]
 lambdaPhiList = [0, 1e-4, 2e-4, 4e-4, 8e-4]
 solvers 	= ["CBC","CPLEX","GLPK","GUROBI"]
