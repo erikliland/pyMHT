@@ -28,13 +28,14 @@ def plotScenarios():
 		for initialTarget in initialTargets:
 		 	tracker.initiateTarget(initialTarget)
 		fig1.clf()
-		hpf.plotTrueTrack(simList, alpha = 0.1)
+		hpf.plotTrueTrack(simList, alpha = 1)
 		tracker.plotInitialTargets()
 		plt.axis("equal")
 		plt.xlim((p0.x-radarRange*1.05, p0.x + radarRange*1.05))
 		plt.ylim((p0.y-radarRange*1.05, p0.y + radarRange*1.05))
 		fig1.canvas.draw()
 		path = os.path.abspath(os.path.join("..","..","02 Latex","Figures","scenario"+str(index)+".png"))
+		print("Saving", path)
 		fig1.savefig(path, bbox_inches='tight')
 
 if __name__ == '__main__':
