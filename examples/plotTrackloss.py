@@ -41,7 +41,7 @@ def plotResults():
 						z = plotArray[:,1]*100#*np.random.normal(loc = 1, scale = 0.5)
 						ax.plot(x,y,z,'-', label = "N="+str(Nvalue) if j == 0 else None, c = colors[i], linewidth = 4)						
 			ax.legend(loc='upper right', bbox_to_anchor=(0.5, 0.8), fontsize = 18)
-			ax.view_init(15, -155)
+			ax.view_init(15, -163)
 			ax.set_xlabel("\n$\lambda_{\phi}$", fontsize = 18, linespacing = 3)
 			ax.set_zlabel("\nTrack loss (%)", fontsize = 18, linespacing = 3)
 			ax.set_ylabel("\nProbability of detection (%)", fontsize = 18, linespacing = 2)
@@ -63,9 +63,9 @@ def plotResults():
 
 			plt.title(os.path.splitext(fileString)[0] + "-" + solverString)
 			savefilePath = os.path.join("plots",os.path.splitext(fileString)[0] + "-" + solverString+".png")
-			latexSaveFilePath = os.path.join("..","..","02 Latex","Figures",os.path.splitext(fileString)[0] + "-" + solverString+".png")
-			if not os.path.exists(os.path.dirname(savefilePath)):
-			<			os.makedirs(os.path.dirname(savefilePath))
+			latexSaveFilePath = os.path.join("..","..","02 Latex","Figures",os.path.splitext(fileString)[0] + "-" + solverString+".pdf")
+			#if not os.path.exists(os.path.dirname(savefilePath)):
+			#	os.makedirs(os.path.dirname(savefilePath))
 			#figure.savefig(savefilePath, bbox_inches='tight')
 			figure.savefig(latexSaveFilePath, bbox_inches='tight')
 			# plt.show()

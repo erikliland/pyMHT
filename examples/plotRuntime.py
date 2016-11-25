@@ -17,7 +17,7 @@ def plotRuntime():
 	lineStyle = ['-','-.','--','-']
 	for file in simulations.findall("file"):
 		fileString = file.attrib.get("name")
-		figure = plt.figure(figsize = (10,10), dpi = 100)
+		figure = plt.figure(figsize = (16,10))
 		maxTime = 0
 		ax = figure.add_subplot(111,projection = '3d')
 		for k, solver in enumerate(file.findall("Solver")):
@@ -42,8 +42,8 @@ def plotRuntime():
 						z = (plotArray[:,1])
 						ax.plot(x,y,z,lineStyle[i], label = "N="+str(Nvalue)+","+solverString if (j == 0) else None, c = colors[k], linewidth = 2)
 #		ax.legend(loc='upper right', bbox_to_anchor=(0.5, 0.8), fontsize = 18)
-		ax.legend(fontsize = 18)
-		ax.view_init(15, -160)
+		ax.legend(loc = 9, fontsize = 18, ncol = 4)
+		ax.view_init(15, -163)
 		ax.set_xlabel("\n$\lambda_{\phi}$", fontsize = 18, linespacing = 3)
 		ax.set_zlabel("\nRuntime per simulation (sec)", fontsize = 18, linespacing = 3)
 		ax.set_ylabel("\nProbability of detection (%)", fontsize = 18, linespacing = 2)
@@ -61,7 +61,7 @@ def plotRuntime():
 			label.set_horizontalalignment('left')
 			label.set_rotation(0)
 		#plt.title(os.path.splitext(fileString)[0] + "-" + solverString)
-		latexSaveFilePath = os.path.join("..","..","02 Latex","Figures",os.path.splitext(fileString)[0] +"_runtime"+".png")
+		latexSaveFilePath = os.path.join("..","..","02 Latex","Figures",os.path.splitext(fileString)[0] +"_runtime"+".pdf")
 		if not os.path.exists(os.path.dirname(latexSaveFilePath)):
 					os.makedirs(os.path.dirname(latexSaveFilePath))
 		figure.savefig(latexSaveFilePath, bbox_inches='tight')

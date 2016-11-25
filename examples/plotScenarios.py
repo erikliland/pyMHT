@@ -34,7 +34,7 @@ def plotScenarios():
 		plt.xlim((p0.x-radarRange*1.05, p0.x + radarRange*1.05))
 		plt.ylim((p0.y-radarRange*1.05, p0.y + radarRange*1.05))
 		fig1.canvas.draw()
-		path = os.path.abspath(os.path.join("..","..","02 Latex","Figures","scenario"+str(index)+".png"))
+		path = os.path.abspath(os.path.join("..","..","02 Latex","Figures","scenario"+str(index+1)+".pdf"))
 		print("Saving", path)
 		fig1.savefig(path, bbox_inches='tight')
 
