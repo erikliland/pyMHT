@@ -35,7 +35,7 @@ def openGroundTruth(filename):
 	return np.asarray(targetTracks)
 
 def compareResults():
-	root = ET.Element("simulations", nMonteCarlo = str(nMonteCarlo))
+	root = ET.Element("simulations")
 	for fileString in croppedFiles:
 		filePath = os.path.join(loadLocation,os.path.splitext(fileString)[0],fileString)
 		doc = ET.SubElement(root,"file", name = os.path.basename(fileString))
@@ -67,7 +67,8 @@ def compareResults():
 							continue
 
 						iList = [int(sim.get("i")) for sim in simulations.findall("Simulation")]
-						iList.sort()
+						totalSimTime = sum([float(sim.get("totalSimTime")) for sim in simulations.findall("Simulation")])
+						iList.sort() 
 						missingSimulationIndecies = set(range(nMonteCarlo)).difference(set(iList))
 
 						nSimulations = int(simulations.attrib.get('nMonteCarlo'))
@@ -99,14 +100,14 @@ def compareResults():
 							nLostTracks += sum(permanentLostTracks)
 							nTracks += len(estimatedTracks)
 							print(".", end = "")
-						# print("x"*(nMonteCarlo-nSimulations),sep = "",end = "", flush = True)
 						if nTracks != 0:
 							print("\t",'{:3.0f}'.format(nLostTracks),"/",'{:3.0f}'.format(nTracks),"=>",'{:4.1f}'.format((nLostTracks/nTracks)*100),"%")
 							lambdaPhi = ET.SubElement(num,"lambda_phi", value = '{:5.0e}'.format(lambda_phi))
-							ET.SubElement(lambdaPhi,"nTracks").text 	= str(nTracks)
-							ET.SubElement(lambdaPhi,"nLostTracks").text = str(nLostTracks)
-							ET.SubElement(lambdaPhi,"totalTime").text 	= simulation.get("totalSimTime")
+							ET.SubElement(lambdaPhi,"nTracks").text 	= repr(nTracks)
+							ET.SubElement(lambdaPhi,"nLostTracks").text = repr(nLostTracks)
+							ET.SubElement(lambdaPhi,"totalTime").text 	= repr(totalSimTime)
 							ET.SubElement(lambdaPhi,"runtimeLog").text 	= simulation.get("runtimeLog")
+							ET.SubElement(lambdaPhi,"nSimulations").text= repr(nSimulations)
 							# ET.SubElement(lambdaPhi,"covConsistence").text = simulation.get("covConsistence")
 						else:
 							print()

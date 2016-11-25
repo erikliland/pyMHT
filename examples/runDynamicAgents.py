@@ -110,7 +110,7 @@ def runFile(root,iIter,sArgs,**kwargs):
 					root, "Simulation", 
 					i 				= repr(res.get('i')),
 					seed 			= repr(res.get('seed')),
-					totalSimTime 	= '{:.3}'.format((res.get('time'))), 
+					totalSimTime 	= repr(res.get('time')), 
 					runtimeLog 		= res.get('runetimeLog'), 
 					covConsistence 	= [['{:.3e}'.format(v) for v in row] for row in res.get('covConsistence',[[]])],
 					).text 			= repr(res.get('trackList'))
@@ -160,7 +160,7 @@ def simulateFile(sArgs,**kwargs):
 								nMonteCarlo = str(nMonteCarlo),
 								initialTargets = repr(sArgs.initialTargets)
 								)
-			print("S:",printFile, end = "", flush = True)
+			print("S: ",printFile," ", sep = "", end = "", flush = True)
 			(simTime, runTime) = runFile(root, range(nMonteCarlo), sArgs, **kwargs)
 			print('@{0:5.0f} sec ({1:3.0f} sec)'.format(runTime, simTime))
 			root.attrib["wallRunTime"] = repr(runTime)
@@ -177,7 +177,7 @@ def simulateFile(sArgs,**kwargs):
 			preliminaryTotalSimTime = float(root.attrib.get("totalSimTime",0))
 			missingSimulationIndecies = set(range(nMonteCarlo)).difference(set(iList))
 			if missingSimulationIndecies:
-				print("P:    ", printFile,"."*len(iList), sep = "", end = "", flush = True)
+				print("P: ", printFile," ","V"*(len(iList)//5),"."*(len(iList)%5), sep = "", end = "", flush = True)
 				(simTime, runTime) = runFile(root, missingSimulationIndecies, sArgs, **kwargs)
 				print('@{0:5.0f} sec ({1:3.0f} sec) [{2:3.0f},{3:3.0f}] sec'.format(preliminaryWallRunTime+runTime, preliminaryTotalSimTime+simTime,preliminaryWallRunTime,preliminaryTotalSimTime))
 				
@@ -192,8 +192,10 @@ def simulateFile(sArgs,**kwargs):
 				runTime 	= root.attrib.get("wallRunTime")
 				runTimeString = '{:5.0f}'.format(float(runTime)) if runTime is not None else "    ?"
 				statusStringList = ['.' if i in iList else 'x' for i in range(len(iList))]
+				statusString = "".join(statusStringList)
+				statusString = statusString.replace(".....","V")
 				timeStatus = '@'+runTimeString+' sec ({:3.0f} sec)'.format(sum(computeTList))
-				print("J:     ",printFile, "".join(statusStringList),timeStatus,sep = "", flush = True)
+				print("J: ",printFile, ' {:30s}'.format(statusString),timeStatus,sep = "", flush = True)
 	except KeyboardInterrupt:
 		print("Killed by keyboard")
 		raise

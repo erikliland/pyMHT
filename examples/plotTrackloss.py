@@ -19,6 +19,7 @@ def plotResults():
 		for solver in file.findall("Solver"):
 			solverString = solver.attrib.get("name")
 			figure = plt.figure(figsize = (10,10), dpi = 100)
+			maxTrackloss = 0
 			ax = figure.add_subplot(111,projection = '3d')
 			for j, P_d in enumerate(solver.findall("P_d")):
 				PdValue = float(P_d.attrib.get("value"))
@@ -28,19 +29,18 @@ def plotResults():
 					lambdaPhiList = []
 					for lambdaPhi in N.findall("lambda_phi"):
 						lambdaValue = float(lambdaPhi.attrib.get("value"))
-						# print(fileString, solverString, PdValue, Nvalue,lambdaValue)
 						nTracks = float(lambdaPhi.find("nTracks").text)
 						nLostTracks = float(lambdaPhi.find("nLostTracks").text)
-						lambdaPhiList.append([lambdaValue,nLostTracks/nTracks])
+						trackLoss = nLostTracks/nTracks
+						maxTrackloss = max(maxTrackloss, trackLoss)
+						lambdaPhiList.append([lambdaValue,trackLoss])
 					plotArray = np.array(lambdaPhiList)
 					if plotArray.any():
 						x = plotArray[:,0]
 						y = np.ones(len(lambdaPhiList))*PdValue*100
 						z = plotArray[:,1]*100#*np.random.normal(loc = 1, scale = 0.5)
-						ax.plot(x,y,z,'-', label = "N="+str(Nvalue) if j == 0 else None, c = colors[i], linewidth = 4)
-						# print(np.flipud(x),np.flipud(y),np.flipud(z))
-						
-			ax.legend(loc = 10, fontsize = 18)
+						ax.plot(x,y,z,'-', label = "N="+str(Nvalue) if j == 0 else None, c = colors[i], linewidth = 4)						
+			ax.legend(loc='upper right', bbox_to_anchor=(0.5, 0.8), fontsize = 18)
 			ax.view_init(15, -155)
 			ax.set_xlabel("\n$\lambda_{\phi}$", fontsize = 18, linespacing = 3)
 			ax.set_zlabel("\nTrack loss (%)", fontsize = 18, linespacing = 3)
@@ -48,7 +48,7 @@ def plotResults():
 			# ax.ticklabel_format(style = "sci", axsis = "x", scilimits=(0,0))
 			ax.xaxis.set_major_formatter(FormatStrFormatter('%.1e'))
 			# ax.xaxis.set_label_coords(5, -5)
-			ax.set_zlim(0,45)
+			ax.set_zlim(0,maxTrackloss*100)
 			ax.tick_params(labelsize = 16, pad = 1)
 			yStart, yEnd = ax.get_ylim()
 			ax.yaxis.set_ticks(np.arange(yStart, yEnd*1.1, 10))
@@ -65,8 +65,8 @@ def plotResults():
 			savefilePath = os.path.join("plots",os.path.splitext(fileString)[0] + "-" + solverString+".png")
 			latexSaveFilePath = os.path.join("..","..","02 Latex","Figures",os.path.splitext(fileString)[0] + "-" + solverString+".png")
 			if not os.path.exists(os.path.dirname(savefilePath)):
-						os.makedirs(os.path.dirname(savefilePath))
-			figure.savefig(savefilePath, bbox_inches='tight')
+			<			os.makedirs(os.path.dirname(savefilePath))
+			#figure.savefig(savefilePath, bbox_inches='tight')
 			figure.savefig(latexSaveFilePath, bbox_inches='tight')
 			# plt.show()
 
