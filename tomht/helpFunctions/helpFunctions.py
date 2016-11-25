@@ -33,9 +33,9 @@ def plotTrueTrack(simList, **kwargs):
 	for row, scan in enumerate(simList):
 		posArray[row,:,:] = np.array([target.state[0:2] for target in scan])
 	for col in range(nTargets):
-		# plt.plot(posArray[:,col,0], posArray[:,col,1],'-.')
-		# if kwargs.get("markers",False):
-		plt.plot(posArray[:,col,0], posArray[:,col,1],'.', alpha = 0.7,markeredgewidth = 0.6)
+		print("Hei")
+		print({**dict(alpha = 0.7,markeredgewidth = 0.6), **kwargs})
+		plt.plot(posArray[:,col,0], posArray[:,col,1],'.', **{**dict(alpha = 0.7,markeredgewidth = 0.6), **kwargs})
 
 def printScanList(scanList):
 	for index, measurement in enumerate(scanList):
