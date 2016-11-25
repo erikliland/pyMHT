@@ -63,33 +63,31 @@ def compareResults():
 						try:
 							simulations = ET.parse(savefilePath).getroot()
 						except FileNotFoundError:
-							print("x"*nMonteCarlo)
+							print('{:120s}'.format("Not found"))
 							continue
 
 						iList = [int(sim.get("i")) for sim in simulations.findall("Simulation")]
 						totalSimTime = sum([float(sim.get("totalSimTime")) for sim in simulations.findall("Simulation")])
 						iList.sort() 
 						missingSimulationIndecies = set(range(nMonteCarlo)).difference(set(iList))
-
 						nSimulations = int(simulations.attrib.get('nMonteCarlo'))
+						statusString = ""
 						for simulation in simulations:
 							parsedTracks = ast.literal_eval(simulation.text)
 							estimatedTracks = np.array(parsedTracks)
 							if nTracksTrue != len(parsedTracks):
-								print("/", end ="", flush = True)
+								statusString += "/"
 								continue
 							
 							if any(len(track) != trueTrackLength for track in parsedTracks):
-								print("/", end ="", flush = True)
+								statusString += "/"
 								continue
 
 							if estimatedTracks is None:
-								print("x",end = "")
 								continue
 
 							if trueTracks.shape != estimatedTracks.shape:
-								# os.remove(savefile)
-								print("o",end = "")
+								statusString += "o"
 								continue
 							lostTracks = np.linalg.norm(trueTracks-estimatedTracks,2,2) > threshold
 							lostTracksTime = [np.flatnonzero(lostTrack).tolist() for lostTrack in lostTracks]
@@ -99,7 +97,8 @@ def compareResults():
 									permanentLostTracks.append(lostTrackTime[-1] == trueTrackLength-1)
 							nLostTracks += sum(permanentLostTracks)
 							nTracks += len(estimatedTracks)
-							print(".", end = "")
+							statusString += "."
+						print('{:120s}'.format(statusString), end = "")
 						if nTracks != 0:
 							print("\t",'{:3.0f}'.format(nLostTracks),"/",'{:3.0f}'.format(nTracks),"=>",'{:4.1f}'.format((nLostTracks/nTracks)*100),"%")
 							lambdaPhi = ET.SubElement(num,"lambda_phi", value = '{:5.0e}'.format(lambda_phi))
