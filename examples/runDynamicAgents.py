@@ -271,6 +271,7 @@ if __name__ == '__main__':
 			iCurrent = 0
 			while iCurrent < iMax:
 				iCurrent += iStep
+				iCurrent = min(iCurrent, iMax)
 				runDynamicAgents(**dict(args, i = iCurrent))
 		else:
 			runDynamicAgents(**args)
