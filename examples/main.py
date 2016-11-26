@@ -34,8 +34,9 @@ def runSimulation():
 	print("Initial targets:")
 	print(*initialTargets, sep='\n', end = "\n\n")
 
-	nScans = 15
+	simTime = 30 #sec
 	timeStep = 2.0
+	nScans = round(simTime/timeStep)
 	lambda_phi 	= 4e-4		#Expected number of false measurements per unit 
 							# volume of the measurement space per scan
 	lambda_nu 	= 0.0001	#Expected number of new targets per unit volume 
@@ -48,8 +49,8 @@ def runSimulation():
 	simList = sim.simulateTargets(seed, initialTargets, nScans, timeStep, Phi(timeStep), Q(timeStep,sigmaQ_true), Gamma)
 	# print("Sim list:")
 	# print(*simList, sep = "\n", end = "\n\n")
-	sim.writeSimList(initialTargets, simList, "parallel_targets.txt")
-	return
+	sim.writeSimList(initialTargets, simList, "parallel_targets_0.5Hz.txt")
+	
 	scanList = sim.simulateScans(seed, simList, C, R(sigmaR_true), lambda_phi,radarRange, p0, P_d = P_d, shuffle = False)
 	#solvers: CPLEX, GLPK, CBC, GUROBI
 	tracker = tomht.Tracker(Phi, C, Gamma, P_d, P0, R(), Q, lambda_phi, lambda_nu, eta2, pruneThreshold, N, "CBC", logTime = True)
@@ -60,6 +61,7 @@ def runSimulation():
 	for index, initialTarget in enumerate(initialTargets):
 	 	tracker.initiateTarget(initialTarget)
 	for scanIndex, measurementList in enumerate(scanList):
+		break
 		tracker.addMeasurementList(measurementList, printTime = True)
 	print("#"*150)
 
@@ -68,21 +70,21 @@ def runSimulation():
 	print("Association",*association, sep = "\n")
 
 	fig1 = plt.figure(num=1, figsize = (9,9), dpi=100)
-	hpf.plotInitialTargets(initialTargets)
-	hpf.plotRadarOutline(p0, radarRange, center = False)
-	hpf.plotVelocityArrowFromNode(tracker.__trackNodes__)
-	hpf.plotValidationRegionFromNodes(tracker.__trackNodes__,tracker.eta2, 1)
-	# hpf.plotValidationRegionFromForest(tracker.__targetList__, sigma, 1)
-	# hpf.plotMeasurementsFromForest(tracker.__targetList__, real = True, dummy = True)
-	hpf.plotMeasurementsFromList(tracker.__scanHistory__)
-	hpf.plotMeasurementsFromNodes(tracker.__trackNodes__, dummy = True)
-	# hpf.plotHypothesesTrack(tracker.__targetList__[2:4])
-	hpf.plotActiveTrack(tracker.__trackNodes__)
+	# hpf.plotRadarOutline(p0, radarRange, center = False)
 	hpf.plotTrueTrack(simList)
+	tracker.plotInitialTargets()
+	# tracker.plotVelocityArrowForTrack()
+	# tracker.plotValidationRegionFromRoot()
+	# tracker.plotValidationRegionFromTracks()
+	# tracker.plotMeasurementsFromRoot(dummy = True)
+	# tracker.plotMeasurementsFromTracks(labels = False, dummy = True)
+	# tracker.plotHypothesesTrack()
+	# tracker.plotActiveTracks()
 	plt.axis("equal")
 	plt.xlim((p0.x-radarRange*1.05, p0.x + radarRange*1.05))
 	plt.ylim((p0.y-radarRange*1.05, p0.y + radarRange*1.05))
-	plt.show()
+	fig1.canvas.draw()
+	plt.show(block = True)
 
 if __name__ == '__main__':
 	os.chdir( os.path.dirname(os.path.abspath(__file__)) )

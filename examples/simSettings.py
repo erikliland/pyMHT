@@ -37,10 +37,12 @@ files 		= [	'dynamic_agents_full_cooperation.txt',
 				'dynamic_agents_partial_cooporation.txt',
 				'dynamic_and_static_agents_large_space.txt',
 				'dynamic_and_static_agents_narrow_space.txt',
-				'parallel_targets.txt'
+				'parallel_targets_0.5hz.txt',
+				'parallel_targets_1hz.txt'
 				]
 rawFiles 	= [generateRawFileName(file) for file in files]
 croppedFiles= [generateCroppedFileName(file) for file in files]
+simFiles = croppedFiles[0:4] + files[4:6]
 PdList 		= [0.5, 0.6, 0.7, 0.8, 0.9]
 NList 		= [0, 1, 3, 6]
 lambdaPhiList = [0, 1e-4, 2e-4, 4e-4, 8e-4]
@@ -50,3 +52,6 @@ lambda_nu 	= 0.0001#Expected number of new targets per unit volume
 # etaconfidence 	= 0.95	#Chi2 inverse cdf, df=2
 eta2 		= 5.99 #chi2.ppf(confidence,2)
 threshold 	= 4 	#meter
+
+if __name__ == "__main__":
+	print("simFiles:", *simFiles, sep = "\n")

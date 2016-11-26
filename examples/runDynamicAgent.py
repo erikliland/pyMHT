@@ -109,4 +109,4 @@ if __name__ == '__main__':
 	parser.add_argument('-k',help = "Measurement number to stop at", type = int )
 	args = vars(parser.parse_args())
 	print(args)
-	runDynamicAgent(croppedFiles[args.get('f')],args.get('s'),args.get('p'),args.get('n'),args.get('l'), **args)
+	runDynamicAgent(simFiles[args.get('f')],args.get('s'),args.get('p'),args.get('n'),args.get('l'), **args)

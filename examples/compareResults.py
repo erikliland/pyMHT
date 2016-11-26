@@ -6,6 +6,7 @@ import numpy as np
 import xml.etree.ElementTree as ET
 from simSettings import *
 import ast
+import datetime
 
 def openRes(filename):
 	try:
@@ -35,8 +36,10 @@ def openGroundTruth(filename):
 	return np.asarray(targetTracks)
 
 def compareResults():
+	sumTotalSimTime = 0
+	sumTotalWallRunTime = 0
 	root = ET.Element("simulations")
-	for fileString in croppedFiles:
+	for fileString in simFiles:
 		filePath = os.path.join(loadLocation,os.path.splitext(fileString)[0],fileString)
 		doc = ET.SubElement(root,"file", name = os.path.basename(fileString))
 		trueTracks = openGroundTruth(filePath)
@@ -68,6 +71,8 @@ def compareResults():
 
 						iList = [int(sim.get("i")) for sim in simulations.findall("Simulation")]
 						totalSimTime = sum([float(sim.get("totalSimTime")) for sim in simulations.findall("Simulation")])
+						sumTotalWallRunTime += float(simulations.attrib.get("wallRunTime"))
+						sumTotalSimTime += totalSimTime
 						iList.sort() 
 						missingSimulationIndecies = set(range(nMonteCarlo)).difference(set(iList))
 						nSimulations = int(simulations.attrib.get('nMonteCarlo'))
@@ -110,8 +115,12 @@ def compareResults():
 							# ET.SubElement(lambdaPhi,"covConsistence").text = simulation.get("covConsistence")
 						else:
 							print()
+	root.attrib["sumTotalSImTime"] = repr(sumTotalSimTime)
+	root.attrib["sumTotalWallRunTime"] = repr(sumTotalWallRunTime)
 	tree = ET.ElementTree(root)
 	tree.write("compareResult.xml")
+	print("SumTotalSimTime",str(datetime.timedelta(seconds=sumTotalSimTime)))
+	print("SumTotalWallRunTime",str(datetime.timedelta(seconds=sumTotalWallRunTime)))
 
 if __name__ == '__main__':
 	os.chdir( os.path.dirname(os.path.abspath(__file__)) )

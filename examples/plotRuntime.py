@@ -43,7 +43,7 @@ def plotRuntime():
 						ax.plot(x,y,z,lineStyle[i], label = "N="+str(Nvalue)+","+solverString if (j == 0) else None, c = colors[k], linewidth = 2)
 #		ax.legend(loc='upper right', bbox_to_anchor=(0.5, 0.8), fontsize = 18)
 		ax.legend(loc = 9, fontsize = 18, ncol = 4)
-		ax.view_init(15, -163)
+		ax.view_init(15, -165)
 		ax.set_xlabel("\n$\lambda_{\phi}$", fontsize = 18, linespacing = 3)
 		ax.set_zlabel("\nRuntime per simulation (sec)", fontsize = 18, linespacing = 3)
 		ax.set_ylabel("\nProbability of detection (%)", fontsize = 18, linespacing = 2)

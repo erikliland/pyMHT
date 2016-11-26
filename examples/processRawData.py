@@ -37,5 +37,5 @@ def cropRawFile(fileName,**kwargs):
 
 if __name__ == '__main__':
 	os.chdir(os.path.dirname(os.path.abspath(__file__)))
-	for file in sim.files:
+	for file in sim.files[0:4]:
 		cropRawFile(file, newStart = 100, timeScale = 2, newEnd = 200, maxTargets = 5)

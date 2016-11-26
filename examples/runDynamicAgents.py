@@ -17,6 +17,9 @@ try:
 	import xml.etree.ElementTree as ET
 	import multiprocessing as mp 
 	import simSettings as sim
+	from compareResults import compareResults
+	from plotTrackloss import plotTrackloss
+	from plotRuntime import plotRuntime
 except KeyboardInterrupt:
 	print("Leaving already? Goodbye!")
 	sys.exit()
@@ -207,9 +210,9 @@ def simulateFile(sArgs,**kwargs):
 def runDynamicAgents(**kwargs):
 	fileIndex = kwargs.get("f")
 	if fileIndex is not None:
-		files = [sim.croppedFiles[i] for i in fileIndex]
+		files = [sim.simFiles[i] for i in fileIndex]
 	else:
-		files 	= sim.croppedFiles
+		files 	= sim.simFiles
 	solvers = kwargs.get("s", sim.solvers)
 	PdList 	= kwargs.get("p", sim.PdList)
 	NList 	= kwargs.get("n", sim.NList)
@@ -256,12 +259,8 @@ if __name__ == '__main__':
 		parser.add_argument('-t', help = "File simulation timeout",		type = float)
 		parser.add_argument('-A', help = "Accumulate mode: continous loop of all files with increment of nCores", action = 'store_true')
 		parser.add_argument('-b', help = "Batch size for accumulate mode in x*nCores, default = 1", type = int)
+		parser.add_argument('-C', help = "Run compare and plot after finish", action = 'store_true')
 		args = vars(parser.parse_args())
-
-		logging.basicConfig(filename = "Log_DynamicAgents-"+time.strftime("%Y-%m-%d_%H.%M.%S", time.gmtime(time.time()))+".log",
-							filemode = 'w',
-							level 	 = logging.DEBUG)
-		logging.info("Starting with these cmd arguments" + str(args))
 
 		tic = time.time()
 		nCores = min(max(1, args.get("c", os.cpu_count() -1 )),os.cpu_count())
@@ -280,4 +279,12 @@ if __name__ == '__main__':
 		sys.exit()
 	else:
 		print("Finished(",round(time.time()-tic,1),"sec )@", time.ctime())
+		if args.get("C",False):
+			print("Runnig compare")
+			compareResults()
+			print("Plotting Trackloss")
+			plotTrackloss()
+			print("plotting Runtime")
+			plotRuntime()
+			print("Done!")
 		sys.exit()

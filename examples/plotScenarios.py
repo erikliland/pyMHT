@@ -19,7 +19,7 @@ from simSettings import *
 
 def plotScenarios():
 	fig1 = plt.figure(num=1, figsize = (9,9), dpi=100)	
-	for index, fileString in enumerate(croppedFiles):
+	for index, fileString in enumerate(simFiles):
 		filePath = os.path.join(loadLocation,os.path.splitext(fileString)[0],fileString)
 		(initialTargets, simList) = sim.importFromFile(filePath)
 		(p0, radarRange) = sim.findCenterPositionAndRange(simList)
