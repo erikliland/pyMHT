@@ -39,7 +39,7 @@ def plotTrackloss():
 					if plotArray.any():
 						x = plotArray[:,0]
 						y = np.ones(len(lambdaPhiList))*PdValue*100
-						z = plotArray[:,1]*100#*np.random.normal(loc = 1, scale = 0.5)
+						z = plotArray[:,1]*100
 						ax.plot(x,y,z,'-', label = "N="+str(Nvalue) if j == 0 else None, c = colors[i], linewidth = 4)						
 			ax.legend(loc='upper right', bbox_to_anchor=(0.5, 0.8), fontsize = 18)
 			ax.view_init(15, -165)
@@ -64,7 +64,8 @@ def plotTrackloss():
 
 			plt.title(os.path.splitext(fileString)[0] + "-" + solverString)
 			savefilePath = os.path.join("plots",os.path.splitext(fileString)[0] + "-" + solverString+".png")
-			latexSaveFilePath = os.path.join("..","..","02 Latex","Figures",os.path.splitext(fileString)[0] + "-" + solverString+".pdf")
+			latexSaveFilePath = os.path.abspath(os.path.join("..","..","02 Latex","Figures",os.path.splitext(fileString)[0] + "-" + solverString+".pdf"))
+			print("Saving:", latexSaveFilePath)
 			figure.savefig(latexSaveFilePath, bbox_inches='tight')
 
 
