@@ -260,6 +260,7 @@ if __name__ == '__main__':
 		parser.add_argument('-A', help = "Accumulate mode: continous loop of all files with increment of nCores", action = 'store_true')
 		parser.add_argument('-b', help = "Batch size for accumulate mode in x*nCores, default = 1", type = int)
 		parser.add_argument('-C', help = "Run compare and plot after finish", action = 'store_true')
+		parser.add_argument('-m', help = "Start 'i' for Accumulate mode", type = int)
 		args = vars(parser.parse_args())
 
 		tic = time.time()
@@ -268,7 +269,7 @@ if __name__ == '__main__':
 		if args.get("A", False):
 			iMax = args.get("i",float('inf'))
 			iStep = nCores * args.get("b",1)
-			iCurrent = 0
+			iCurrent = args.get("m", 0)
 			while iCurrent < iMax:
 				iCurrent += iStep
 				iCurrent = min(iCurrent, iMax)
