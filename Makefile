@@ -44,10 +44,12 @@ init:
 	sudo apt-get install python-glpk
 	sudo apt-get install glpk-utils
 	sudo -H pip install -r requirements.txt
-	if [ -d $("pulp/") ]; \
-	then git -C pulp/ pull ; \ 
-	else git clone https://github.com/erikliland/pulp.git ; \
+
+	if [ ! -d $("pulp/") ]; \
+	then git clone https://github.com/erikliland/pulp.git ; \
 	fi;
+
+	git -C pulp/ pull ;
 	sudo python3 pulp/setup.py install
 	sudo python3 setup.py install
 	if [ ! -d $("solvers") ]; \
