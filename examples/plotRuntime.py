@@ -64,9 +64,9 @@ def plotRuntime():
 		latexSaveFilePath = os.path.join("..","..","02 Latex","Figures",os.path.splitext(fileString)[0] +"_runtime"+".pdf")
 		if not os.path.exists(os.path.dirname(latexSaveFilePath)):
 					os.makedirs(os.path.dirname(latexSaveFilePath))
+		print("Saving:", latexSaveFilePath)
 		figure.savefig(latexSaveFilePath, bbox_inches='tight')
-		# plt.show()
-
+		
 if __name__ == '__main__':
 	os.chdir( os.path.dirname(os.path.abspath(__file__)) )
 	plotRuntime()
