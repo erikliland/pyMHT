@@ -13,7 +13,7 @@ def plotTrackloss():
 	file = "compareResult.xml"
 	simulations = ET.parse(file).getroot()
 	figure = plt.figure(figsize = (10,10), dpi = 100)
-	colors = sns.color_palette(n_colors = 4)
+	colors = sns.color_palette(n_colors = 5)
 	sns.set_style(style='white')
 	for file in simulations.findall("file"):
 		fileString = file.attrib.get("name")

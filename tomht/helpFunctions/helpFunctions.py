@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pulp
 import itertools
-
+ 
 def binomial(n,k):
     return 1 if k==0 else (0 if n==0 else binomial(n-1, k) + binomial(n-1, k-1))
 

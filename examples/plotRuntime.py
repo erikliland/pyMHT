@@ -12,9 +12,9 @@ import xml.etree.ElementTree as ET
 def plotRuntime():
 	file = "compareResult.xml"
 	simulations = ET.parse(file).getroot()
-	colors = sns.color_palette(n_colors = 4)
+	colors = sns.color_palette(n_colors = 5)
 	sns.set_style(style='white')
-	lineStyle = ['-','-.','--','-']
+	lineStyle = ['-','-.','--','-','-']
 	for file in simulations.findall("file"):
 		fileString = file.attrib.get("name")
 		figure = plt.figure(figsize = (16,10))
