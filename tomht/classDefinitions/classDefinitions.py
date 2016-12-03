@@ -62,7 +62,7 @@ class Velocity:
 			self.x = args[0]
 			self.y = args[1]
 		else:
-			raise ValueError("Invalid arguments to Position")
+			raise ValueError("Invalid arguments to Velocity")
 
 	def __str__(self):
 		return 'Vel: ({: .2f},{: .2f})'.format(self.x, self.y)

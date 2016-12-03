@@ -11,7 +11,6 @@ Authumn 2016
 from . import helpFunctions as hpf
 from . import kalmanFilter as kf
 from .classDefinitions import Position, Velocity
-
 import time
 import pulp
 import itertools
@@ -25,7 +24,6 @@ from scipy.sparse.csgraph import connected_components
 class Target():
 	def __init__(self, **kwargs):
 		Process.__init__(self)
-
 		time 						= kwargs.get("time")
 		scanNumber 					= kwargs.get("scanNumber")
 		filteredStateMean 			= kwargs.get("filteredStateMean")
@@ -35,8 +33,10 @@ class Target():
 		Gamma 						= kwargs.get("Gamma")	
 		C 							= kwargs.get("C")
 		R 							= kwargs.get("R")
-
-		if (time is None) or (scanNumber is None) or (filteredStateMean is None) or (filteredStateCovariance is None):
+		if ((time is None) or 
+			(scanNumber is None) or 
+			(filteredStateMean is None) or 
+			(filteredStateCovariance is None)):
 			raise TypeError("Target() need at least: time, scanNumber, state and covariance")
 		#Track parameters
 		self.time 	 					= time
@@ -73,7 +73,8 @@ class Target():
 			predStateStr = ""
 
 		if self.measurementNumber is not None:
-			measStr = " \tMeasurement(" + str(self.scanNumber) + ":" + str(self.measurementNumber) + ")"
+			measStr = (" \tMeasurement("+str(self.scanNumber)
+						+":"+str(self.measurementNumber) + ")")
 			if self.measurement is not None:
 				measStr += ":" + str(self.measurement)
 		else:
@@ -81,7 +82,8 @@ class Target():
 
 		if self.residualCovariance is not None:
 			lambda_, _ = np.linalg.eig(self.residualCovariance)
-			gateStr = " \tGate size: ("+'{:5.2f}'.format(np.sqrt(lambda_[0])*2)+","+'{:5.2f}'.format(np.sqrt(lambda_[1])*2)+")"
+			gateStr = (" \tGate size: ("+'{:5.2f}'.format(np.sqrt(lambda_[0])*2)
+						+","+'{:5.2f}'.format(np.sqrt(lambda_[1])*2)+")")
 		else:
 			gateStr = ""
 
@@ -148,7 +150,7 @@ class Target():
 	
 	def gateAndCreateNewHypotheses(self, measurementList, associatedMeasurements, tracker):
 		scanNumber = len(tracker.__scanHistory__)
-		assert self.scanNumber == scanNumber-1, "gateAndCreateNewMeasurement: inconsistent scan numbering"
+		assert self.scanNumber == scanNumber-1,"gateAndCreateNewMeasurement: inconsistent scan numbering"
 		P_d = tracker.P_d
 		lambda_ex = tracker.lambda_ex
 		time = measurementList.time
