@@ -247,6 +247,9 @@ def runDynamicAgents(**kwargs):
 if __name__ == '__main__':
 	try:
 		os.chdir(os.path.dirname(os.path.abspath(__file__)))
+
+		os.system('./gurobiVars.sh')
+
 		parser = argparse.ArgumentParser(description = "Run MHT tracker simulations", argument_default=argparse.SUPPRESS)
 		parser.add_argument('-F', help = "Force run of files (if exist)",action = 'store_true')
 		parser.add_argument('-D', help = "Discard result", 				action = 'store_true') 
