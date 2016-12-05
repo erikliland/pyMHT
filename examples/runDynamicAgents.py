@@ -1,7 +1,14 @@
 #!/usr/bin/env python3
+import os, sys
+if 'LD_LIBRARY_PATH' not in os.environ:
+    os.environ['LD_LIBRARY_PATH'] = os.path.join(os.environ['GUROBI_HOME'],'lib')
+	#	export LD_LIBRARY_PATH="${LD_LIBRARY_PATH}:${GUROBI_HOME}/lib"
+    try:
+        os.execv(sys.argv[0], sys.argv)
+    except Exception, exc:
+        print 'Failed re-exec:', exc
+        sys.exit(1)
 try:
-	import os
-	import sys
 	import signal 
 	import time
 	import functools
@@ -247,11 +254,6 @@ def runDynamicAgents(**kwargs):
 if __name__ == '__main__':
 	try:
 		os.chdir(os.path.dirname(os.path.abspath(__file__)))
-
-		import subprocess
-		subprocess.Popen('export LD_LIBRARY_PATH="${LD_LIBRARY_PATH}:${GUROBI_HOME}/lib"')
-		# os.system('export LD_LIBRARY_PATH="${LD_LIBRARY_PATH}:${GUROBI_HOME}/lib"')		
-
 		parser = argparse.ArgumentParser(description = "Run MHT tracker simulations", argument_default=argparse.SUPPRESS)
 		parser.add_argument('-F', help = "Force run of files (if exist)",action = 'store_true')
 		parser.add_argument('-D', help = "Discard result", 				action = 'store_true') 
