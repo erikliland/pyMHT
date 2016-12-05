@@ -5,6 +5,7 @@ if 'LD_LIBRARY_PATH' not in os.environ:
 	#	export LD_LIBRARY_PATH="${LD_LIBRARY_PATH}:${GUROBI_HOME}/lib"
     try:
         os.execv(sys.argv[0], sys.argv)
+
     except Exception as e:
         print('Failed re-exec:', e)
         sys.exit(1)
