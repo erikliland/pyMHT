@@ -247,7 +247,7 @@ def runDynamicAgents(**kwargs):
 if __name__ == '__main__':
 	try:
 		os.chdir(os.path.dirname(os.path.abspath(__file__)))
-
+		
 		os.system('export LD_LIBRARY_PATH="${LD_LIBRARY_PATH}:${GUROBI_HOME}/lib"')
 
 		parser = argparse.ArgumentParser(description = "Run MHT tracker simulations", argument_default=argparse.SUPPRESS)
