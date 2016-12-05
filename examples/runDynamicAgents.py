@@ -241,8 +241,8 @@ def runDynamicAgents(**kwargs):
 										p0,
 										initialTargets
 										)
-						if not((N == 9) and (P_d != 0.5)):
-							simulateFile(args,**kwargs)
+						# if not((N == 9) and (P_d != 0.5)):
+						simulateFile(args,**kwargs)
 
 if __name__ == '__main__':
 	try:
