@@ -176,7 +176,13 @@ def simulateFile(sArgs,**kwargs):
 				tree.write(savefilePath)
 			
 		else:
-			root 		= ET.parse(savefilePath).getroot()
+			try:
+				root 		= ET.parse(savefilePath).getroot()
+			except ET.ParseError:
+				os.remove(savefilePath)
+				simulateFile(sArgs, **kwargs)
+				return
+
 			iList 		= [int(sim.get("i")) for sim in root.findall("Simulation")]
 			iList.sort()
 			preliminaryWallRunTime = float(root.attrib.get("wallRunTime",0))

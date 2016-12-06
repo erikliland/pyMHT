@@ -72,6 +72,7 @@ def compareResults():
 	sumTotalSimTime = 0
 	sumTotalWallRunTime = 0
 	root = ET.Element("simulations")
+	pool = mp.Pool(os.cpu_count(),initWorker)
 	for fileString in simFiles:
 		filePath = os.path.join(loadLocation,os.path.splitext(fileString)[0],fileString)
 		doc = ET.SubElement(root,"file", name = os.path.basename(fileString))
@@ -89,7 +90,7 @@ def compareResults():
 							nTracks = 0
 							nLostTracks = 0
 							runTimeLogAvg = {}
-							print('{:45s}'.format(os.path.splitext(fileString)[0]),'{:6s}'.format(solver),"P_d =",P_d,"N =",N,"lPhi =",'{:5.0e}'.format(lambda_phi), end = "\n")
+							print('{:45s}'.format(os.path.splitext(fileString)[0]),'{:6s}'.format(solver),"P_d =",P_d,"N =",N,"lPhi =",'{:5.0e}'.format(lambda_phi), end = "")
 							savefilePath = (os.path.join(loadLocation,os.path.splitext(fileString)[0],"results",os.path.splitext(fileString)[0])
 												+"["
 												+solver.upper()
@@ -101,7 +102,11 @@ def compareResults():
 							try:
 								simulations = ET.parse(savefilePath).getroot()
 							except FileNotFoundError:
-								print('{:120s}'.format("Not found"))
+								print('{:80s}'.format("Not found"))
+								continue
+							except ET.ParseError:
+								os.remove(savefilePath)
+								print("Deleted corrupt file:", savefilePath)
 								continue
 
 							iList = [int(sim.get("i")) for sim in simulations.findall("Simulation")]
@@ -112,7 +117,6 @@ def compareResults():
 							missingSimulationIndecies = set(range(nMonteCarlo)).difference(set(iList))
 							nSimulations = int(simulations.attrib.get('nMonteCarlo'))
 							statusString = ""
-							pool = mp.Pool(os.cpu_count(),initWorker)
 							results = pool.imap_unordered(functools.partial(analyzeSimulation, nTracksTrue, trueTrackLength, trueTracks,threshold),simulations,1)
 							while True:
 								try:
@@ -137,11 +141,11 @@ def compareResults():
 											nTracks += len(estimatedTracks)
 											statusString += status
 								except StopIteration:
-									pool.terminate()
-									pool.join()
+									# pool.terminate()
+									# pool.join()
 									break
-							statusString = statusString.replace(".....","V")	
-							print('{:70s}'.format(statusString), end = "")
+							# statusString = statusString.replace(".....","V")	
+							# print('{:70s}'.format(statusString), end = "")
 
 							if nTracks != 0:
 								print("\t",'{:3.0f}'.format(nLostTracks),"/",'{:3.0f}'.format(nTracks),"=>",'{:4.1f}'.format((nLostTracks/nTracks)*100),"%")
