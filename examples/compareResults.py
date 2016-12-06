@@ -154,10 +154,7 @@ def compareResults():
 								# ET.SubElement(lambdaPhi,"covConsistence").text = simulation.get("covConsistence")
 							else:
 								print()
-					break
-				break
-			break
-		break			
+									
 	root.attrib["sumTotalSImTime"] = repr(sumTotalSimTime)
 	root.attrib["sumTotalWallRunTime"] = repr(sumTotalWallRunTime)
 	tree = ET.ElementTree(root)
