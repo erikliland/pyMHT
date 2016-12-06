@@ -7,6 +7,10 @@ import xml.etree.ElementTree as ET
 from simSettings import *
 import ast
 import datetime
+import signal
+import functools
+import multiprocessing as mp 
+
 
 def openRes(filename):
 	try:
@@ -34,6 +38,35 @@ def openGroundTruth(filename):
 			else:
 				targetTracks[target,timestep,:] = simList[timestep-1][target].state[0:2]
 	return np.asarray(targetTracks)
+
+def initWorker():
+    signal.signal(signal.SIGINT, signal.SIG_IGN)
+
+
+def analyzeSimulation(nTracksTrue, trueTrackLength, trueTracks,threshold, simulation):
+	##Function start, input = (simulation, nTracksTrue, trueTrackLength, trueTracks,threshold)
+	parsedTracks = ast.literal_eval(simulation.text)
+	estimatedTracks = np.array(parsedTracks)
+	if nTracksTrue != len(parsedTracks):
+		return {'status':"/"}
+	
+	if any(len(track) != trueTrackLength for track in parsedTracks):
+		return {'status':"/"}
+
+	if estimatedTracks is None:
+		return None
+
+	if trueTracks.shape != estimatedTracks.shape:
+		return {'status':"o"}
+	lostTracks = np.linalg.norm(trueTracks-estimatedTracks,2,2) > threshold
+	lostTracksTime = [np.flatnonzero(lostTrack).tolist() for lostTrack in lostTracks]
+	runTimeLog = ast.literal_eval(simulation.get("runtimeLog"))
+	return {'status':'.',
+			'lostTracks':lostTracks,
+			'lostTracksTime':lostTracksTime,
+			'estimatedTracks':estimatedTracks,
+			'runTimeLog':runTimeLog}
+	##Function end, return status, lostTracks, lostTracksTime, runTimeLog
 
 def compareResults():
 	sumTotalSimTime = 0
@@ -79,39 +112,37 @@ def compareResults():
 							missingSimulationIndecies = set(range(nMonteCarlo)).difference(set(iList))
 							nSimulations = int(simulations.attrib.get('nMonteCarlo'))
 							statusString = ""
-							for simulation in simulations:
-								parsedTracks = ast.literal_eval(simulation.text)
-								estimatedTracks = np.array(parsedTracks)
-								if nTracksTrue != len(parsedTracks):
-									statusString += "/"
-									continue
-								
-								if any(len(track) != trueTrackLength for track in parsedTracks):
-									statusString += "/"
-									continue
+							pool = mp.Pool(os.cpu_count(),initWorker)
+							results = pool.imap_unordered(functools.partial(analyzeSimulation, nTracksTrue, trueTrackLength, trueTracks,threshold),simulations,1)
+							while True:
+								try:
+									res = results.next()
+									if res is not None:
+										status = res.get("status")
+										if (status is not None) and (status == "."):
+											runTimeLog = res.get("runTimeLog")
+											lostTracksTime = res.get("lostTracksTime")
+											estimatedTracks = res.get("estimatedTracks")
+											for k,v in runTimeLog.items():
+												try:
+													runTimeLogAvg[k] += v
+												except KeyError:
+													runTimeLogAvg[k] = v
+											permanentLostTracks = []
 
-								if estimatedTracks is None:
-									continue
+											for lostTrackTime in lostTracksTime:
+												if len(lostTrackTime):
+													permanentLostTracks.append(lostTrackTime[-1] == trueTrackLength-1)
+											nLostTracks += sum(permanentLostTracks)
+											nTracks += len(estimatedTracks)
+											statusString += status
+								except StopIteration:
+									pool.terminate()
+									pool.join()
+									break
+							statusString = statusString.replace(".....","V")	
+							print('{:70s}'.format(statusString), end = "")
 
-								if trueTracks.shape != estimatedTracks.shape:
-									statusString += "o"
-									continue
-								lostTracks = np.linalg.norm(trueTracks-estimatedTracks,2,2) > threshold
-								lostTracksTime = [np.flatnonzero(lostTrack).tolist() for lostTrack in lostTracks]
-								runTimeLog = ast.literal_eval(simulation.get("runtimeLog"))
-								for k,v in runTimeLog.items():
-									try:
-										runTimeLogAvg[k] += v
-									except KeyError:
-										runTimeLogAvg[k] = v
-								permanentLostTracks = []
-								for lostTrackTime in lostTracksTime:
-									if len(lostTrackTime):
-										permanentLostTracks.append(lostTrackTime[-1] == trueTrackLength-1)
-								nLostTracks += sum(permanentLostTracks)
-								nTracks += len(estimatedTracks)
-								statusString += "."
-							print('{:120s}'.format(statusString), end = "")
 							if nTracks != 0:
 								print("\t",'{:3.0f}'.format(nLostTracks),"/",'{:3.0f}'.format(nTracks),"=>",'{:4.1f}'.format((nLostTracks/nTracks)*100),"%")
 								lambdaPhi = ET.SubElement(num,"lambda_phi", value = '{:5.0e}'.format(lambda_phi))
@@ -123,6 +154,10 @@ def compareResults():
 								# ET.SubElement(lambdaPhi,"covConsistence").text = simulation.get("covConsistence")
 							else:
 								print()
+					break
+				break
+			break
+		break			
 	root.attrib["sumTotalSImTime"] = repr(sumTotalSimTime)
 	root.attrib["sumTotalWallRunTime"] = repr(sumTotalWallRunTime)
 	tree = ET.ElementTree(root)
