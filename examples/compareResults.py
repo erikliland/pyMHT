@@ -55,6 +55,7 @@ def compareResults():
 						if not((N == 9) and (P_d != 0.5)):
 							nTracks = 0
 							nLostTracks = 0
+							runTimeLogAvg = {}
 							print('{:45s}'.format(os.path.splitext(fileString)[0]),'{:6s}'.format(solver),"P_d =",P_d,"N =",N,"lPhi =",'{:5.0e}'.format(lambda_phi), end = "\n")
 							savefilePath = (os.path.join(loadLocation,os.path.splitext(fileString)[0],"results",os.path.splitext(fileString)[0])
 												+"["
@@ -97,6 +98,12 @@ def compareResults():
 									continue
 								lostTracks = np.linalg.norm(trueTracks-estimatedTracks,2,2) > threshold
 								lostTracksTime = [np.flatnonzero(lostTrack).tolist() for lostTrack in lostTracks]
+								runTimeLog = ast.literal_eval(simulation.get("runtimeLog"))
+								for k,v in runTimeLog.items():
+									try:
+										runTimeLogAvg[k] += v
+									except KeyError:
+										runTimeLogAvg[k] = v
 								permanentLostTracks = []
 								for lostTrackTime in lostTracksTime:
 									if len(lostTrackTime):
@@ -111,7 +118,7 @@ def compareResults():
 								ET.SubElement(lambdaPhi,"nTracks").text 	= repr(nTracks)
 								ET.SubElement(lambdaPhi,"nLostTracks").text = repr(nLostTracks)
 								ET.SubElement(lambdaPhi,"totalTime").text 	= repr(totalSimTime)
-								ET.SubElement(lambdaPhi,"runtimeLog").text 	= simulation.get("runtimeLog")
+								ET.SubElement(lambdaPhi,"runTimeLogAvg").text = repr(runTimeLogAvg)
 								ET.SubElement(lambdaPhi,"nSimulations").text= repr(nSimulations)
 								# ET.SubElement(lambdaPhi,"covConsistence").text = simulation.get("covConsistence")
 							else:
