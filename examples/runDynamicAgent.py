@@ -80,7 +80,7 @@ def runDynamicAgent(fileString,solver,P_d, N, lambda_phi,**kwargs):
 	plt.close()
 	fig1 = plt.figure(num=1, figsize = (9,9), dpi=100)	
 	hpf.plotRadarOutline(p0, radarRange, center = False)
-	hpf.plotTrueTrack(simList, markers = True)
+	hpf.plotTrueTrack(simList)
 	tracker.plotInitialTargets()
 	tracker.plotVelocityArrowForTrack()
 	# tracker.plotValidationRegionFromRoot()
