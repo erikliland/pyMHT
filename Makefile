@@ -43,6 +43,7 @@ init:
 	sudo apt-get install python3-tk
 	sudo apt-get install python-glpk
 	sudo apt-get install glpk-utils
+	sudo apt-get install python-numpy
 	sudo -H pip install -r requirements.txt
 
 	if [ ! -d $("pulp/") ]; \
