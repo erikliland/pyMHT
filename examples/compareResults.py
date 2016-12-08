@@ -86,78 +86,77 @@ def compareResults():
 				for N in NList:
 					num = ET.SubElement(prob, "N", value = str(N))
 					for lambda_phi in lambdaPhiList:
-						if not((N == 9) and (P_d != 0.5)):
-							nTracks = 0
-							nLostTracks = 0
-							runTimeLogAvg = {}
-							print('{:45s}'.format(os.path.splitext(fileString)[0]),'{:6s}'.format(solver),"P_d =",P_d,"N =",N,"lPhi =",'{:5.0e}'.format(lambda_phi), end = "")
-							savefilePath = (os.path.join(loadLocation,os.path.splitext(fileString)[0],"results",os.path.splitext(fileString)[0])
-												+"["
-												+solver.upper()
-												+",Pd="+str(P_d)
-												+",N="+str(N)
-												+",lPhi="+'{:7.5f}'.format(lambda_phi)
-												+"]"
-												+".xml")
+						nTracks = 0
+						nLostTracks = 0
+						runTimeLogAvg = {}
+						print('{:45s}'.format(os.path.splitext(fileString)[0]),'{:6s}'.format(solver),"P_d =",P_d,"N =",N,"lPhi =",'{:5.0e}'.format(lambda_phi), end = "")
+						savefilePath = (os.path.join(loadLocation,os.path.splitext(fileString)[0],"results",os.path.splitext(fileString)[0])
+											+"["
+											+solver.upper()
+											+",Pd="+str(P_d)
+											+",N="+str(N)
+											+",lPhi="+'{:7.5f}'.format(lambda_phi)
+											+"]"
+											+".xml")
+						try:
+							simulations = ET.parse(savefilePath).getroot()
+						except FileNotFoundError:
+							print('{:80s}'.format("Not found"))
+							continue
+						except ET.ParseError:
+							os.remove(savefilePath)
+							print("Deleted corrupt file:", savefilePath)
+							continue
+
+						iList = [int(sim.get("i")) for sim in simulations.findall("Simulation")]
+						totalSimTime = sum([float(sim.get("totalSimTime")) for sim in simulations.findall("Simulation")])
+						sumTotalWallRunTime += float(simulations.attrib.get("wallRunTime"))
+						sumTotalSimTime += totalSimTime
+						iList.sort() 
+						missingSimulationIndecies = set(range(nMonteCarlo)).difference(set(iList))
+						nSimulations = int(simulations.attrib.get('nMonteCarlo'))
+						statusString = ""
+						results = pool.imap_unordered(functools.partial(analyzeSimulation, nTracksTrue, trueTrackLength, trueTracks,threshold),simulations,1)
+						while True:
 							try:
-								simulations = ET.parse(savefilePath).getroot()
-							except FileNotFoundError:
-								print('{:80s}'.format("Not found"))
-								continue
-							except ET.ParseError:
-								os.remove(savefilePath)
-								print("Deleted corrupt file:", savefilePath)
-								continue
+								res = results.next()
+								if res is not None:
+									status = res.get("status")
+									if (status is not None) and (status == "."):
+										runTimeLog = res.get("runTimeLog")
+										lostTracksTime = res.get("lostTracksTime")
+										estimatedTracks = res.get("estimatedTracks")
+										for k,v in runTimeLog.items():
+											try:
+												runTimeLogAvg[k] += v
+											except KeyError:
+												runTimeLogAvg[k] = v
+										permanentLostTracks = []
 
-							iList = [int(sim.get("i")) for sim in simulations.findall("Simulation")]
-							totalSimTime = sum([float(sim.get("totalSimTime")) for sim in simulations.findall("Simulation")])
-							sumTotalWallRunTime += float(simulations.attrib.get("wallRunTime"))
-							sumTotalSimTime += totalSimTime
-							iList.sort() 
-							missingSimulationIndecies = set(range(nMonteCarlo)).difference(set(iList))
-							nSimulations = int(simulations.attrib.get('nMonteCarlo'))
-							statusString = ""
-							results = pool.imap_unordered(functools.partial(analyzeSimulation, nTracksTrue, trueTrackLength, trueTracks,threshold),simulations,1)
-							while True:
-								try:
-									res = results.next()
-									if res is not None:
-										status = res.get("status")
-										if (status is not None) and (status == "."):
-											runTimeLog = res.get("runTimeLog")
-											lostTracksTime = res.get("lostTracksTime")
-											estimatedTracks = res.get("estimatedTracks")
-											for k,v in runTimeLog.items():
-												try:
-													runTimeLogAvg[k] += v
-												except KeyError:
-													runTimeLogAvg[k] = v
-											permanentLostTracks = []
+										for lostTrackTime in lostTracksTime:
+											if len(lostTrackTime):
+												permanentLostTracks.append(lostTrackTime[-1] == trueTrackLength-1)
+										nLostTracks += sum(permanentLostTracks)
+										nTracks += len(estimatedTracks)
+										statusString += status
+							except StopIteration:
+								# pool.terminate()
+								# pool.join()
+								break
+						# statusString = statusString.replace(".....","V")	
+						# print('{:70s}'.format(statusString), end = "")
 
-											for lostTrackTime in lostTracksTime:
-												if len(lostTrackTime):
-													permanentLostTracks.append(lostTrackTime[-1] == trueTrackLength-1)
-											nLostTracks += sum(permanentLostTracks)
-											nTracks += len(estimatedTracks)
-											statusString += status
-								except StopIteration:
-									# pool.terminate()
-									# pool.join()
-									break
-							# statusString = statusString.replace(".....","V")	
-							# print('{:70s}'.format(statusString), end = "")
-
-							if nTracks != 0:
-								print("\t",'{:3.0f}'.format(nLostTracks),"/",'{:3.0f}'.format(nTracks),"=>",'{:4.1f}'.format((nLostTracks/nTracks)*100),"%")
-								lambdaPhi = ET.SubElement(num,"lambda_phi", value = '{:5.0e}'.format(lambda_phi))
-								ET.SubElement(lambdaPhi,"nTracks").text 	= repr(nTracks)
-								ET.SubElement(lambdaPhi,"nLostTracks").text = repr(nLostTracks)
-								ET.SubElement(lambdaPhi,"totalTime").text 	= repr(totalSimTime)
-								ET.SubElement(lambdaPhi,"runTimeLogAvg").text = repr(runTimeLogAvg)
-								ET.SubElement(lambdaPhi,"nSimulations").text= repr(nSimulations)
-								# ET.SubElement(lambdaPhi,"covConsistence").text = simulation.get("covConsistence")
-							else:
-								print()
+						if nTracks != 0:
+							print("\t",'{:3.0f}'.format(nLostTracks),"/",'{:3.0f}'.format(nTracks),"=>",'{:4.1f}'.format((nLostTracks/nTracks)*100),"%")
+							lambdaPhi = ET.SubElement(num,"lambda_phi", value = '{:5.0e}'.format(lambda_phi))
+							ET.SubElement(lambdaPhi,"nTracks").text 	= repr(nTracks)
+							ET.SubElement(lambdaPhi,"nLostTracks").text = repr(nLostTracks)
+							ET.SubElement(lambdaPhi,"totalTime").text 	= repr(totalSimTime)
+							ET.SubElement(lambdaPhi,"runTimeLogAvg").text = repr(runTimeLogAvg)
+							ET.SubElement(lambdaPhi,"nSimulations").text= repr(nSimulations)
+							# ET.SubElement(lambdaPhi,"covConsistence").text = simulation.get("covConsistence")
+						else:
+							print()
 									
 	root.attrib["sumTotalSImTime"] = repr(sumTotalSimTime)
 	root.attrib["sumTotalWallRunTime"] = repr(sumTotalWallRunTime)
