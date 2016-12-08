@@ -207,7 +207,7 @@ def simulateFile(sArgs,**kwargs):
 				statusString = "".join(statusStringList)
 				statusString = statusString.replace(".....","V")
 				timeStatus = '@'+runTimeString+' sec ({:3.0f} sec)'.format(sum(computeTList))
-				print("J: ",printFile, ' {:30s}'.format(statusString),timeStatus,sep = "", flush = True)
+				print("J: ",printFile, ' {:40s}'.format(statusString),timeStatus,sep = "", flush = True)
 	except KeyboardInterrupt:
 		print("Killed by keyboard")
 		raise
