@@ -6,6 +6,7 @@ import time
 import functools
 import pulp
 import argparse
+import numpy as np
 
 import xml.etree.ElementTree as ET
 import multiprocessing as mp 
@@ -39,11 +40,11 @@ def runDynamicAgent(fileString,solver,P_d, N, lambda_phi,**kwargs):
 	 	tracker.initiateTarget(initialTarget)
 
 	if "t" in kwargs:
-		fig1 = plt.figure(num=1, figsize = (9,9), dpi=100)
+		plt.figure(num=1, figsize = (9,9), dpi=100)
 		plt.axis("equal")
 		plt.xlim((p0.x-radarRange*1.05, p0.x + radarRange*1.05))
 		plt.ylim((p0.y-radarRange*1.05, p0.y + radarRange*1.05))
-		plt.show(block = False)
+		plt.ion()
 		timestep = kwargs.get("t")
 
 	try:
@@ -51,34 +52,35 @@ def runDynamicAgent(fileString,solver,P_d, N, lambda_phi,**kwargs):
 			tracker.addMeasurementList(measurementList, trueState = simList[scanIndex])
 			if scanIndex == kwargs.get("k",1e15):
 				break
+
+			if "t" in kwargs:
+				plt.cla()
+				hpf.plotRadarOutline(p0, radarRange, center = False)
+				tracker.plotInitialTargets()
+				plt.show(block = False)
+				tracker.plotValidationRegionFromTracks()
+				tracker.plotScan()
+				tracker.plotMeasurementsFromRoot(real = True, dummy = True,labels = False)
+				tracker.plotHypothesesTrack()
+				tracker.plotActiveTracks()
+				hpf.plotTrueTrack(simList)
+				plt.axis("equal")
+				plt.xlim((p0.x-radarRange*1.05, p0.x + radarRange*1.05))
+				plt.ylim((p0.y-radarRange*1.05, p0.y + radarRange*1.05))
+				plt.pause(kwargs["t"])
+
 	except ValueError as e:
 		tracker.printTargetList()
 		print(e)
 		raise
 
-		if "t" in kwargs:
-			plt.gca().cla()
-			hpf.plotRadarOutline(p0, radarRange, center = False)
-			tracker.plotInitialTargets()
-			#tracker.plotValidationRegionFromRoot()
-			tracker.plotValidationRegionFromTracks()
-			tracker.plotScan()
-			tracker.plotMeasurementsFromRoot(real = True, dummy = True,labels = False)
-			tracker.plotHypothesesTrack()
-			tracker.plotActiveTracks()
-			hpf.plotTrueTrack(simList, markers = True)
-			plt.axis("equal")
-			plt.xlim((p0.x-radarRange*1.05, p0.x + radarRange*1.05))
-			plt.ylim((p0.y-radarRange*1.05, p0.y + radarRange*1.05))
-			fig1.canvas.draw()
-			time.sleep(kwargs["t"])
+		
 
 	trackList = hpf.backtrackNodePositions(tracker.__trackNodes__, debug = True)
 	association = hpf.backtrackMeasurementsIndices(tracker.__trackNodes__)
 	#print("Association",*association, sep = "\n")
 	
-	plt.close()
-	fig1 = plt.figure(num=1, figsize = (9,9), dpi=100)	
+	plt.clf()
 	hpf.plotRadarOutline(p0, radarRange, center = False)
 	hpf.plotTrueTrack(simList)
 	tracker.plotInitialTargets()
@@ -92,7 +94,6 @@ def runDynamicAgent(fileString,solver,P_d, N, lambda_phi,**kwargs):
 	plt.axis("equal")
 	plt.xlim((p0.x-radarRange*1.05, p0.x + radarRange*1.05))
 	plt.ylim((p0.y-radarRange*1.05, p0.y + radarRange*1.05))
-	fig1.canvas.draw()
 	plt.show(block = True)
 
 if __name__ == '__main__':
