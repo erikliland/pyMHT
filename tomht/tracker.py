@@ -147,7 +147,7 @@ class Target():
 			)
 		self.residualCovariance = self.C.dot(
 						self.predictedStateCovariance.dot(self.C.T))+self.R
-		selv.observableState = self.C.dot(self.predictedStateMean)
+		self.observableState = self.C.dot(self.predictedStateMean)
 	
 	def gateAndCreateNewHypotheses(self, measurementList, associatedMeasurements, tracker):
 		scanNumber = len(tracker.__scanHistory__)
@@ -222,6 +222,7 @@ class Target():
 
 	def measurementIsInsideErrorEllipse(self,measurement, eta2):
 		measRes = measurement.toarray()- self.observableState
+		#measRes = measurement.toarray()- self.C.dot(self.predictedStateMean)
 		return measRes.T.dot( np.linalg.inv(self.residualCovariance).dot( measRes ) ) <= eta2
 
 	def addZeroHypothesis(self,time, scanNumber, P_d):
@@ -403,6 +404,9 @@ class Tracker():
 		self.P0 		= P0
 		self.R 			= R	
 		self.Q			= Q
+
+		if (kwargs.get("realTime") is not None) and (kwargs.get("realTime") is True):
+			self._setHightPriority()
 
 	def initiateTarget(self,newTarget):
 		target = Target(	time 					= newTarget.time, 
@@ -812,3 +816,14 @@ class Tracker():
 			else:
 				print(target.__str__(targetIndex = targetIndex)) 
 		print()
+
+	def _setHightPriority(self):
+		import psutil, os, platform
+		p = psutil.Process(os.getpid())
+		OS = platform.system()
+		if (OS == "Darwin") or (OS == "Linux"):
+			p.nice(5)
+			print("Nice:", p.nice())
+		elif OS == "Windows":
+			p.nice(psutil.HIGH_PRIORITY_CLASS)
+			print("Nice:", p.nice())
