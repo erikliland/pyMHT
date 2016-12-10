@@ -147,7 +147,7 @@ class Target():
 			)
 		self.residualCovariance = self.C.dot(
 						self.predictedStateCovariance.dot(self.C.T))+self.R
-		#selv.observableState = self.C.dot(self.predictedStateMean)
+		selv.observableState = self.C.dot(self.predictedStateMean)
 	
 	def gateAndCreateNewHypotheses(self, measurementList, associatedMeasurements, tracker):
 		scanNumber = len(tracker.__scanHistory__)
@@ -221,8 +221,7 @@ class Target():
 			)
 
 	def measurementIsInsideErrorEllipse(self,measurement, eta2):
-		measRes = measurement.toarray()-self.C.dot(self.predictedStateMean)
-		#measRes = measurement.toarray()- self.observableState
+		measRes = measurement.toarray()- self.observableState
 		return measRes.T.dot( np.linalg.inv(self.residualCovariance).dot( measRes ) ) <= eta2
 
 	def addZeroHypothesis(self,time, scanNumber, P_d):
