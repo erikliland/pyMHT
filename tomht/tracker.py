@@ -147,6 +147,7 @@ class Target():
 			)
 		self.residualCovariance = self.C.dot(
 						self.predictedStateCovariance.dot(self.C.T))+self.R
+		#selv.observableState = self.C.dot(self.predictedStateMean)
 	
 	def gateAndCreateNewHypotheses(self, measurementList, associatedMeasurements, tracker):
 		scanNumber = len(tracker.__scanHistory__)
@@ -221,6 +222,7 @@ class Target():
 
 	def measurementIsInsideErrorEllipse(self,measurement, eta2):
 		measRes = measurement.toarray()-self.C.dot(self.predictedStateMean)
+		#measRes = measurement.toarray()- self.observableState
 		return measRes.T.dot( np.linalg.inv(self.residualCovariance).dot( measRes ) ) <= eta2
 
 	def addZeroHypothesis(self,time, scanNumber, P_d):
@@ -367,7 +369,7 @@ class Target():
 
 class Tracker():
 	def __init__(self, Phi, C, Gamma, P_d, P0, R, Q, lambda_phi, 
-		lambda_nu, eta2, pruneThreshold, N, solverStr, **kwargs):
+		lambda_nu, eta2, N, solverStr, **kwargs):
 
 		self.logTime 	= kwargs.get("logTime", False)
 		self.debug 		= kwargs.get("debug", False)
@@ -391,7 +393,7 @@ class Tracker():
 		self.eta2		= eta2
 		self.N 		 	= N
 		self.solver  	= hpf.parseSolver(solverStr)
-		self.pruneThreshold = pruneThreshold
+		self.pruneThreshold = kwargs.get("pruneThreshold")
 
 		#State space model
 		self.Phi 		= Phi
