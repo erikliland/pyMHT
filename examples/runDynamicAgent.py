@@ -35,7 +35,7 @@ def runDynamicAgent(fileString,solver,P_d, N, lambda_phi,**kwargs):
 	
 	seed = 5446 + kwargs.get("i",0)
 	scanList = sim.simulateScans(seed, simList, model.C, model.R(model.sigmaR_true), lambda_phi,radarRange, p0, P_d = P_d, shuffle = False)
-	tracker = tomht.Tracker(model.Phi, model.C, model.Gamma, P_d, model.P0, model.R(), model.Q, lambda_phi, lambda_nu, eta2, N, solver)
+	tracker = tomht.Tracker(model.Phi, model.C, model.Gamma, P_d, model.P0, model.R(), model.Q, lambda_phi, lambda_nu, eta2, N, solver, realTime = True)
 	for initialTarget in initialTargets:
 	 	tracker.initiateTarget(initialTarget)
 
