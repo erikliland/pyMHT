@@ -57,8 +57,7 @@ def runSimulation(sArgs,i):
 								model.Q, 
 								sArgs.lambda_phi, 
 								sim.lambda_nu, 
-								sim.eta2, 
-								model.sigmaR_tracker, 
+								sim.eta2,
 								sArgs.N, 
 								sArgs.solver, 
 								logTime = True
