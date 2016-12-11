@@ -18,12 +18,10 @@ import logging
 import scipy.sparse as sp
 import matplotlib.pyplot as plt
 import numpy as np
-from multiprocessing import Process
 from scipy.sparse.csgraph import connected_components
 
 class Target():
 	def __init__(self, **kwargs):
-		Process.__init__(self)
 		time 						= kwargs.get("time")
 		scanNumber 					= kwargs.get("scanNumber")
 		filteredStateMean 			= kwargs.get("filteredStateMean")
