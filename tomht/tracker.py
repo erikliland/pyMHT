@@ -18,12 +18,10 @@ import logging
 import scipy.sparse as sp
 import matplotlib.pyplot as plt
 import numpy as np
-from multiprocessing import Process
 from scipy.sparse.csgraph import connected_components
 
 class Target():
 	def __init__(self, **kwargs):
-		Process.__init__(self)
 		time 						= kwargs.get("time")
 		scanNumber 					= kwargs.get("scanNumber")
 		filteredStateMean 			= kwargs.get("filteredStateMean")
@@ -147,6 +145,7 @@ class Target():
 			)
 		self.residualCovariance = self.C.dot(
 						self.predictedStateCovariance.dot(self.C.T))+self.R
+		self.observableState = self.C.dot(self.predictedStateMean)
 	
 	def gateAndCreateNewHypotheses(self, measurementList, associatedMeasurements, tracker):
 		scanNumber = len(tracker.__scanHistory__)
@@ -220,7 +219,8 @@ class Target():
 			)
 
 	def measurementIsInsideErrorEllipse(self,measurement, eta2):
-		measRes = measurement.toarray()-self.C.dot(self.predictedStateMean)
+		measRes = measurement.toarray()- self.observableState
+		#measRes = measurement.toarray()- self.C.dot(self.predictedStateMean)
 		return measRes.T.dot( np.linalg.inv(self.residualCovariance).dot( measRes ) ) <= eta2
 
 	def addZeroHypothesis(self,time, scanNumber, P_d):
@@ -367,7 +367,7 @@ class Target():
 
 class Tracker():
 	def __init__(self, Phi, C, Gamma, P_d, P0, R, Q, lambda_phi, 
-		lambda_nu, eta2, pruneThreshold, N, solverStr, **kwargs):
+		lambda_nu, eta2, N, solverStr, **kwargs):
 
 		self.logTime 	= kwargs.get("logTime", False)
 		self.debug 		= kwargs.get("debug", False)
@@ -391,7 +391,7 @@ class Tracker():
 		self.eta2		= eta2
 		self.N 		 	= N
 		self.solver  	= hpf.parseSolver(solverStr)
-		self.pruneThreshold = pruneThreshold
+		self.pruneThreshold = kwargs.get("pruneThreshold")
 
 		#State space model
 		self.Phi 		= Phi
@@ -402,6 +402,9 @@ class Tracker():
 		self.P0 		= P0
 		self.R 			= R	
 		self.Q			= Q
+
+		if (kwargs.get("realTime") is not None) and (kwargs.get("realTime") is True):
+			self._setHightPriority()
 
 	def initiateTarget(self,newTarget):
 		target = Target(	time 					= newTarget.time, 
@@ -811,3 +814,14 @@ class Tracker():
 			else:
 				print(target.__str__(targetIndex = targetIndex)) 
 		print()
+
+	def _setHightPriority(self):
+		import psutil, os, platform
+		p = psutil.Process(os.getpid())
+		OS = platform.system()
+		if (OS == "Darwin") or (OS == "Linux"):
+			p.nice(5)
+			print("Nice:", p.nice())
+		elif OS == "Windows":
+			p.nice(psutil.HIGH_PRIORITY_CLASS)
+			print("Nice:", p.nice())

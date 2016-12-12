@@ -30,12 +30,12 @@ def runDynamicAgent(fileString,solver,P_d, N, lambda_phi,**kwargs):
 					)
 
 	print( "Simulating: ", printFile, sep = " ", flush = True)
-	runStart = time.time()
+	
 	simLog = 0.0
 	
 	seed = 5446 + kwargs.get("i",0)
 	scanList = sim.simulateScans(seed, simList, model.C, model.R(model.sigmaR_true), lambda_phi,radarRange, p0, P_d = P_d, shuffle = False)
-	tracker = tomht.Tracker(model.Phi, model.C, model.Gamma, P_d, model.P0, model.R(), model.Q, lambda_phi, lambda_nu, eta2, 1, N, solver, logTime = True)
+	tracker = tomht.Tracker(model.Phi, model.C, model.Gamma, P_d, model.P0, model.R(), model.Q, lambda_phi, lambda_nu, eta2, N, solver, realTime = True)
 	for initialTarget in initialTargets:
 	 	tracker.initiateTarget(initialTarget)
 
@@ -47,6 +47,7 @@ def runDynamicAgent(fileString,solver,P_d, N, lambda_phi,**kwargs):
 		plt.ion()
 		timestep = kwargs.get("t")
 
+	runStart = time.time()
 	try:
 		for scanIndex, measurementList in enumerate(scanList):
 			tracker.addMeasurementList(measurementList, trueState = simList[scanIndex])
@@ -75,8 +76,11 @@ def runDynamicAgent(fileString,solver,P_d, N, lambda_phi,**kwargs):
 		raise
 
 	runEnd = time.time()
-	runTime = runEnd - runStart
-	print("Simulation took:",round(runTime,1),"seconds")
+	if not "t" in kwargs:
+		runTime = runEnd-runStart
+		print("Run time:", round(runTime,1), "sec")
+		
+
 	trackList = hpf.backtrackNodePositions(tracker.__trackNodes__, debug = True)
 	association = hpf.backtrackMeasurementsIndices(tracker.__trackNodes__)
 	#print("Association",*association, sep = "\n")
