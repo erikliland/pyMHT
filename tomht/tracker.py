@@ -26,9 +26,9 @@ class Target():
 		scanNumber 					= kwargs.get("scanNumber")
 		filteredStateMean 			= kwargs.get("filteredStateMean")
 		filteredStateCovariance 	= kwargs.get("filteredStateCovariance")
-		Phi							= kwargs.get("Phi")	
+		Phi							= kwargs.get("Phi")
 		Q 							= kwargs.get("Q")
-		Gamma 						= kwargs.get("Gamma")	
+		Gamma 						= kwargs.get("Gamma")
 		C 							= kwargs.get("C")
 		R 							= kwargs.get("R")
 		if ((time is None) or 
@@ -179,8 +179,8 @@ class Target():
 		return 	(self.cummulativeNLLR +
 					hpf.nllr(	P_d, 
 								measurement, 
-								np.dot(self.C,self.predictedStateMean), 
-								lambda_ex, 
+								np.dot(self.C,self.predictedStateMean),
+								lambda_ex,
 								resCov)
 				)
 
@@ -424,7 +424,8 @@ class Tracker():
 	def addMeasurementList(self,measurementList, **kwargs):
 		tic1 = time.process_time()
 		
-		self._checkTrackerIntegrety()
+		if kwargs.get("checkIntegrety", False):
+			self._checkTrackerIntegrety()
 
 		tic2 = time.process_time()
 		self.__scanHistory__.append(measurementList)
@@ -461,7 +462,8 @@ class Tracker():
 		toc5 = time.process_time()-tic5
 		toc1 = time.process_time() - tic1
 
-		self._checkTrackerIntegrety()
+		if kwargs.get("checkIntegrety", False):
+			self._checkTrackerIntegrety()
 
 		if self.logTime:
 			self.runtimeLog['Process'] 	+= np.array([toc2,1])
@@ -685,9 +687,7 @@ class Tracker():
 				return False
 		
 		for targetIndex, node in enumerate(self.__trackNodes__):
-			self._checkTrackerIntegrety()
 			changed = recPruneNScan(node, targetIndex, self.__targetList__, self.N)
-			self._checkTrackerIntegrety()
 			if changed:
 				self.__associatedMeasurements__[targetIndex] = self.__targetList__[targetIndex].getMeasurementSet()
 
