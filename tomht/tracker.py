@@ -272,7 +272,7 @@ class Target():
 
 	def getLeafNodes(self):
 		def recGetLeafNode(node, nodes):
-			if len(node.trackHypotheses) == 0:
+			if not node.trackHypotheses:
 				nodes.append(node)
 			else:
 				for hyp in node.trackHypotheses:
