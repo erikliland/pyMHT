@@ -74,8 +74,9 @@ def runDynamicAgent(fileString,solver,P_d, N, lambda_phi,**kwargs):
 		print(e)
 		raise
 
-		
-
+	runEnd = time.time()
+	runTime = runEnd - runStart
+	print("Simulation took:",round(runTime,1),"seconds")
 	trackList = hpf.backtrackNodePositions(tracker.__trackNodes__, debug = True)
 	association = hpf.backtrackMeasurementsIndices(tracker.__trackNodes__)
 	#print("Association",*association, sep = "\n")
