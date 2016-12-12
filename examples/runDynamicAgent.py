@@ -47,10 +47,14 @@ def runDynamicAgent(fileString,solver,P_d, N, lambda_phi,**kwargs):
 		plt.ion()
 		timestep = kwargs.get("t")
 
+	maxIterationTime = 0
 	runStart = time.time()
 	try:
 		for scanIndex, measurementList in enumerate(scanList):
+			tic = time.time()
 			tracker.addMeasurementList(measurementList, trueState = simList[scanIndex])
+			toc = time.time()-tic
+			maxIterationTime = toc if toc > maxIterationTime else maxIterationTime
 			if scanIndex == kwargs.get("k",1e15):
 				break
 
@@ -78,8 +82,8 @@ def runDynamicAgent(fileString,solver,P_d, N, lambda_phi,**kwargs):
 	runEnd = time.time()
 	if not "t" in kwargs:
 		runTime = runEnd-runStart
-		print("Run time:", round(runTime,1), "sec")
-		
+		print("Total run time:", round(runTime,1), "sec")
+	print("Max iteration time:", round(maxIterationTime,4),"sec")
 
 	trackList = hpf.backtrackNodePositions(tracker.__trackNodes__, debug = True)
 	association = hpf.backtrackMeasurementsIndices(tracker.__trackNodes__)
