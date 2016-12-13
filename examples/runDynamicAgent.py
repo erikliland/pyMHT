@@ -35,7 +35,7 @@ def runDynamicAgent(fileString,solver,P_d, N, lambda_phi,**kwargs):
 	
 	seed = 5446 + kwargs.get("i",0)
 	scanList = sim.simulateScans(seed, simList, model.C, model.R(model.sigmaR_true), lambda_phi,radarRange, p0, P_d = P_d, shuffle = False)
-	tracker = tomht.Tracker(model.Phi, model.C, model.Gamma, P_d, model.P0, model.R(), model.Q, lambda_phi, lambda_nu, eta2, N, solver, realTime = True)
+	tracker = tomht.Tracker(model.Phi, model.C, model.Gamma, P_d, model.P0, model.R(), model.Q, lambda_phi, lambda_nu, eta2, N, solver, realTime = True, **kwargs)
 	for initialTarget in initialTargets:
 	 	tracker.initiateTarget(initialTarget)
 
@@ -117,6 +117,7 @@ if __name__ == '__main__':
 	parser.add_argument('-i',help = "Random iteration selector", type = int) 
 	parser.add_argument('-t',help = "Step through the simulation", type = float )
 	parser.add_argument('-k',help = "Measurement number to stop at", type = int )
+	parser.add_argument('-S',help = "Run tracker in single thread", action = 'store_false')
 	args = vars(parser.parse_args())
 	print(args)
 	runDynamicAgent(simFiles[args.get('f')],args.get('s'),args.get('p'),args.get('n'),args.get('l'), **args)
