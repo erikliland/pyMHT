@@ -12,18 +12,59 @@ from . import helpFunctions as hpf
 from . import kalmanFilter as kf
 from .classDefinitions import Position, Velocity
 import time
+import sys
+import signal
+import os
+import copy
 import pulp
 import itertools
 import logging
+import functools
 import scipy.sparse as sp
 import matplotlib.pyplot as plt
 import numpy as np
-from multiprocessing import Process
+import multiprocessing as mp
 from scipy.sparse.csgraph import connected_components
 
-class Target():
+import sys
+from numbers import Number
+from collections import Set, Mapping, deque
+
+try: # Python 2
+    zero_depth_bases = (basestring, Number, xrange, bytearray)
+    iteritems = 'iteritems'
+except NameError: # Python 3
+    zero_depth_bases = (str, bytes, Number, range, bytearray)
+    iteritems = 'items'
+
+def getsize(obj_0):
+    """Recursively iterate to sum size of object & members."""
+    def inner(obj, _seen_ids = set()):
+        obj_id = id(obj)
+        if obj_id in _seen_ids:
+            return 0
+        _seen_ids.add(obj_id)
+        size = sys.getsizeof(obj)
+        if isinstance(obj, zero_depth_bases):
+            pass # bypass remaining control flow and return
+        elif isinstance(obj, (tuple, list, Set, deque)):
+            size += sum(inner(i) for i in obj)
+        elif isinstance(obj, Mapping) or hasattr(obj, iteritems):
+            size += sum(inner(k) + inner(v) for k, v in getattr(obj, iteritems)())
+        # Check for custom object instances - may subclass above too
+        if hasattr(obj, '__dict__'):
+            size += inner(vars(obj))
+        if hasattr(obj, '__slots__'): # can have __slots__ with __dict__
+            size += sum(inner(getattr(obj, s)) for s in obj.__slots__ if hasattr(obj, s))
+        return size
+    return inner(obj_0)
+
+
+def initWorker():
+    signal.signal(signal.SIGINT, signal.SIG_IGN)
+
+class Target(mp.Process):
 	def __init__(self, **kwargs):
-		Process.__init__(self)
 		time 						= kwargs.get("time")
 		scanNumber 					= kwargs.get("scanNumber")
 		filteredStateMean 			= kwargs.get("filteredStateMean")
@@ -105,9 +146,9 @@ class Target():
 			return repr(self)
 		ret = ""
 		if level == 0:
-			ret += "T" + str(targetIndex) + ": \t" + repr(self) + "\n"
+			ret += "T" + str(targetIndex) + ": " + repr(self) + "\n"
 		else:
-			ret += "\t" + "\t"*min(level,5) + "H" + str(hypIndex)+":\t" +repr(self)+"\n"
+			ret += "   " + " "*min(level,8) + "H" + str(hypIndex)+": " +repr(self)+"\n"
 		for hypIndex, hyp in enumerate(self.trackHypotheses):
 			hasNotZeroHyp = (self.trackHypotheses[0].measurementNumber != 0)
 			ret += hyp.__str__(level = level+1, hypIndex = hypIndex + int(hasNotZeroHyp))
@@ -149,20 +190,21 @@ class Target():
 						self.predictedStateCovariance.dot(self.C.T))+self.R
 		self.observableState = self.C.dot(self.predictedStateMean)
 	
-	def gateAndCreateNewHypotheses(self, measurementList, associatedMeasurements, tracker):
-		scanNumber = len(tracker.__scanHistory__)
+	def gateAndCreateNewHypotheses(self, measurementList,scanNumber, P_d, lambda_ex, eta2, **kwargs):
+		#print(self.scanNumber,"->", scanNumber)
 		assert self.scanNumber == scanNumber-1,"gateAndCreateNewMeasurement: inconsistent scan numbering"
-		P_d = tracker.P_d
-		lambda_ex = tracker.lambda_ex
 		time = measurementList.time
-		self.addZeroHypothesis(time, scanNumber, P_d)
+		associatedMeasurements = set()
+		trackHypotheses = list()
+
+		trackHypotheses.append( self.createZeroHypothesis(time, scanNumber, P_d, **kwargs) )
 
 		for measurementIndex, measurement in enumerate(measurementList.measurements):
-			if self.measurementIsInsideErrorEllipse(measurement,tracker.eta2):
+			if self.measurementIsInsideErrorEllipse(measurement,eta2):
 				(measRes, resCov, kalmanGain, filtState, filtCov) = kf.filterCorrect(
 					self.C, self.R, self.predictedStateMean, self.predictedStateCovariance, measurement.toarray() )
 				associatedMeasurements.add( (scanNumber, measurementIndex+1) )
-				self.trackHypotheses.append(
+				trackHypotheses.append(
 					self.clone(
 						time 					= time, 
 						scanNumber 				= scanNumber,
@@ -176,6 +218,7 @@ class Target():
 						kalmanGain 				= kalmanGain
 						)
 					)
+		return trackHypotheses, associatedMeasurements
 	
 	def calculateCNLLR(self, P_d, measurement, lambda_ex, resCov):
 		return 	(self.cummulativeNLLR +
@@ -197,7 +240,7 @@ class Target():
 		cummulativeNLLR				=	kwargs.get("cummulativeNLLR")
 		measurementNumber			=	kwargs.get("measurementNumber")
 		measurement					=	kwargs.get("measurement")
-		parent						=	kwargs.get("parent",self)
+		parent						=	kwargs.get("parent", self)
 		Phi							=	kwargs.get("Phi",	self.Phi)
 		Q							=	kwargs.get("Q",		self.Q)
 		Gamma						=	kwargs.get("Gamma",	self.Gamma)
@@ -225,16 +268,18 @@ class Target():
 		#measRes = measurement.toarray()- self.C.dot(self.predictedStateMean)
 		return measRes.T.dot( np.linalg.inv(self.residualCovariance).dot( measRes ) ) <= eta2
 
-	def addZeroHypothesis(self,time, scanNumber, P_d):
-		self.trackHypotheses.append(
-			self.clone(	time 					= time,
-						scanNumber 				= scanNumber, 
-						measurementNumber 		= 0,
-						filteredStateMean 		= self.predictedStateMean, 
-						filteredStateCovariance = self.predictedStateCovariance, 
-						cummulativeNLLR 		= self.cummulativeNLLR + hpf.nllr(P_d)
+	def createZeroHypothesis(self,time, scanNumber, P_d, **kwargs):
+		return self.clone(	time 					= time,
+							scanNumber 				= scanNumber, 
+							measurementNumber 		= 0,
+							filteredStateMean 		= self.predictedStateMean, 
+							filteredStateCovariance = self.predictedStateCovariance, 
+							cummulativeNLLR 		= self.cummulativeNLLR + hpf.nllr(P_d),
+							parent 					= kwargs.get("parent", self)
 						)
-			)
+
+	def createZeroHypothesisDictionary(self, time, scanNumber, P_d, **kwargs):
+		return self.__dict__
 
 	def _pruneAllHypothesisExeptThis(self, keep):
 		for hyp in self.trackHypotheses:
@@ -250,13 +295,15 @@ class Target():
 		else:
 			return {(self.scanNumber, self.measurementNumber)} | subSet
 
-	def processNewMeasurement(self, measurementList, measurementSet,tracker):
+	def processNewMeasurement(self, measurementList, measurementSet,scanNumber, P_d, lambda_ex, eta2):
 		if not self.trackHypotheses:
 			self.predictMeasurement(measurementList.time)
-			self.gateAndCreateNewHypotheses(measurementList,measurementSet, tracker)
+			trackHypotheses, newMeasurements = self.gateAndCreateNewHypotheses(measurementList, scanNumber, P_d, lambda_ex, eta2)
+			self.trackHypotheses = trackHypotheses
+			measurementSet.update( newMeasurements )
 		else:
 			for hyp in self.trackHypotheses:
-				hyp.processNewMeasurement(measurementList,measurementSet, tracker)
+				hyp.processNewMeasurement(measurementList,measurementSet, scanNumber, P_d, lambda_ex, eta2)
 
 	def _selectBestHypothesis(self):
 		def recSearchBestHypothesis(target,bestScore, bestHypothesis):
@@ -315,6 +362,12 @@ class Target():
 		for hyp in self.trackHypotheses:
 			hyp._checkScanNumberIntegrety()
 
+	def _checkReferenceIntegrety(self):
+		def recCheckReferenceIntegrety(target):
+			for hyp in target.trackHypotheses:
+				assert hyp.parent == target, "Inconsistent parent <-> child reference: Measurement("+str(target.scanNumber)+":"+str(target.measurementNumber)+") <-> "+"Measurement("+str(hyp.scanNumber)+":"+str(hyp.measurementNumber)+")"
+				recCheckReferenceIntegrety(hyp)
+		recCheckReferenceIntegrety(self.getRoot())
 
 	def plotValidationRegion(self, eta2, stepsBack = 0):
 		if self.residualCovariance is not None:
@@ -367,12 +420,18 @@ class Target():
 		if (self.parent is not None) and (stepsBack > 0):
 			self.parent.plotVelocityArrow(stepsBack-1)
 
+def addMeasurementToNode(measurementList,scanNumber, P_d, lambda_ex, eta2, target):
+	return target.gateAndCreateNewHypotheses(measurementList, scanNumber, P_d, lambda_ex, eta2)
+
 class Tracker():
 	def __init__(self, Phi, C, Gamma, P_d, P0, R, Q, lambda_phi, 
 		lambda_nu, eta2, N, solverStr, **kwargs):
 
 		self.logTime 	= kwargs.get("logTime", False)
 		self.debug 		= kwargs.get("debug", False)
+		self.parallelize= kwargs.get("S", True)
+
+		self.workers 	= mp.Pool(os.cpu_count(), initWorker)
 
 		#Tracker storage
 		self.__targetList__ 			= []
@@ -422,19 +481,61 @@ class Tracker():
 		self.__targetList__.append(target)
 		self.__associatedMeasurements__.append( set() )
 		self.__trackNodes__ = np.append(self.__trackNodes__,target)
+		# if self.workers is not None:
+		# 	self.workers.close()
+		# 	self.workers.join()
+		# self.workers = mp.Pool(len(self.__targetList__), initWorker)
 
 	def addMeasurementList(self,measurementList, **kwargs):
 		tic1 = time.process_time()
-		
+		print("-"*20)
+		print("Integrety pre check")
 		self._checkTrackerIntegrety()
 
 		tic2 = time.process_time()
 		self.__scanHistory__.append(measurementList)
 		nMeas = len(measurementList.measurements)
 		nTargets = len(self.__targetList__)
+		scanNumber = len(self.__scanHistory__)
+		print("Targets depth pre", *[target.depth() for target in self.__targetList__])
+		#print(self.__targetList__[0])
+		print("Processing scan number", scanNumber)
+
+		leafNodeTimeList = []
 		for targetIndex, target in enumerate(self.__targetList__):
-			target.processNewMeasurement(measurementList, self.__associatedMeasurements__[targetIndex],self)
+			if self.parallelize:
+				targetStartDepth = target.depth()
+				tic = time.time()
+				leafNodes = target.getLeafNodes()
+				
+				for node in leafNodes:
+					node.predictMeasurement(measurementList.time)
+				results = list(self.workers.map(functools.partial(addMeasurementToNode,measurementList,scanNumber, self.P_d, self.lambda_ex, self.eta2),leafNodes))
+				print(results[0])
+				assert len(leafNodes) == len(results), "Multithreaded 'processNewMeasurements' did not return the correct amout of nodes"
+				for node, (trackHypotheses, newMeasurements) in zip(leafNodes, results):
+					node.trackHypotheses = copy.deepcopy(trackHypotheses)
+					for hyp in node.trackHypotheses:
+						print("Target ",targetIndex,"\tParent (",node.scanNumber,":",node.measurementNumber,") <-> Child (",hyp.scanNumber,":",hyp.measurementNumber,")", sep = "")
+						hyp.parent = node
+					
+					self.__associatedMeasurements__[targetIndex].update(newMeasurements)
+				toc = time.time() - tic
+				leafNodeTimeList.append(toc)
+				targetEndDepth = target.depth()
+				assert targetEndDepth-1 == targetStartDepth, "Multithreaded 'processNewMeasurements' did not increase the target depth"
+				target._checkReferenceIntegrety()
+			else:
+				target.processNewMeasurement(measurementList, self.__associatedMeasurements__[targetIndex],
+					scanNumber, self.P_d, self.lambda_ex, self.eta2)
 		toc2 = time.process_time() - tic2
+		for target in self.__targetList__:
+			target._checkReferenceIntegrety()
+		print("Targets depth post processing", *[target.depth() for target in self.__targetList__])
+		self.printTargetList()
+
+		#print(*['{:6.2f}us'.format(target*1e6) for target in leafNodeTimeList])
+
 		if kwargs.get("printAssociation",False):
 			print(*__associatedMeasurements__, sep = "\n", end = "\n\n")
 
@@ -458,11 +559,14 @@ class Tracker():
 				nOptimSolved += 1
 		toc4 = time.time()-tic4
 
+		print("Targets depth pre pruning", *[target.depth() for target in self.__targetList__])
 		tic5 = time.process_time()
 		self._nScanPruning()
 		toc5 = time.process_time()-tic5
 		toc1 = time.process_time() - tic1
+		print("Targets depth post pruning", *[target.depth() for target in self.__targetList__])
 
+		print("Integrety post check")
 		self._checkTrackerIntegrety()
 
 		if self.logTime:
@@ -666,32 +770,41 @@ class Tracker():
 				break
 		return selectedHypotheses
 
-	def _nScanPruning(self):
-		def recPruneNScan(node, targetIndex, targetList, stepsLeft):
+	def _nScanPruning(self): #BUG: Causing incosistent scanNumbering while paralellizing
+		def recPruneNScan(node, targetIndex, stepsLeft):
 			if stepsLeft <= 0:
 				if node.parent is not None:
-					if targetList[targetIndex].scanNumber != node.scanNumber-1:
-						raise ValueError("nScanPruning1: from scanNumber",targetList[targetIndex].scanNumber,"->",node.scanNumber)
-					changed = (targetList[targetIndex] != node)
-					targetList[targetIndex] = node
-					node.parent._pruneAllHypothesisExeptThis(node)
-					node.recursiveSubtractScore(node.cummulativeNLLR)
+					if self.__targetList__[targetIndex].scanNumber != node.scanNumber-1:
+						raise ValueError("nScanPruning1: from scanNumber",self.__targetList__[targetIndex].scanNumber,"->",node.scanNumber)
+					changed = (self.__targetList__[targetIndex] != node)
+					print("Current root\n", self.__targetList__[targetIndex])
+					print("New root´s parent\n", node.parent)
+					print("Root depth", self.__targetList__[targetIndex].depth())
+					print("New root´s parent depth", node.parent.depth())
+					assert self.__targetList__[targetIndex].depth() == node.parent.depth(), "nScanPrune: Inconsistent target.depth() and target.child.parent.depth()"
+					
+					self.__targetList__[targetIndex] = node #Checked
+					node.parent._pruneAllHypothesisExeptThis(node) #Checked
+					node.recursiveSubtractScore(node.cummulativeNLLR) #Checked
 					if node.parent.scanNumber != node.scanNumber-1:
 						raise ValueError("nScanPruning2: from scanNumber",node.parent.scanNumber,"->",node.scanNumber)
 					return changed
 				else:
 					return False
 			elif node.parent is not None:
-				return recPruneNScan(node.parent, targetIndex, targetList, stepsLeft-1)
+				return recPruneNScan(node.parent, targetIndex, stepsLeft-1)
 			else:
 				return False
 		
 		for targetIndex, node in enumerate(self.__trackNodes__):
+			print("Pre prune integrety check")
 			self._checkTrackerIntegrety()
-			changed = recPruneNScan(node, targetIndex, self.__targetList__, self.N)
-			self._checkTrackerIntegrety()
+			changed = recPruneNScan(node, targetIndex, self.N)
 			if changed:
+				print("Pruning changed something")
 				self.__associatedMeasurements__[targetIndex] = self.__targetList__[targetIndex].getMeasurementSet()
+			print("Post prune integrety check")
+			self._checkTrackerIntegrety()
 
 	def _pruneSmilarState(self,cluster, threshold):
 		for targetIndex in cluster:
@@ -727,7 +840,8 @@ class Tracker():
 		assert len(self.__trackNodes__) == len(set(self.__trackNodes__)), "There are copies of track nodes in __trackNodes__"
 		for target in self.__targetList__:
 			target._checkScanNumberIntegrety()
-
+			target._checkReferenceIntegrety()
+		assert len({node.scanNumber for node in self.__trackNodes__}) == 1, "There are inconsistency in trackNodes scanNumber"
 	
 	def plotValidationRegionFromRoot(self, stepsBack = 1):
 		def recPlotValidationRegionFromTarget(target, eta2, stepsBack):
