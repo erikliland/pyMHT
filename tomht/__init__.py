@@ -8,4 +8,5 @@ from . import stateSpace
 from . import helpFunctions
 from . import classDefinitions
 from . import radarSimulator
+from .tracker import _setHightPriority
 from .tracker import *

@@ -20,6 +20,17 @@ import matplotlib.pyplot as plt
 import numpy as np
 from scipy.sparse.csgraph import connected_components
 
+def _setHightPriority():
+	import psutil, os, platform
+	p = psutil.Process(os.getpid())
+	OS = platform.system()
+	if (OS == "Darwin") or (OS == "Linux"):
+		p.nice(5)
+		# print("Nice:", p.nice())
+	elif OS == "Windows":
+		p.nice(psutil.HIGH_PRIORITY_CLASS)
+		# print("Nice:", p.nice())
+
 class Target():
 	def __init__(self, **kwargs):
 		time 						= kwargs.get("time")
@@ -404,7 +415,7 @@ class Tracker():
 		self.Q			= Q
 
 		if (kwargs.get("realTime") is not None) and (kwargs.get("realTime") is True):
-			self._setHightPriority()
+			_setHightPriority()
 
 	def initiateTarget(self,newTarget):
 		target = Target(	time 					= newTarget.time, 
@@ -814,14 +825,3 @@ class Tracker():
 			else:
 				print(target.__str__(targetIndex = targetIndex)) 
 		print()
-
-	def _setHightPriority(self):
-		import psutil, os, platform
-		p = psutil.Process(os.getpid())
-		OS = platform.system()
-		if (OS == "Darwin") or (OS == "Linux"):
-			p.nice(5)
-			print("Nice:", p.nice())
-		elif OS == "Windows":
-			p.nice(psutil.HIGH_PRIORITY_CLASS)
-			print("Nice:", p.nice())

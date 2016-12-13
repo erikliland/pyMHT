@@ -60,7 +60,8 @@ def runSimulation(sArgs,i):
 								sim.eta2,
 								sArgs.N, 
 								sArgs.solver, 
-								logTime = True
+								logTime = True,
+								realTime = True
 								)
 		for initialTarget in sArgs.initialTargets:
 		 	tracker.initiateTarget(initialTarget)
@@ -271,7 +272,7 @@ if __name__ == '__main__':
 		parser.add_argument('-C', help = "Run compare and plot after finish", action = 'store_true')
 		parser.add_argument('-m', help = "Start 'i' for Accumulate mode", type = int)
 		args = vars(parser.parse_args())
-
+		tomht._setHightPriority()
 		tic = time.time()
 		nCores = min(max(1, args.get("c", os.cpu_count() -1 )),os.cpu_count())
 		print("Using", nCores, "workers")
