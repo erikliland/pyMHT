@@ -405,7 +405,7 @@ class Tracker():
 		self.debug 		= kwargs.get("debug", False)
 		self.parallelize= kwargs.get("S", True)
 
-		self.workers 	= mp.Pool(os.cpu_count(), initWorker)
+		self.workers 	= mp.Pool(max(os.cpu_count()-1,1), initWorker)
 
 		#Tracker storage
 		self.__targetList__ 			= []
@@ -484,7 +484,9 @@ class Tracker():
 				results = list(self.workers.map(functools.partial(addMeasurementToNode,measurementList,scanNumber, self.P_d, self.lambda_ex, self.eta2),leafNodes))
 				assert len(leafNodes) == len(results), "Multithreaded 'processNewMeasurements' did not return the correct amout of nodes"
 				for node, (trackHypotheses, newMeasurements) in zip(leafNodes, results):
-					node.trackHypotheses = copy.deepcopy(trackHypotheses)
+					# node.trackHypotheses = copy.deepcopy(trackHypotheses)
+					# node.trackHypotheses = copy.copy(trackHypotheses)
+					node.trackHypotheses = trackHypotheses
 					for hyp in node.trackHypotheses:
 						#print("Target ",targetIndex,"\tParent (",node.scanNumber,":",node.measurementNumber,") <-> Child (",hyp.scanNumber,":",hyp.measurementNumber,")", sep = "")
 						hyp.parent = node
