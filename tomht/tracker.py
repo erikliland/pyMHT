@@ -405,7 +405,8 @@ class Tracker():
 		self.debug 		= kwargs.get("debug", False)
 		self.parallelize= kwargs.get("S", True)
 
-		self.workers 	= mp.Pool(max(os.cpu_count()-1,1), initWorker)
+		self.nWorkers	= max(os.cpu_count()-1,1) if not "S" in kwargs else 0
+		self.workers 	= mp.Pool(self.nWorkers, initWorker) if not "S" in kwargs else None
 
 		#Tracker storage
 		self.__targetList__ 			= []
@@ -455,10 +456,6 @@ class Tracker():
 		self.__targetList__.append(target)
 		self.__associatedMeasurements__.append( set() )
 		self.__trackNodes__ = np.append(self.__trackNodes__,target)
-		# if self.workers is not None:
-		# 	self.workers.close()
-		# 	self.workers.join()
-		# self.workers = mp.Pool(len(self.__targetList__), initWorker)
 
 	def addMeasurementList(self,measurementList, **kwargs):
 		tic1 = time.process_time()
@@ -476,13 +473,20 @@ class Tracker():
 		for targetIndex, target in enumerate(self.__targetList__):
 			if self.parallelize:
 				targetStartDepth = target.depth()
-				tic = time.time()
+				searchTic = time.time()
 				leafNodes = target.getLeafNodes()
-				
+				seachToc = time.time()-searchTic
+				predictTic = time.time()
 				for node in leafNodes:
 					node.predictMeasurement(measurementList.time)
-				results = list(self.workers.map(functools.partial(addMeasurementToNode,measurementList,scanNumber, self.P_d, self.lambda_ex, self.eta2),leafNodes))
+				predictToc = time.time()-predictTic
+				createTic = time.time()
+				
+				chunkSize = int(np.ceil(len(leafNodes)/self.nWorkers))
+				results = list(self.workers.map(functools.partial(addMeasurementToNode,measurementList,scanNumber, self.P_d, self.lambda_ex, self.eta2),leafNodes,chunkSize))
+				createToc = time.time() - createTic
 				assert len(leafNodes) == len(results), "Multithreaded 'processNewMeasurements' did not return the correct amout of nodes"
+				addTic = time.time()
 				for node, (trackHypotheses, newMeasurements) in zip(leafNodes, results):
 					# node.trackHypotheses = copy.deepcopy(trackHypotheses)
 					# node.trackHypotheses = copy.copy(trackHypotheses)
@@ -490,10 +494,9 @@ class Tracker():
 					for hyp in node.trackHypotheses:
 						#print("Target ",targetIndex,"\tParent (",node.scanNumber,":",node.measurementNumber,") <-> Child (",hyp.scanNumber,":",hyp.measurementNumber,")", sep = "")
 						hyp.parent = node
-					
 					self.__associatedMeasurements__[targetIndex].update(newMeasurements)
-				toc = time.time() - tic
-				leafNodeTimeList.append(toc)
+				addToc = time.time() - addTic
+				leafNodeTimeList.append((round(seachToc*1000),round(predictToc*1000), round(createToc*1000), round(addToc*1000)))
 				targetEndDepth = target.depth()
 				assert targetEndDepth-1 == targetStartDepth, "Multithreaded 'processNewMeasurements' did not increase the target depth"
 				target._checkReferenceIntegrety()
@@ -501,6 +504,7 @@ class Tracker():
 				target.processNewMeasurement(measurementList, self.__associatedMeasurements__[targetIndex],
 					scanNumber, self.P_d, self.lambda_ex, self.eta2)
 		toc2 = time.process_time() - tic2
+		print(*leafNodeTimeList, sep="\n", end = "\n----\n")
 
 		if kwargs.get("printAssociation",False):
 			print(*__associatedMeasurements__, sep = "\n", end = "\n\n")
