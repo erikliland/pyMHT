@@ -3,6 +3,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pulp
 import itertools
+import copy
  
 def binomial(n,k):
     return 1 if k==0 else (0 if n==0 else binomial(n-1, k) + binomial(n-1, k-1))
@@ -27,13 +28,18 @@ def plotRadarOutline(centerPosition, radarRange, **kwargs):
 	ax.add_artist(circle)
 
 def plotTrueTrack(simList, **kwargs):
+	colors = kwargs.get("colors")
+	newArgs = copy.copy(kwargs)
+	if "colors" in newArgs:
+		del newArgs["colors"]
 	nScan = len(simList)
 	nTargets = len(simList[0])
 	posArray = np.zeros((nScan, nTargets, 2))
 	for row, scan in enumerate(simList):
 		posArray[row,:,:] = np.array([target.state[0:2] for target in scan])
 	for col in range(nTargets):
-		plt.plot(posArray[:,col,0], posArray[:,col,1],'.', **{**dict(alpha = 0.7,markeredgewidth = 0.6), **kwargs})
+		plt.plot(posArray[:,col,0], posArray[:,col,1],'.', 
+			**{**dict(alpha = 0.7,markeredgewidth = 0.6, color = next(colors) if colors is not None else None), **newArgs})
 
 def printScanList(scanList):
 	for index, measurement in enumerate(scanList):

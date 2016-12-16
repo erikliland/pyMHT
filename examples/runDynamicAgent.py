@@ -91,14 +91,17 @@ def runDynamicAgent(fileString,solver,P_d, N, lambda_phi,**kwargs):
 	
 	plt.clf()
 	hpf.plotRadarOutline(p0, radarRange, center = False)
-	hpf.plotTrueTrack(simList)
+	hpf.plotTrueTrack(simList, colors = tracker._getColorCycle())
 	tracker.plotInitialTargets()
-	tracker.plotVelocityArrowForTrack()
+	# tracker.plotVelocityArrowForTrack()
 	# tracker.plotValidationRegionFromRoot()
 	# tracker.plotValidationRegionFromTracks()
-	# tracker.plotMeasurementsFromRoot(dummy = True)
-	tracker.plotMeasurementsFromTracks(labels = False, dummy = True)
-	# tracker.plotHypothesesTrack()
+	if kwargs.get("P",False):
+		tracker.plotMeasurementsFromRoot(dummy = True)
+	else:
+		tracker.plotMeasurementsFromTracks(labels = False, dummy = True)
+	if kwargs.get("H",False):
+		tracker.plotHypothesesTrack()
 	tracker.plotActiveTracks()
 	plt.axis("equal")
 	plt.xlim((p0.x-radarRange*1.05, p0.x + radarRange*1.05))
@@ -118,6 +121,8 @@ if __name__ == '__main__':
 	parser.add_argument('-t',help = "Step through the simulation", type = float )
 	parser.add_argument('-k',help = "Measurement number to stop at", type = int )
 	parser.add_argument('-S',help = "Run tracker in single thread", action = 'store_false')
+	parser.add_argument('-H',help = "Plot track hypotheses", action = 'store_true')
+	parser.add_argument('-P',help = "Plot measurements from root", action = 'store_true')
 	args = vars(parser.parse_args())
 	print(args)
 	runDynamicAgent(simFiles[args.get('f')],args.get('s'),args.get('p'),args.get('n'),args.get('l'), **args)

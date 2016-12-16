@@ -80,6 +80,7 @@ class Target():
 		self.Gamma 						= Gamma
 		self.C 							= C
 		self.R 							= R
+
 	
 	def __repr__(self):
 		if self.predictedStateMean is not None:
@@ -441,6 +442,9 @@ class Tracker():
 
 		if (kwargs.get("realTime") is not None) and (kwargs.get("realTime") is True):
 			_setHightPriority()
+
+		#Misc
+		self.colors 					= ['r','g','b','c','m','y','k']
 
 	def initiateTarget(self,newTarget):
 		target = Target(	time 					= newTarget.time, 
@@ -804,12 +808,12 @@ class Tracker():
 			else:
 				for hyp in target.trackHypotheses:
 					recPlotHypothesesTrack(hyp,  newTrack, **kwargs)
-		colors = itertools.cycle(["r", "b", "g"])
+		colors = self._getColorCycle()
 		for target in self.__targetList__:
 			recPlotHypothesesTrack(target, c = next(colors))
 
 	def plotActiveTracks(self):
-		colors = itertools.cycle(["r", "b", "g"])
+		colors = self._getColorCycle()
 		for track in self.__trackNodes__:
 			track.plotTrack(c = next(colors))
 
@@ -858,6 +862,9 @@ class Tracker():
 			position = initialTarget.filteredStateMean[0:2] - offset
 			ax.text(position[0], position[1], "T"+str(index[i]), 
 				fontsize=8, horizontalalignment = "center", verticalalignment = "center")
+
+	def _getColorCycle(self):
+		return itertools.cycle(self.colors)
 
 
 	def printTargetList(self, **kwargs):
