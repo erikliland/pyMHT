@@ -96,7 +96,7 @@ def runDynamicAgent(fileString,solver,P_d, N, lambda_phi,**kwargs):
 	# tracker.plotVelocityArrowForTrack()
 	# tracker.plotValidationRegionFromRoot()
 	# tracker.plotValidationRegionFromTracks()
-	if kwargs.get("P",False):
+	if kwargs.get("R",False):
 		tracker.plotMeasurementsFromRoot(dummy = True)
 	else:
 		tracker.plotMeasurementsFromTracks(labels = False, dummy = True)
@@ -120,9 +120,10 @@ if __name__ == '__main__':
 	parser.add_argument('-i',help = "Random iteration selector", type = int) 
 	parser.add_argument('-t',help = "Step through the simulation", type = float )
 	parser.add_argument('-k',help = "Measurement number to stop at", type = int )
-	parser.add_argument('-S',help = "Run tracker in single thread", action = 'store_false')
+	parser.add_argument('-P',help = "Run tracker in single thread", action = 'store_false')
 	parser.add_argument('-H',help = "Plot track hypotheses", action = 'store_true')
-	parser.add_argument('-P',help = "Plot measurements from root", action = 'store_true')
+	parser.add_argument('-R',help = "Plot measurements from root", action = 'store_true')
+	parser.add_argument('-c',help = "Number of cores to use", type = int)
 	args = vars(parser.parse_args())
 	print(args)
 	runDynamicAgent(simFiles[args.get('f')],args.get('s'),args.get('p'),args.get('n'),args.get('l'), **args)
