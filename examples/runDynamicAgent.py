@@ -52,7 +52,7 @@ def runDynamicAgent(fileString,solver,P_d, N, lambda_phi,**kwargs):
 	try:
 		for scanIndex, measurementList in enumerate(scanList):
 			tic = time.time()
-			tracker.addMeasurementList(measurementList, trueState = simList[scanIndex])
+			tracker.addMeasurementList(measurementList, trueState = simList[scanIndex], printTime = True)
 			toc = time.time()-tic
 			maxIterationTime = toc if toc > maxIterationTime else maxIterationTime
 			if scanIndex == kwargs.get("k",1e15):
@@ -83,7 +83,7 @@ def runDynamicAgent(fileString,solver,P_d, N, lambda_phi,**kwargs):
 	if not "t" in kwargs:
 		runTime = runEnd-runStart
 		print("Total run time:", round(runTime,1), "sec")
-	print("Max iteration time:", round(maxIterationTime,4),"sec")
+	print("Max iteration time:", round(maxIterationTime*1000),"ms")
 
 	trackList = hpf.backtrackNodePositions(tracker.__trackNodes__, debug = True)
 	association = hpf.backtrackMeasurementsIndices(tracker.__trackNodes__)
@@ -103,7 +103,7 @@ def runDynamicAgent(fileString,solver,P_d, N, lambda_phi,**kwargs):
 	plt.axis("equal")
 	plt.xlim((p0.x-radarRange*1.05, p0.x + radarRange*1.05))
 	plt.ylim((p0.y-radarRange*1.05, p0.y + radarRange*1.05))
-	plt.show(block = True)
+	#plt.show(block = True)
 
 if __name__ == '__main__':
 	os.chdir(os.path.dirname(os.path.abspath(__file__)))

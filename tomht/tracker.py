@@ -458,12 +458,12 @@ class Tracker():
 		self.__trackNodes__ = np.append(self.__trackNodes__,target)
 
 	def addMeasurementList(self,measurementList, **kwargs):
-		tic1 = time.process_time()
+		tic1 = time.time()
 
 		if kwargs.get("checkIntegrety", False):
 			self._checkTrackerIntegrety()
 
-		tic2 = time.process_time()
+		tic2 = time.time()
 		self.__scanHistory__.append(measurementList)
 		nMeas = len(measurementList.measurements)
 		nTargets = len(self.__targetList__)
@@ -503,16 +503,17 @@ class Tracker():
 			else:
 				target.processNewMeasurement(measurementList, self.__associatedMeasurements__[targetIndex],
 					scanNumber, self.P_d, self.lambda_ex, self.eta2)
-		toc2 = time.process_time() - tic2
-		print(*leafNodeTimeList, sep="\n", end = "\n----\n")
+		toc2 = time.time() - tic2
+		if self.parallelize:
+			print(*leafNodeTimeList, sep="ms\n")
 
 		if kwargs.get("printAssociation",False):
 			print(*__associatedMeasurements__, sep = "\n", end = "\n\n")
 
 		#--Cluster targets--
-		tic3 = time.process_time()
+		tic3 = time.time()
 		clusterList = self._findClustersFromSets()
-		toc3 = time.process_time() - tic3
+		toc3 = time.time() - tic3
 		if kwargs.get("printCluster",False):
 			hpf.printClusterList(clusterList)
 		
@@ -530,10 +531,10 @@ class Tracker():
 		toc4 = time.time()-tic4
 
 		
-		tic5 = time.process_time()
+		tic5 = time.time()
 		self._nScanPruning()
-		toc5 = time.process_time()-tic5
-		toc1 = time.process_time() - tic1
+		toc5 = time.time()-tic5
+		toc1 = time.time() - tic1
 
 		if kwargs.get("checkIntegrety", False):
 			self._checkTrackerIntegrety()
@@ -544,14 +545,17 @@ class Tracker():
 			self.runtimeLog['Optim'] 	+= np.array([toc4,1])
 			self.runtimeLog['Prune']	+= np.array([toc5,1])
 
-		if kwargs.get("printTime",False):
+		if kwargs.get("printInfo", False):
 			print(	"Added scan number:", len(self.__scanHistory__),
 					" \tnMeas ", nMeas,
-					" \tTotal time ", '{:5.4f}'.format(toc1),
-					"\tProcess ",	'{:5.4f}'.format(toc2),
-					"\tCluster ",	'{:5.4f}'.format(toc3),
-					'\tOptim({0:g}) {1:5.4f}'.format(nOptimSolved ,toc4),
-					"\tPrune ",	'{:5.4f}'.format(toc5),
+					sep = "")
+
+		if kwargs.get("printTime",False):
+			print(	"Total time ",	'{:6.1f}ms'.format(toc1*1000),
+					"\tProcess ",	'{:6.1f}ms'.format(toc2*1000),
+					"\tCluster ",	'{:5.1f}ms'.format(toc3*1000),
+					'\tOptim({0:g}) {1:5.1f}ms'.format(nOptimSolved ,toc4*1000),
+					"\tPrune ",	'{:5.1f}ms'.format(toc5*1000),
 					sep = "")
 
 		#Covariance consistance
