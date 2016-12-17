@@ -81,6 +81,7 @@ class Target():
 		self.C 							= C
 		self.R 							= R
 
+	
 	def __repr__(self):
 		if self.predictedStateMean is not None:
 			np.set_printoptions(precision = 4, suppress = True)
@@ -403,11 +404,10 @@ class Tracker():
 
 		self.logTime 	= kwargs.get("logTime", False)
 		self.debug 		= kwargs.get("debug", False)
-		self.parallelize= kwargs.get("P", False)
+		self.parallelize= kwargs.get("S", True)
 
-		if self.parallelize:
-			self.nWorkers	= max(os.cpu_count()-1,1) if not "S" in kwargs else 0
-			self.workers 	= mp.Pool(self.nWorkers, initWorker) if not "S" in kwargs else None
+		self.nWorkers	= max(os.cpu_count()-1,1) if not "S" in kwargs else 0
+		self.workers 	= mp.Pool(self.nWorkers, initWorker) if not "S" in kwargs else None
 
 		#Tracker storage
 		self.__targetList__ 			= []
@@ -508,7 +508,7 @@ class Tracker():
 				target.processNewMeasurement(measurementList, self.__associatedMeasurements__[targetIndex],
 					scanNumber, self.P_d, self.lambda_ex, self.eta2)
 		toc2 = time.process_time() - tic2
-		#print(*leafNodeTimeList, sep="\n", end = "\n----\n")
+		print(*leafNodeTimeList, sep="\n", end = "\n----\n")
 
 		if kwargs.get("printAssociation",False):
 			print(*__associatedMeasurements__, sep = "\n", end = "\n\n")
