@@ -38,6 +38,7 @@ init:
 	echo "Linux"
 	sudo apt-get update
 	sudo apt-get upgrade
+	sudo apt-get install python3-dev
 	sudo apt-get install python3-setuptools
 	sudo easy_install3 pip
 	sudo apt-get install python3-tk

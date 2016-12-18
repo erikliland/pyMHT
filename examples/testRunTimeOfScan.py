@@ -85,35 +85,35 @@ if __name__ == '__main__':
 		tempList.extend(leafNodeTimeListLogAvg.tolist())
 		leafNodeTimeListLogAvgList.append(tempList)
 
-	print("-"*10)
-	np.set_printoptions(precision = 2, linewidth = 150, suppress = True)
-	with open("parellelTimeLog.csv",'w') as csvfile:
-		writer = csv.writer(csvfile)
-		writer.writerow(["Processes", "Total","Grow", "Cluster", "Optimize", "Prune"])
-		for coreCountLog in timeLogAvgList:
-			row = [coreCountLog[0]]
-			row.extend(['{:.0f}'.format(elem*1000) for elem in coreCountLog[1]])
-			print(row)
-			writer.writerow(row)
-	
-	with open("parellelTimeLogPercentage.csv",'w') as csvfile:
-		writer = csv.writer(csvfile)
-		writer.writerow(["Processes","Grow", "Cluster", "Optimize", "Prune"])
-		for coreCountLog in timeLogAvgList:
-			totalTime = coreCountLog[1][0]
-			row = [coreCountLog[0]]
-			row.extend(['{:.0%}'.format(elem/totalTime) for elem in coreCountLog[1][1:]])
-			print(row)
-			writer.writerow(row)
+		print("-"*10)
+		np.set_printoptions(precision = 2, linewidth = 150, suppress = True)
+		with open("parellelTimeLog.csv",'w') as csvfile:
+			writer = csv.writer(csvfile)
+			writer.writerow(["Processes", "Total","Grow", "Cluster", "Optimize", "Prune"])
+			for coreCountLog in timeLogAvgList:
+				row = [coreCountLog[0]]
+				row.extend(['{:.0f}'.format(elem*1000) for elem in coreCountLog[1]])
+				print(row)
+				writer.writerow(row)
+		
+		with open("parellelTimeLogPercentage.csv",'w') as csvfile:
+			writer = csv.writer(csvfile)
+			writer.writerow(["Processes","Grow", "Cluster", "Optimize", "Prune"])
+			for coreCountLog in timeLogAvgList:
+				totalTime = coreCountLog[1][0]
+				row = [coreCountLog[0]]
+				row.extend(['{:.0%}'.format(elem/totalTime) for elem in coreCountLog[1][1:]])
+				print(row)
+				writer.writerow(row)
 
-	with open("parellelTimeLogDistribution.csv",'w') as csvfile:
-		writer = csv.writer(csvfile)
-		writer.writerow(["Processes","Search", "Predict", "Create", "Add"])
-		for coreCountLog in leafNodeTimeListLogAvgList:
-			if coreCountLog[0] == 1:
-				continue
-			totalTime = coreCountLog[1]
-			row = [coreCountLog[0]]
-			row.extend(['{:.0%}'.format(elem/totalTime) for elem in coreCountLog[2:]])
-			print(row)
-			writer.writerow(row)
+		with open("parellelTimeLogDistribution.csv",'w') as csvfile:
+			writer = csv.writer(csvfile)
+			writer.writerow(["Processes","Search", "Predict", "Create", "Add"])
+			for coreCountLog in leafNodeTimeListLogAvgList:
+				if coreCountLog[0] == 1:
+					continue
+				totalTime = coreCountLog[1]
+				row = [coreCountLog[0]]
+				row.extend(['{:.0%}'.format(elem/totalTime) for elem in coreCountLog[2:]])
+				print(row)
+				writer.writerow(row)
