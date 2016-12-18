@@ -394,8 +394,10 @@ class Target():
 		if (self.parent is not None) and (stepsBack > 0):
 			self.parent.plotVelocityArrow(stepsBack-1)
 
-def addMeasurementToNode(measurementList,scanNumber, P_d, lambda_ex, eta2, target):
-	return target.gateAndCreateNewHypotheses(measurementList, scanNumber, P_d, lambda_ex, eta2)
+def addMeasurementToNode(measurementList,scanNumber, P_d, lambda_ex, eta2, params):
+	target,nodeIndex = params
+	trackHypotheses, newMeasurements = target.gateAndCreateNewHypotheses(measurementList, scanNumber, P_d, lambda_ex, eta2)
+	return nodeIndex, trackHypotheses, newMeasurements
 
 class Tracker():
 	def __init__(self, Phi, C, Gamma, P_d, P0, R, Q, lambda_phi, 
@@ -506,18 +508,26 @@ class Tracker():
 					node.predictMeasurement(measurementList.time)
 				predictToc = time.time()-predictTic
 				createTic = time.time()
-				chunkSize = int(np.ceil(len(leafNodes)/self.nWorkers))
-				results = list(self.workers.map(functools.partial(
-					addMeasurementToNode,measurementList,scanNumber, self.P_d, self.lambda_ex, self.eta2),leafNodes,chunkSize))
-				createToc = time.time() - createTic
-				assert len(leafNodes) == len(results), "Multithreaded 'processNewMeasurements' did not return the correct amout of nodes"
-				addTic = time.time()
-				for node, (trackHypotheses, newMeasurements) in zip(leafNodes, results):
-					node.trackHypotheses = trackHypotheses
-					for hyp in node.trackHypotheses:
-						hyp.parent = node
+				floatChunkSize = len(leafNodes)/self.nWorkers
+				workerIterations = 2
+				chunkSize = int(np.ceil(floatChunkSize/workerIterations))
+				print("targetIndex",targetIndex,"\tnNodes",len(leafNodes),"\tnWorkers",self.nWorkers,"\tfloatChunkSize",round(floatChunkSize,1), "\tworkerIteration(s)", workerIterations, "\tchunkSize",chunkSize)
+				# results = list(self.workers.map(functools.partial(addMeasurementToNode,measurementList,scanNumber, self.P_d, self.lambda_ex, self.eta2),leafNodes,chunkSize))
+				# createToc = time.time() - createTic
+				# addTic = time.time()
+				# for node, (trackHypotheses, newMeasurements) in zip(leafNodes, results):
+				# 	node.trackHypotheses = trackHypotheses
+				# 	for hyp in node.trackHypotheses:
+				# 		hyp.parent = node
+				# 	self.__associatedMeasurements__[targetIndex].update(newMeasurements)
+				# assert len(leafNodes) == len(results), "Multithreaded 'processNewMeasurements' did not return the correct amout of nodes"
+				for nodeIndex, trackHypotheses, newMeasurements in self.workers.imap_unordered(functools.partial(addMeasurementToNode,measurementList,scanNumber, self.P_d, self.lambda_ex, self.eta2),zip(leafNodes,range(len(leafNodes))),chunkSize):
+					leafNodes[nodeIndex].trackHypotheses = trackHypotheses
+					for hyp in leafNodes[nodeIndex].trackHypotheses:
+						hyp.parent = leafNodes[nodeIndex]
 					self.__associatedMeasurements__[targetIndex].update(newMeasurements)
-				addToc = time.time() - addTic
+				createToc = time.time() - createTic
+				addToc = 0
 				self.leafNodeTimeList.append([seachToc,predictToc, createToc, addToc])
 				targetEndDepth = target.depth()
 				assert targetEndDepth-1 == targetStartDepth, "Multithreaded 'processNewMeasurements' did not increase the target depth"

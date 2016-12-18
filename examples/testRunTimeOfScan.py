@@ -114,6 +114,6 @@ if __name__ == '__main__':
 					continue
 				totalTime = coreCountLog[1]
 				row = [coreCountLog[0]]
-				row.extend(['{:.0%}'.format(elem/totalTime) for elem in coreCountLog[2:]])
+				row.extend(['{:.0}'.format(elem/totalTime) for elem in coreCountLog[2:]])
 				print(row)
 				writer.writerow(row)
