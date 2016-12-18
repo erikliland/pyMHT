@@ -34,6 +34,7 @@ def getAverageRunTimeLog(fileString,solver,P_d, N, lambda_phi,**kwargs):
 	scanList = sim.simulateScans(seed, simList, model.C, model.R(model.sigmaR_true), lambda_phi,radarRange, p0, P_d = P_d, shuffle = True)
 	
 	timeLog = []
+	leafNodeTimeListLog = []
 	for i in range(kwargs.get("j",10)):
 		with tomht.Tracker(model.Phi, model.C, model.Gamma, P_d, model.P0, model.R(), model.Q, lambda_phi, lambda_nu, eta2, N, solver,
 							 realTime = True,logTime = True,debug = False, **kwargs) as tracker:
@@ -45,13 +46,18 @@ def getAverageRunTimeLog(fileString,solver,P_d, N, lambda_phi,**kwargs):
 				if scanIndex == kwargs.get("k",1e15):
 					break
 			timeLog.append(tracker.toc)
-			print(tracker.toc)
+			leafNodeTimeListLog.append(tracker.leafNodeTimeList)
 		time.sleep(0.5)
 	timeLogAvg = np.mean(np.array(timeLog,ndmin = 2), axis = 0)
-	return timeLogAvg
+	leafNodeTimeListLogAvg1 = np.mean(np.array(leafNodeTimeListLog, ndmin = 3), axis = 0)
+	leafNodeTimeListLogAvg2= np.mean(leafNodeTimeListLogAvg1,axis = 0)
+	#print(*leafNodeTimeListLog, sep = "\n")
+	#print(leafNodeTimeListLogAvg1, "Avg1")
+	#print(leafNodeTimeListLogAvg2, "Avg2")
+	return timeLogAvg, leafNodeTimeListLogAvg2
 
 if __name__ == '__main__':
-	np.set_printoptions(precision = 2, linewidth = 150, suppress = True)
+	
 
 	os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
@@ -67,13 +73,20 @@ if __name__ == '__main__':
 	args = vars(parser.parse_args())
 	print(args)
 
+	np.set_printoptions(precision = 2, linewidth = 150, suppress = False)
 	timeLogAvgList = []
+	leafNodeTimeListLogAvgList = []
 	for nProcesses in range(1,os.cpu_count()+1):
 		print(nProcesses,"processes")
-		timeLogAvg = getAverageRunTimeLog(simFiles[args.get('f')],args.get('s'),args.get('p'),args.get('n'),args.get('l'),w = nProcesses, **args)
-		print(timeLogAvg,"Avg")
+		timeLogAvg, leafNodeTimeListLogAvg = getAverageRunTimeLog(simFiles[args.get('f')],args.get('s'),args.get('p'),args.get('n'),args.get('l'),w = nProcesses, **args)
+		#print(timeLogAvg,"Avg")
 		timeLogAvgList.append( (nProcesses, timeLogAvg.tolist()) )
+		tempList = [nProcesses, np.sum(leafNodeTimeListLogAvg)]
+		tempList.extend(leafNodeTimeListLogAvg.tolist())
+		leafNodeTimeListLogAvgList.append(tempList)
 
+	print("-"*10)
+	np.set_printoptions(precision = 2, linewidth = 150, suppress = True)
 	with open("parellelTimeLog.csv",'w') as csvfile:
 		writer = csv.writer(csvfile)
 		writer.writerow(["Processes", "Total","Grow", "Cluster", "Optimize", "Prune"])
@@ -90,5 +103,17 @@ if __name__ == '__main__':
 			totalTime = coreCountLog[1][0]
 			row = [coreCountLog[0]]
 			row.extend(['{:.0%}'.format(elem/totalTime) for elem in coreCountLog[1][1:]])
+			print(row)
+			writer.writerow(row)
+
+	with open("parellelTimeLogDistribution.csv",'w') as csvfile:
+		writer = csv.writer(csvfile)
+		writer.writerow(["Processes","Search", "Predict", "Create", "Add"])
+		for coreCountLog in leafNodeTimeListLogAvgList:
+			if coreCountLog[0] == 1:
+				continue
+			totalTime = coreCountLog[1]
+			row = [coreCountLog[0]]
+			row.extend(['{:.0%}'.format(elem/totalTime) for elem in coreCountLog[2:]])
 			print(row)
 			writer.writerow(row)
