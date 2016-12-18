@@ -87,7 +87,7 @@ if __name__ == '__main__':
 
 		print("-"*10)
 		np.set_printoptions(precision = 2, linewidth = 150, suppress = True)
-		with open("parellelTimeLog.csv",'w') as csvfile:
+		with open("parallelTimeLog.csv",'w') as csvfile:
 			writer = csv.writer(csvfile)
 			writer.writerow(["Processes", "Total","Grow", "Cluster", "Optimize", "Prune"])
 			for coreCountLog in timeLogAvgList:
@@ -96,7 +96,7 @@ if __name__ == '__main__':
 				print(row)
 				writer.writerow(row)
 		
-		with open("parellelTimeLogPercentage.csv",'w') as csvfile:
+		with open("parallelTimeLogPercentage.csv",'w') as csvfile:
 			writer = csv.writer(csvfile)
 			writer.writerow(["Processes","Grow", "Cluster", "Optimize", "Prune"])
 			for coreCountLog in timeLogAvgList:
@@ -106,7 +106,7 @@ if __name__ == '__main__':
 				print(row)
 				writer.writerow(row)
 
-		with open("parellelTimeLogDistribution.csv",'w') as csvfile:
+		with open("parallelTimeLogDistribution.csv",'w') as csvfile:
 			writer = csv.writer(csvfile)
 			writer.writerow(["Processes","Search", "Predict", "Create", "Add"])
 			for coreCountLog in leafNodeTimeListLogAvgList:
