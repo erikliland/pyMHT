@@ -394,8 +394,10 @@ class Target():
 		if (self.parent is not None) and (stepsBack > 0):
 			self.parent.plotVelocityArrow(stepsBack-1)
 
-def addMeasurementToNode(measurementList,scanNumber, P_d, lambda_ex, eta2, target):
-	return target.gateAndCreateNewHypotheses(measurementList, scanNumber, P_d, lambda_ex, eta2)
+def addMeasurementToNode(measurementList,scanNumber, P_d, lambda_ex, eta2, params):
+	target,nodeIndex = params
+	trackHypotheses, newMeasurements = target.gateAndCreateNewHypotheses(measurementList, scanNumber, P_d, lambda_ex, eta2)
+	return nodeIndex, trackHypotheses, newMeasurements
 
 class Tracker():
 	def __init__(self, Phi, C, Gamma, P_d, P0, R, Q, lambda_phi, 
@@ -403,22 +405,35 @@ class Tracker():
 
 		self.logTime 	= kwargs.get("logTime", False)
 		self.debug 		= kwargs.get("debug", False)
-		self.parallelize= kwargs.get("P", False)
+		self.parallelize= kwargs.get("w", 1) > 1
 
 		if self.parallelize:
-			self.nWorkers	= max(os.cpu_count()-1,1) if not "S" in kwargs else 0
-			self.workers 	= mp.Pool(self.nWorkers, initWorker) if not "S" in kwargs else None
+			self.nWorkers	= max(kwargs.get("w")-1,1)
+			self.workers 	= mp.Pool(self.nWorkers, initWorker)
+		else:
+			self.nWorkers	= 0
+		
+		if self.debug:
+			print("Using ",self.nWorkers+1," proceess(es) with ",os.cpu_count()," cores", sep = "")
 
 		#Tracker storage
 		self.__targetList__ 			= []
 		self.__scanHistory__ 			= []
 		self.__associatedMeasurements__ = []
 		self.__trackNodes__ 			= np.empty(0,dtype = np.dtype(object))
-		self.runtimeLog = {	'Process':	np.array([0.0,0]),
-							'Cluster':	np.array([0.0,0]),
-							'Optim':	np.array([0.0,0]),
-							'Prune':	np.array([0.0,0]),
-							}
+
+		#Timing and logging
+		if self.logTime:
+			self.runtimeLog = {	'Total':	np.array([0.0,0]),
+								'Process':	np.array([0.0,0]),
+								'Cluster':	np.array([0.0,0]),
+								'Optim':	np.array([0.0,0]),
+								'Prune':	np.array([0.0,0]),
+								}
+			self.tic = np.zeros(5)
+			self.toc = np.zeros(5)
+			self.nOptimSolved = 0
+			self.leafNodeTimeList = []
 		
 		#Tracker parameters
 		self.P_d 		= P_d
@@ -446,6 +461,14 @@ class Tracker():
 		#Misc
 		self.colors 					= ['r','g','b','c','m','y','k']
 
+	def __enter__(self):
+		return self
+
+	def __exit__(self, exeType, exeValue, traceback):
+		if self.parallelize:
+			self.workers.terminate()
+			self.workers.join()
+
 	def initiateTarget(self,newTarget):
 		target = Target(	time 					= newTarget.time, 
 							scanNumber 				= len(self.__scanHistory__),
@@ -462,18 +485,18 @@ class Tracker():
 		self.__trackNodes__ = np.append(self.__trackNodes__,target)
 
 	def addMeasurementList(self,measurementList, **kwargs):
-		tic1 = time.process_time()
+		if self.logTime: self.tic[0] = time.time()
 
 		if kwargs.get("checkIntegrety", False):
 			self._checkTrackerIntegrety()
 
-		tic2 = time.process_time()
+		if self.logTime: self.tic[1] = time.time()
 		self.__scanHistory__.append(measurementList)
 		nMeas = len(measurementList.measurements)
 		nTargets = len(self.__targetList__)
 		scanNumber = len(self.__scanHistory__)
 
-		leafNodeTimeList = []
+		if self.logTime: self.leafNodeTimeList = []
 		for targetIndex, target in enumerate(self.__targetList__):
 			if self.parallelize:
 				targetStartDepth = target.depth()
@@ -485,44 +508,51 @@ class Tracker():
 					node.predictMeasurement(measurementList.time)
 				predictToc = time.time()-predictTic
 				createTic = time.time()
-				
-				chunkSize = int(np.ceil(len(leafNodes)/self.nWorkers))
-				results = list(self.workers.map(functools.partial(addMeasurementToNode,measurementList,scanNumber, self.P_d, self.lambda_ex, self.eta2),leafNodes,chunkSize))
-				createToc = time.time() - createTic
-				assert len(leafNodes) == len(results), "Multithreaded 'processNewMeasurements' did not return the correct amout of nodes"
-				addTic = time.time()
-				for node, (trackHypotheses, newMeasurements) in zip(leafNodes, results):
-					# node.trackHypotheses = copy.deepcopy(trackHypotheses)
-					# node.trackHypotheses = copy.copy(trackHypotheses)
-					node.trackHypotheses = trackHypotheses
-					for hyp in node.trackHypotheses:
-						#print("Target ",targetIndex,"\tParent (",node.scanNumber,":",node.measurementNumber,") <-> Child (",hyp.scanNumber,":",hyp.measurementNumber,")", sep = "")
-						hyp.parent = node
+				floatChunkSize = len(leafNodes)/self.nWorkers
+				workerIterations = 2
+				chunkSize = int(np.ceil(floatChunkSize/workerIterations))
+				print("targetIndex",targetIndex,"\tnNodes",len(leafNodes),"\tnWorkers",self.nWorkers,"\tfloatChunkSize",round(floatChunkSize,1), "\tworkerIteration(s)", workerIterations, "\tchunkSize",chunkSize)
+				# results = list(self.workers.map(functools.partial(addMeasurementToNode,measurementList,scanNumber, self.P_d, self.lambda_ex, self.eta2),leafNodes,chunkSize))
+				# createToc = time.time() - createTic
+				# addTic = time.time()
+				# for node, (trackHypotheses, newMeasurements) in zip(leafNodes, results):
+				# 	node.trackHypotheses = trackHypotheses
+				# 	for hyp in node.trackHypotheses:
+				# 		hyp.parent = node
+				# 	self.__associatedMeasurements__[targetIndex].update(newMeasurements)
+				# assert len(leafNodes) == len(results), "Multithreaded 'processNewMeasurements' did not return the correct amout of nodes"
+				for nodeIndex, trackHypotheses, newMeasurements in self.workers.imap_unordered(functools.partial(addMeasurementToNode,measurementList,scanNumber, self.P_d, self.lambda_ex, self.eta2),zip(leafNodes,range(len(leafNodes))),chunkSize):
+					leafNodes[nodeIndex].trackHypotheses = trackHypotheses
+					for hyp in leafNodes[nodeIndex].trackHypotheses:
+						hyp.parent = leafNodes[nodeIndex]
 					self.__associatedMeasurements__[targetIndex].update(newMeasurements)
-				addToc = time.time() - addTic
-				leafNodeTimeList.append((round(seachToc*1000),round(predictToc*1000), round(createToc*1000), round(addToc*1000)))
+				createToc = time.time() - createTic
+				addToc = 0
+				self.leafNodeTimeList.append([seachToc,predictToc, createToc, addToc])
 				targetEndDepth = target.depth()
 				assert targetEndDepth-1 == targetStartDepth, "Multithreaded 'processNewMeasurements' did not increase the target depth"
 				target._checkReferenceIntegrety()
 			else:
 				target.processNewMeasurement(measurementList, self.__associatedMeasurements__[targetIndex],
 					scanNumber, self.P_d, self.lambda_ex, self.eta2)
-		toc2 = time.process_time() - tic2
-		#print(*leafNodeTimeList, sep="\n", end = "\n----\n")
+
+		if self.logTime: self.toc[1] = time.time() - self.tic[1]
+		if self.parallelize and self.debug:
+			print(*[round(e) for e in self.leafNodeTimeList], sep="ms\n", end = "ms\n")
 
 		if kwargs.get("printAssociation",False):
 			print(*__associatedMeasurements__, sep = "\n", end = "\n\n")
 
 		#--Cluster targets--
-		tic3 = time.process_time()
+		if self.logTime: self.tic[2] = time.time()
 		clusterList = self._findClustersFromSets()
-		toc3 = time.process_time() - tic3
+		if self.logTime: self.toc[2] = time.time() - self.tic[2]
 		if kwargs.get("printCluster",False):
 			hpf.printClusterList(clusterList)
 		
 		#--Maximize global (cluster vise) likelihood--
-		tic4 = time.time()
-		nOptimSolved = 0
+		if self.logTime: self.tic[3] = time.time()
+		self.nOptimSolved = 0
 		for cluster in clusterList:
 			if len(cluster) == 1:
 				#self._pruneSmilarState(cluster, self.pruneThreshold)
@@ -530,45 +560,48 @@ class Tracker():
 			else:
 				#self._pruneSmilarState(cluster, self.pruneThreshold/2)
 				self.__trackNodes__[cluster] = self._solveOptimumAssociation(cluster)
-				nOptimSolved += 1
-		toc4 = time.time()-tic4
+				self.nOptimSolved += 1
+		if self.logTime: self.toc[3] = time.time() - self.tic[3]
 
 		
-		tic5 = time.process_time()
+		if self.logTime: self.tic[4] = time.time()
 		self._nScanPruning()
-		toc5 = time.process_time()-tic5
-		toc1 = time.process_time() - tic1
+		if self.logTime: self.toc[4] = time.time() - self.tic[4]
+		if self.logTime: self.toc[0] = time.time() - self.tic[0]
 
 		if kwargs.get("checkIntegrety", False):
 			self._checkTrackerIntegrety()
 
 		if self.logTime:
-			self.runtimeLog['Process'] 	+= np.array([toc2,1])
-			self.runtimeLog['Cluster'] 	+= np.array([toc3,1])
-			self.runtimeLog['Optim'] 	+= np.array([toc4,1])
-			self.runtimeLog['Prune']	+= np.array([toc5,1])
+			self.runtimeLog['Total']	+= np.array([self.toc[0],1])
+			self.runtimeLog['Process'] 	+= np.array([self.toc[1],1])
+			self.runtimeLog['Cluster'] 	+= np.array([self.toc[2],1])
+			self.runtimeLog['Optim'] 	+= np.array([self.toc[3],1])
+			self.runtimeLog['Prune']	+= np.array([self.toc[4],1])
 
-		if kwargs.get("printTime",False):
+		if kwargs.get("printInfo", False):
 			print(	"Added scan number:", len(self.__scanHistory__),
 					" \tnMeas ", nMeas,
-					" \tTotal time ", '{:5.4f}'.format(toc1),
-					"\tProcess ",	'{:5.4f}'.format(toc2),
-					"\tCluster ",	'{:5.4f}'.format(toc3),
-					'\tOptim({0:g}) {1:5.4f}'.format(nOptimSolved ,toc4),
-					"\tPrune ",	'{:5.4f}'.format(toc5),
 					sep = "")
+
+		if kwargs.get("printTime",False):
+			self.printTimeLog()
 
 		#Covariance consistance
 		if "trueState" in kwargs:
 			xTrue = kwargs.get("trueState")
-			return [(target.filteredStateMean-xTrue[targetIndex].state).T.dot(
+			return self._compareTracksWithTruth(xTrue)
+
+	def _compareTracksWithTruth(self, xTrue):
+		return [	(target.filteredStateMean-xTrue[targetIndex].state).T.dot(
 					np.linalg.inv(target.filteredStateCovariance)).dot(
 					(target.filteredStateMean-xTrue[targetIndex].state) )
-			  for targetIndex, target in enumerate(self.__trackNodes__)]
+			 		for targetIndex, target in enumerate(self.__trackNodes__)]
 
 	def getRuntimeAverage(self, **kwargs):
 		p = kwargs.get("precision", 3)
-		return {k: v[0]/v[1] for k,v in self.runtimeLog.items()}
+		if self.logTime:
+			return {k: v[0]/v[1] for k,v in self.runtimeLog.items()}
 
 	def _findClustersFromSets(self):
 		superSet = set()
@@ -875,3 +908,15 @@ class Tracker():
 			else:
 				print(target.__str__(targetIndex = targetIndex)) 
 		print()
+
+
+	def printTimeLog(self):
+		if self.logTime:
+			print(	"Total time ",	'{:6.1f}ms'.format(self.toc[0]*1000),
+					"\tProcess ",	'{:6.1f}ms'.format(self.toc[1]*1000),
+					"\tCluster ",	'{:5.1f}ms'.format(self.toc[2]*1000),
+					'\tOptim({0:g}) {1:5.1f}ms'.format(self.nOptimSolved ,self.toc[3]*1000),
+					"\tPrune ",	'{:5.1f}ms'.format(self.toc[4]*1000),
+					sep = "")
+		else:
+			print("Logging not activated")
