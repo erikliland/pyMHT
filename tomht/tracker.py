@@ -509,9 +509,9 @@ class Tracker():
 				predictToc = time.time()-predictTic
 				createTic = time.time()
 				floatChunkSize = len(leafNodes)/self.nWorkers
-				workerIterations = 2
+				workerIterations = 1
 				chunkSize = int(np.ceil(floatChunkSize/workerIterations))
-				print("targetIndex",targetIndex,"\tnNodes",len(leafNodes),"\tnWorkers",self.nWorkers,"\tfloatChunkSize",round(floatChunkSize,1), "\tworkerIteration(s)", workerIterations, "\tchunkSize",chunkSize)
+				# print("targetIndex",targetIndex,"\tnNodes",len(leafNodes),"\tnWorkers",self.nWorkers,"\tfloatChunkSize",round(floatChunkSize,1), "\tworkerIteration(s)", workerIterations, "\tchunkSize",chunkSize)
 				# results = list(self.workers.map(functools.partial(addMeasurementToNode,measurementList,scanNumber, self.P_d, self.lambda_ex, self.eta2),leafNodes,chunkSize))
 				# createToc = time.time() - createTic
 				# addTic = time.time()
