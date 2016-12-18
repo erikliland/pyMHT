@@ -431,6 +431,7 @@ class Tracker():
 			self.tic = np.zeros(5)
 			self.toc = np.zeros(5)
 			self.nOptimSolved = 0
+			self.leafNodeTimeList = []
 		
 		#Tracker parameters
 		self.P_d 		= P_d
@@ -493,7 +494,7 @@ class Tracker():
 		nTargets = len(self.__targetList__)
 		scanNumber = len(self.__scanHistory__)
 
-		leafNodeTimeList = []
+		if self.logTime: self.leafNodeTimeList = []
 		for targetIndex, target in enumerate(self.__targetList__):
 			if self.parallelize:
 				targetStartDepth = target.depth()
@@ -505,7 +506,6 @@ class Tracker():
 					node.predictMeasurement(measurementList.time)
 				predictToc = time.time()-predictTic
 				createTic = time.time()
-				
 				chunkSize = int(np.ceil(len(leafNodes)/self.nWorkers))
 				results = list(self.workers.map(functools.partial(
 					addMeasurementToNode,measurementList,scanNumber, self.P_d, self.lambda_ex, self.eta2),leafNodes,chunkSize))
@@ -518,7 +518,7 @@ class Tracker():
 						hyp.parent = node
 					self.__associatedMeasurements__[targetIndex].update(newMeasurements)
 				addToc = time.time() - addTic
-				leafNodeTimeList.append((round(seachToc*1000),round(predictToc*1000), round(createToc*1000), round(addToc*1000)))
+				self.leafNodeTimeList.append([seachToc,predictToc, createToc, addToc])
 				targetEndDepth = target.depth()
 				assert targetEndDepth-1 == targetStartDepth, "Multithreaded 'processNewMeasurements' did not increase the target depth"
 				target._checkReferenceIntegrety()
@@ -528,7 +528,7 @@ class Tracker():
 
 		if self.logTime: self.toc[1] = time.time() - self.tic[1]
 		if self.parallelize and self.debug:
-			print(*leafNodeTimeList, sep="ms\n", end = "ms\n")
+			print(*[round(e) for e in self.leafNodeTimeList], sep="ms\n", end = "ms\n")
 
 		if kwargs.get("printAssociation",False):
 			print(*__associatedMeasurements__, sep = "\n", end = "\n\n")
