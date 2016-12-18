@@ -34,8 +34,9 @@ def runDynamicAgent(fileString,solver,P_d, N, lambda_phi,**kwargs):
 	simLog = 0.0
 	
 	seed = 5446 + kwargs.get("i",0)
-	scanList = sim.simulateScans(seed, simList, model.C, model.R(model.sigmaR_true), lambda_phi,radarRange, p0, P_d = P_d, shuffle = False)
-	tracker = tomht.Tracker(model.Phi, model.C, model.Gamma, P_d, model.P0, model.R(), model.Q, lambda_phi, lambda_nu, eta2, N, solver, realTime = True, **kwargs)
+	scanList = sim.simulateScans(seed, simList, model.C, model.R(model.sigmaR_true), lambda_phi,radarRange, p0, P_d = P_d, shuffle = True)
+	tracker = tomht.Tracker(model.Phi, model.C, model.Gamma, P_d, model.P0, model.R(), model.Q, lambda_phi, lambda_nu, eta2, N, solver,
+				 realTime = True,logTime = True, **kwargs)
 	for initialTarget in initialTargets:
 	 	tracker.initiateTarget(initialTarget)
 
@@ -120,10 +121,10 @@ if __name__ == '__main__':
 	parser.add_argument('-i',help = "Random iteration selector", type = int) 
 	parser.add_argument('-t',help = "Step through the simulation", type = float )
 	parser.add_argument('-k',help = "Measurement number to stop at", type = int )
-	parser.add_argument('-P',help = "Run tracker in single thread", action = 'store_false')
+	parser.add_argument('-P',help = "Run tracker with multiple cores", action = 'store_true')
 	parser.add_argument('-H',help = "Plot track hypotheses", action = 'store_true')
 	parser.add_argument('-R',help = "Plot measurements from root", action = 'store_true')
-	parser.add_argument('-c',help = "Number of cores to use", type = int)
+	parser.add_argument('-w',help = "Number of workers to use in multiprocessing mode", type = int)
 	args = vars(parser.parse_args())
 	print(args)
 	runDynamicAgent(simFiles[args.get('f')],args.get('s'),args.get('p'),args.get('n'),args.get('l'), **args)
