@@ -102,7 +102,7 @@ if __name__ == '__main__':
 			for coreCountLog in timeLogAvgList:
 				totalTime = coreCountLog[1][0]
 				row = [coreCountLog[0]]
-				row.extend(['{:.0%}'.format(elem/totalTime) for elem in coreCountLog[1][1:]])
+				row.extend(['{:.0f}'.format(100*elem/totalTime) for elem in coreCountLog[1][1:]])
 				print(row)
 				writer.writerow(row)
 
@@ -114,6 +114,6 @@ if __name__ == '__main__':
 					continue
 				totalTime = coreCountLog[1]
 				row = [coreCountLog[0]]
-				row.extend(['{:.0}'.format(elem/totalTime) for elem in coreCountLog[2:]])
+				row.extend(['{:.0f}'.format(100*elem/totalTime) for elem in coreCountLog[2:]])
 				print(row)
 				writer.writerow(row)
