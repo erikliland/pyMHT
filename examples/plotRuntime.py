@@ -8,6 +8,7 @@ from matplotlib.ticker import FormatStrFormatter
 from mpl_toolkits.mplot3d import Axes3D
 import numpy as np
 import xml.etree.ElementTree as ET
+import simSettings as sim
 
 def plotRuntime():
 	file = "compareResult.xml"
@@ -54,7 +55,8 @@ def plotRuntime():
 		yStart, yEnd = ax.get_ylim()
 		ax.yaxis.set_ticks(np.arange(yStart, yEnd*1.1, 10))
 		xStart, xEnd = ax.get_xlim()
-		ax.xaxis.set_ticks(np.arange(xStart, xEnd*1.1, 1e-4))
+		# ax.xaxis.set_ticks(np.arange(xStart, xEnd*1.1, 1e-4))
+		ax.xaxis.set_ticks(sim.lambdaPhiList)
 		xTickLabels = ax.xaxis.get_ticklabels()
 		for label in xTickLabels:
 			label.set_verticalalignment('bottom')

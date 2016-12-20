@@ -8,6 +8,8 @@ from matplotlib.ticker import FormatStrFormatter
 from mpl_toolkits.mplot3d import Axes3D
 import numpy as np
 import xml.etree.ElementTree as ET
+import simSettings as sim
+
 
 def plotTrackloss():
 	file = "compareResult.xml"
@@ -43,7 +45,7 @@ def plotTrackloss():
 						ax.plot(x,y,z,'-', label = "N="+str(Nvalue) if j == 0 else None, c = colors[i], linewidth = 4)						
 			ax.legend(loc='upper right', bbox_to_anchor=(0.5, 0.8), fontsize = 18)
 			ax.view_init(15, -165)
-			ax.set_xlabel("\n$\lambda_{\phi}$", fontsize = 18, linespacing = 3)
+			ax.set_xlabel("$\lambda_{\phi}$", fontsize = 18, labelpad = 30)
 			ax.set_zlabel("\nTrack loss (%)", fontsize = 18, linespacing = 3)
 			ax.set_ylabel("\nProbability of detection (%)", fontsize = 18, linespacing = 2)
 			# ax.ticklabel_format(style = "sci", axsis = "x", scilimits=(0,0))
@@ -55,14 +57,15 @@ def plotTrackloss():
 			ax.yaxis.set_ticks(np.arange(yStart, yEnd*1.1, 10))
 
 			xStart, xEnd = ax.get_xlim()
-			ax.xaxis.set_ticks(np.arange(xStart, xEnd*1.1, 1e-4))
+			# ax.xaxis.set_ticks(np.arange(xStart, xEnd*1.1, 1e-4))
+			ax.xaxis.set_ticks(sim.lambdaPhiList)
 			xTickLabels = ax.xaxis.get_ticklabels()
 			for label in xTickLabels:
 				label.set_verticalalignment('bottom')
 				label.set_horizontalalignment('left')
 				label.set_rotation(0)
 
-			plt.title(os.path.splitext(fileString)[0] + "-" + solverString)
+			#plt.title(os.path.splitext(fileString)[0] + "-" + solverString)
 			savefilePath = os.path.join("plots",os.path.splitext(fileString)[0] + "-" + solverString+".png")
 			latexSaveFilePath = os.path.abspath(os.path.join("..","..","02 Latex","Figures",os.path.splitext(fileString)[0] + "-" + solverString+".pdf"))
 			print("Saving:", latexSaveFilePath)
