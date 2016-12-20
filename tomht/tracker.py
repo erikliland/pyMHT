@@ -166,12 +166,13 @@ class Target():
 		self.observableState = self.C.dot(self.predictedStateMean)
 	
 	def gateAndCreateNewHypotheses(self, measurementList,scanNumber, P_d, lambda_ex, eta2, **kwargs):
+		tic = time.process_time()
 		assert self.scanNumber == scanNumber-1,"gateAndCreateNewMeasurement: inconsistent scan numbering"
-		time = measurementList.time
+		scanTime = measurementList.time
 		associatedMeasurements = set()
 		trackHypotheses = list()
 
-		trackHypotheses.append( self.createZeroHypothesis(time, scanNumber, P_d, **kwargs) )
+		trackHypotheses.append( self.createZeroHypothesis(scanTime, scanNumber, P_d, **kwargs) )
 
 		for measurementIndex, measurement in enumerate(measurementList.measurements):
 			if self.measurementIsInsideErrorEllipse(measurement,eta2):
@@ -180,7 +181,7 @@ class Target():
 				associatedMeasurements.add( (scanNumber, measurementIndex+1) )
 				trackHypotheses.append(
 					self.clone(
-						time 					= time, 
+						time 					= scanTime, 
 						scanNumber 				= scanNumber,
 						measurementNumber 		= measurementIndex+1,
 						measurement 			= measurement,
@@ -192,7 +193,8 @@ class Target():
 						kalmanGain 				= kalmanGain
 						)
 					)
-		return trackHypotheses, associatedMeasurements
+		toc = time.process_time() - tic
+		return trackHypotheses, associatedMeasurements, tic
 	
 	def calculateCNLLR(self, P_d, measurement, lambda_ex, resCov):
 		return 	(self.cummulativeNLLR +
@@ -272,7 +274,7 @@ class Target():
 	def processNewMeasurement(self, measurementList, measurementSet,scanNumber, P_d, lambda_ex, eta2):
 		if not self.trackHypotheses:
 			self.predictMeasurement(measurementList.time)
-			trackHypotheses, newMeasurements = self.gateAndCreateNewHypotheses(measurementList, scanNumber, P_d, lambda_ex, eta2)
+			trackHypotheses, newMeasurements,_ = self.gateAndCreateNewHypotheses(measurementList, scanNumber, P_d, lambda_ex, eta2)
 			self.trackHypotheses = trackHypotheses
 			measurementSet.update( newMeasurements )
 		else:
@@ -396,8 +398,8 @@ class Target():
 
 def addMeasurementToNode(measurementList,scanNumber, P_d, lambda_ex, eta2, params):
 	target,nodeIndex = params
-	trackHypotheses, newMeasurements = target.gateAndCreateNewHypotheses(measurementList, scanNumber, P_d, lambda_ex, eta2)
-	return nodeIndex, trackHypotheses, newMeasurements
+	trackHypotheses, newMeasurements, nodeComputationTime = target.gateAndCreateNewHypotheses(measurementList, scanNumber, P_d, lambda_ex, eta2)
+	return nodeIndex, trackHypotheses, newMeasurements, nodeComputationTime
 
 class Tracker():
 	def __init__(self, Phi, C, Gamma, P_d, P0, R, Q, lambda_phi, 
@@ -434,6 +436,7 @@ class Tracker():
 			self.toc = np.zeros(5)
 			self.nOptimSolved = 0
 			self.leafNodeTimeList = []
+			self.createComputationTime = None
 		
 		#Tracker parameters
 		self.P_d 		= P_d
@@ -511,21 +514,13 @@ class Tracker():
 				floatChunkSize = len(leafNodes)/self.nWorkers
 				workerIterations = 1
 				chunkSize = int(np.ceil(floatChunkSize/workerIterations))
-				# print("targetIndex",targetIndex,"\tnNodes",len(leafNodes),"\tnWorkers",self.nWorkers,"\tfloatChunkSize",round(floatChunkSize,1), "\tworkerIteration(s)", workerIterations, "\tchunkSize",chunkSize)
-				# results = list(self.workers.map(functools.partial(addMeasurementToNode,measurementList,scanNumber, self.P_d, self.lambda_ex, self.eta2),leafNodes,chunkSize))
-				# createToc = time.time() - createTic
-				# addTic = time.time()
-				# for node, (trackHypotheses, newMeasurements) in zip(leafNodes, results):
-				# 	node.trackHypotheses = trackHypotheses
-				# 	for hyp in node.trackHypotheses:
-				# 		hyp.parent = node
-				# 	self.__associatedMeasurements__[targetIndex].update(newMeasurements)
-				# assert len(leafNodes) == len(results), "Multithreaded 'processNewMeasurements' did not return the correct amout of nodes"
-				for nodeIndex, trackHypotheses, newMeasurements in self.workers.imap_unordered(functools.partial(addMeasurementToNode,measurementList,scanNumber, self.P_d, self.lambda_ex, self.eta2),zip(leafNodes,range(len(leafNodes))),chunkSize):
+				self.createComputationTime = 0
+				for nodeIndex, trackHypotheses, newMeasurements, nodeComputationTime in self.workers.imap_unordered(functools.partial(addMeasurementToNode,measurementList,scanNumber, self.P_d, self.lambda_ex, self.eta2),zip(leafNodes,range(len(leafNodes))),chunkSize):
 					leafNodes[nodeIndex].trackHypotheses = trackHypotheses
 					for hyp in leafNodes[nodeIndex].trackHypotheses:
 						hyp.parent = leafNodes[nodeIndex]
 					self.__associatedMeasurements__[targetIndex].update(newMeasurements)
+					self.createComputationTime += nodeComputationTime
 				createToc = time.time() - createTic
 				addToc = 0
 				self.leafNodeTimeList.append([seachToc,predictToc, createToc, addToc])
@@ -586,6 +581,8 @@ class Tracker():
 
 		if kwargs.get("printTime",False):
 			self.printTimeLog()
+			if self.createComputationTime is not None:
+				print("createComputationTime",self.createComputationTime)
 
 		#Covariance consistance
 		if "trueState" in kwargs:
