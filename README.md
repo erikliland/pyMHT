@@ -1,2 +1,2 @@
-# TTK4550-Python
+# MHTpy
 Track oriented, multi target, multi hypothesis tracker
