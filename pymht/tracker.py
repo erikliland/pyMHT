@@ -375,7 +375,7 @@ class Target():
 	def plotTrack(self, stepsBack = float('inf'), **kwargs):		
 		colors = itertools.cycle(["r", "b", "g"])
 		track = self.backtrackPosition(stepsBack)
-		plt.plot([p.x for p in track], [p.y for p in track], **kwargs)
+		plt.plot([p.x() for p in track], [p.y() for p in track], **kwargs)
 
 	def plotMeasurement(self, stepsBack = 0, **kwargs):
 		if self.measurement is not None:
@@ -834,7 +834,7 @@ class Tracker():
 		def recPlotHypothesesTrack(target, track = [], **kwargs):
 			newTrack = track[:] + [target.getPosition()]
 			if not target.trackHypotheses:
-				plt.plot([p.x for p in newTrack], [p.y for p in newTrack], "--", **kwargs)
+				plt.plot([p.x() for p in newTrack], [p.y() for p in newTrack], "--", **kwargs)
 			else:
 				for hyp in target.trackHypotheses:
 					recPlotHypothesesTrack(hyp,  newTrack, **kwargs)

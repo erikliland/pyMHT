@@ -146,6 +146,9 @@ def parseSolver(solverString):
 		return pulp.PULP_CBC_CMD()
 	if s == "gurobi":
 		return pulp.GUROBI_CMD(None, 0,1,0,[])
+	if s == "pyglpk":
+		return pulp.PYGLPK()
+	print("Did not find solver",solverString,"\t Using default solver.")
 	return None
 
 def solverIsAvailable(solverString):

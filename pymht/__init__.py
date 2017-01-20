@@ -2,7 +2,6 @@
 
 import os, sys
 sys.path.append(os.path.dirname(__file__))
-#sys.path.insert(0,'')
 
 from . import stateSpace
 from . import helpFunctions
