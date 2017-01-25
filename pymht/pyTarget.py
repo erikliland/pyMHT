@@ -1,17 +1,9 @@
-try:
-    raise ImportError
-    import pymht.utils.ckalman as kalman
-    print("Using cKalman")
-except ImportError:
-    print("Using pyKalman")
-    import pymht.utils.pyKalman as kalman
-
-# import pykalman.KalmanFilter as kf
-# import pymht.utils.kalman as kf
 import pymht.utils.helpFunctions as hpf
+import pymht.utils.cFunctions as hpf2
 from pymht.utils.classDefinitions import Position, Velocity
 import numpy as np
 import time
+import copy
 import itertools
 import matplotlib.pyplot as plt
 import multiprocessing as mp
@@ -19,50 +11,16 @@ import multiprocessing as mp
 
 class Target():
 
-    def __init__(self, **kwargs):
-        # Process variables
-        # super(Target,self).__init__()
-        # self.exitFlag = False
-        # self.queue = mp.Queue()
-        # self.event = mp.Event()
-
-        # Target variables
-        time = kwargs.get("time")
-        scanNumber = kwargs.get("scanNumber")
-        filteredStateMean = kwargs.get("filteredStateMean")
-        filteredStateCovariance = kwargs.get("filteredStateCovariance")
-        if (	(time is None) or
-                (scanNumber is None) or
-                (filteredStateMean is None) or
-                (filteredStateCovariance is None)):
-            raise TypeError(
-                "Target() need at least: time, scanNumber, state and covariance")
-
-        # Track parameters
+    def __init__(self, time, scanNumber, kalmanFilter, ** kwargs):
         self.time = time
         self.scanNumber = scanNumber
+        self.kalmanFilter = kalmanFilter
+        self.P_d = copy.copy(kwargs.get('P_d', 0.8))
         self.parent = kwargs.get("parent")
         self.measurementNumber = kwargs.get("measurementNumber", 0)
         self.measurement = kwargs.get("measurement")
-        self.cummulativeNLLR = kwargs.get("cummulativeNLLR", 0)
-        self.trackHypotheses = []
-
-        # Kalman filter variables
-        Phi = kwargs.get("Phi")
-        C = kwargs.get("C")
-        Q = kwargs.get("Q")
-        Gamma = kwargs.get("Gamma")
-        R = kwargs.get("R")
-
-        self.kalmanFilter = kalman.KalmanFilter(
-            Phi,
-            C,
-            Q=Q,
-            R=R,
-            Gamma=Gamma,
-            x_0=filteredStateMean,
-            P_0=filteredStateCovariance
-        )
+        self.cummulativeNLLR = copy.copy(kwargs.get("cummulativeNLLR", 0))
+        self.trackHypotheses = None
 
     def __repr__(self):
         if self.kalmanFilter.x_bar is not None:
@@ -72,8 +30,11 @@ class Target():
             predStateStr = ""
 
         if self.measurementNumber is not None:
-            measStr = (" \tMeasurement(" + str(self.scanNumber)
-                       + ":" + str(self.measurementNumber) + ")")
+            measStr = (" \tMeasurement(" +
+                       str(self.scanNumber) +
+                       ":" +
+                       str(self.measurementNumber) +
+                       ")")
             if self.measurement is not None:
                 measStr += ":" + str(self.measurement)
         else:
@@ -81,18 +42,21 @@ class Target():
 
         if self.kalmanFilter.S is not None:
             lambda_, _ = np.linalg.eig(self.kalmanFilter.S)
-            gateStr = (" \tGate size: (" + '{:5.2f}'.format(np.sqrt(lambda_[0]) * 2)
-                       + "," + '{:5.2f}'.format(np.sqrt(lambda_[1]) * 2) + ")")
+            gateStr = (" \tGate size: (" +
+                       '{:5.2f}'.format(np.sqrt(lambda_[0]) * 2) +
+                       "," +
+                       '{:5.2f}'.format(np.sqrt(lambda_[1]) * 2) +
+                       ")")
         else:
             gateStr = ""
 
-        return ("Time: " + time.strftime("%H:%M:%S", time.gmtime(self.time))
-                + "\t" + str(self.getPosition())
-                + " \t" + str(self.getVelocity())
-                        + " \tcNLLR:" + '{: 06.4f}'.format(self.cummulativeNLLR)
-                        + measStr
-                        + predStateStr
-                        + gateStr
+        return ("Time: " + time.strftime("%H:%M:%S", time.gmtime(self.time)) +
+                "\t" + str(self.getPosition()) +
+                " \t" + str(self.getVelocity()) +
+                " \tcNLLR:" + '{: 06.4f}'.format(self.cummulativeNLLR) +
+                measStr +
+                predStateStr +
+                gateStr
                 )
 
     def __str__(self, **kwargs):
@@ -100,7 +64,7 @@ class Target():
         hypIndex = kwargs.get("hypIndex", 0)
         targetIndex = kwargs.get("targetIndex", "?")
 
-        if (level == 0) and not self.trackHypotheses:
+        if (level == 0) and self.trackHypotheses is None:
             return repr(self)
         ret = ""
         if level == 0:
@@ -108,17 +72,18 @@ class Target():
         else:
             ret += "   " + " " * min(level, 8) + "H" + \
                 str(hypIndex) + ": " + repr(self) + "\n"
-        for hypIndex, hyp in enumerate(self.trackHypotheses):
-            hasNotZeroHyp = (self.trackHypotheses[0].measurementNumber != 0)
-            ret += hyp.__str__(level=level + 1, hypIndex=hypIndex + int(hasNotZeroHyp))
+        if self.trackHypotheses is not None:
+            for hypIndex, hyp in enumerate(self.trackHypotheses):
+                hasNotZeroHyp = (self.trackHypotheses[0].measurementNumber != 0)
+                ret += hyp.__str__(level=level + 1,
+                                   hypIndex=hypIndex + int(hasNotZeroHyp))
         return ret
 
     def __sub__(self, other):
         return self.kalmanFilter.x_hat - other.kalmanFilter.x_hat
 
     def getPosition(self):
-        pos = Position(self.kalmanFilter.x_hat[0:2])
-        return pos
+        return Position(self.kalmanFilter.x_hat[0:2])
 
     def getVelocity(self):
         return Velocity(self.kalmanFilter.x_hat[2:4])
@@ -132,145 +97,111 @@ class Target():
         return self.stepBack(float('inf'))
 
     def getNumOfNodes(self):
-        if not self.trackHypotheses:
+        if self.trackHypotheses is None:
             return 1
         return 1 + sum([node.getNumOfNodes() for node in self.trackHypotheses])
 
     def depth(self, count=0):
-        if len(self.trackHypotheses):
-            return self.trackHypotheses[0].depth(count + 1)
-        return count
+        return count if self.trackHypotheses is None else self.trackHypotheses[0].depth(count + 1)
 
-    def predictMeasurement(self, scanTime):
-        T = scanTime - self.time
-        self.kalmanFilter.predict(T=T)
-        self.kalmanFilter._precalculateMeasurementUpdate(T)
+    def predictMeasurement(self, **kwargs):
+        # T = scanTime - self.time
+        self.kalmanFilter.predict()
+        self.kalmanFilter._precalculateMeasurementUpdate()
 
-    def gateAndCreateNewHypotheses(self, measurementList, scanNumber, P_d, lambda_ex, eta2, **kwargs):
-        tic = time.time()
-        assert self.scanNumber == scanNumber - \
-            1, "gateAndCreateNewMeasurement: inconsistent scan numbering"
+    def gateAndCreateNewHypotheses(self, measurementList, scanNumber, lambda_ex, eta2):
+        # tic1 = time.process_time()
+        assert self.scanNumber == scanNumber - 1, \
+            "gateAndCreateNewMeasurement: inconsistent scan numbering"
         scanTime = measurementList.time
-        associatedMeasurements = set()
-        trackHypotheses = list()
-
-        trackHypotheses.append(self.createZeroHypothesis(
-            scanTime, scanNumber, P_d, **kwargs))
-
         measurementsResidual = measurementList.measurements - self.kalmanFilter.z_hat
-        normalizedInnovationSquared = np.zeros(len(measurementList.measurements))
-        for i, residual in enumerate(measurementsResidual):
-            normalizedInnovationSquared[i] = residual.T.dot(
-                self.kalmanFilter.S_inv).dot(residual)  # TODO: Vectorize this!
-        #print("NIS", *normalizedInnovationSquared, sep = "\n", end = "\n\n")
-
-        gatedMeasurements = normalizedInnovationSquared <= eta2
-
+        nis = self._normalizedInnovationSquared(measurementsResidual)
+        gatedMeasurements = nis <= eta2
+        nMeasurementInsideGate = np.sum(gatedMeasurements)
+        associatedMeasurements = set()
+        self.trackHypotheses = np.empty(shape=(nMeasurementInsideGate + 1,), dtype=object)
+        self.trackHypotheses[0] = self.createZeroHypothesis(scanTime, scanNumber)
+        i = 1
+        # tic2 = time.process_time()
         for measurementIndex, insideGate in enumerate(gatedMeasurements):
             if insideGate:
                 measurementResidual = measurementsResidual[measurementIndex]
                 measurement = measurementList.measurements[measurementIndex]
-                filtState, filtCov = self.kalmanFilter.filter(
-                    y_tilde=measurementResidual, local=True)
                 associatedMeasurements.add((scanNumber, measurementIndex + 1))
-                trackHypotheses.append(
-                    self.clone(
-                        time=scanTime,
-                        scanNumber=scanNumber,
-                        measurementNumber=measurementIndex + 1,
-                        measurement=measurement,
-                        filteredStateMean=filtState,
-                        filteredStateCovariance=filtCov,
-                        cummulativeNLLR=self.calculateCNLLR(
-                            P_d, measurementResidual, lambda_ex,
-                            self.kalmanFilter.S, self.kalmanFilter.S_inv),
-                        measurementResidual=measurementResidual,
-                    )
+                self.trackHypotheses[i] = Target(
+                    scanTime,
+                    scanNumber,
+                    self.kalmanFilter.filterAndCopy(measurementResidual),
+                    measurementNumber=measurementIndex + 1,
+                    measurement=measurement,
+                    cummulativeNLLR=self.calculateCNLLR(measurementResidual, lambda_ex),
+                    P_d=self.P_d,
+                    parent=self
                 )
-        toc = time.time() - tic
-        return trackHypotheses, associatedMeasurements, tic
+                i += 1
+        # toc2 = time.process_time() - tic2
+        # toc1 = time.process_time() - tic1
+        # if (toc1 > 0.002) or (toc2 > 0.002):
+        #     print('({0:.1f}|{1:.1f}|{2:.1f})ms'.format(
+        #         toc1 * 1000, toc2 * 1000, 0),
+        #         nMeasurementInsideGate)
+        return self.trackHypotheses, associatedMeasurements
 
-    def calculateCNLLR(self, P_d, measurementResidual, lambda_ex, resCov, invResCov):
-        return (self.cummulativeNLLR +
-                hpf.nllr(P_d, measurementResidual, lambda_ex, resCov, invResCov))
+    def _normalizedInnovationSquared(self, measurementsResidual):
+        return np.sum(measurementsResidual.dot(self.kalmanFilter.S_inv) *
+                      measurementsResidual, axis=1)
 
-    def clone(self, **kwargs):
-        time = kwargs.get("time")
-        scanNumber = kwargs.get("scanNumber")
-        filteredStateMean = kwargs.get("filteredStateMean")
-        filteredStateCovariance = kwargs.get("filteredStateCovariance")
-        cummulativeNLLR = kwargs.get("cummulativeNLLR")
-        measurementNumber = kwargs.get("measurementNumber")
-        measurement = kwargs.get("measurement")
-        parent = kwargs.get("parent", self)
-        Phi = kwargs.get("Phi", self.kalmanFilter.A)
-        Q = kwargs.get("Q",  self.kalmanFilter.Q)
-        Gamma = kwargs.get("Gamma", self.kalmanFilter.Gamma)
-        C = kwargs.get("C",  self.kalmanFilter.C)
-        R = kwargs.get("R",  self.kalmanFilter.R)
-
-        return Target(
-            time=time,
-            scanNumber=scanNumber,
-            filteredStateMean=filteredStateMean,
-            filteredStateCovariance=filteredStateCovariance,
-            parent=parent,
-            measurementNumber=measurementNumber,
-            measurement=measurement,
-            cummulativeNLLR=cummulativeNLLR,
-            Phi=Phi,
-            Q=Q,
-            Gamma=Gamma,
-            C=C,
-            R=R,
-        )
+    def calculateCNLLR(self, measurementResidual, lambda_ex):
+        return self.cummulativeNLLR + hpf.nllr(self.P_d,
+                                               measurementResidual,
+                                               lambda_ex,
+                                               self.kalmanFilter.S,
+                                               self.kalmanFilter.S_inv)
 
     def measurementIsInsideErrorEllipse(self, measurement, eta2):
         measRes = measurement.position - self.predictedMeasurement
         return measRes.T.dot(self.invResidualCovariance).dot(measRes) <= eta2
 
-    def createZeroHypothesis(self, time, scanNumber, P_d, **kwargs):
-        return self.clone(time=time,
-                          scanNumber=scanNumber,
-                          measurementNumber=0,
-                          filteredStateMean=self.kalmanFilter.x_bar,
-                          filteredStateCovariance=self.kalmanFilter.P_bar,
-                          cummulativeNLLR=self.cummulativeNLLR + hpf.nllr(P_d),
-                          parent=kwargs.get("parent", self)
-                          )
+    def createZeroHypothesis(self, time, scanNumber):
+        return Target(time,
+                      scanNumber,
+                      self.kalmanFilter.filterAndCopy(),
+                      measurementNumber=0,
+                      cummulativeNLLR=self.cummulativeNLLR - np.log(1 - self.P_d),
+                      P_d=self.P_d,
+                      parent=self
+                      )
 
-    def createZeroHypothesisDictionary(self, time, scanNumber, P_d, **kwargs):
-        return self.__dict__
-
-    def _pruneAllHypothesisExeptThis(self, keep):
+    def _pruneAllHypothesisExeptThis(self, keep):  # TODO: Vectorize this
         for hyp in self.trackHypotheses:
             if hyp != keep:
-                self.trackHypotheses.remove(hyp)
+                index = np.where(self.trackHypotheses == hyp)
+                self.trackHypotheses = np.delete(self.trackHypotheses, index)
 
     def getMeasurementSet(self, root=True):
         subSet = set()
-        for hyp in self.trackHypotheses:
-            subSet |= hyp.getMeasurementSet(False)
+        if self.trackHypotheses is not None:
+            for hyp in self.trackHypotheses:
+                subSet |= hyp.getMeasurementSet(False)
         if (self.measurementNumber == 0) or (root):
             return subSet
         else:
             return {(self.scanNumber, self.measurementNumber)} | subSet
 
-    def processNewMeasurement(self, measurementList, measurementSet, scanNumber, P_d, lambda_ex, eta2):
-        if not self.trackHypotheses:
-            self.predictMeasurement(measurementList.time)
-            trackHypotheses, newMeasurements, _ = self.gateAndCreateNewHypotheses(
-                measurementList, scanNumber, P_d, lambda_ex, eta2)
-            self.trackHypotheses = trackHypotheses
+    def processNewMeasurementRec(self, measurementList, measurementSet, scanNumber, lambda_ex, eta2):
+        if self.trackHypotheses is None:
+            self.predictMeasurement()
+            _, newMeasurements = self.gateAndCreateNewHypotheses(
+                measurementList, scanNumber, lambda_ex, eta2)
             measurementSet.update(newMeasurements)
         else:
             for hyp in self.trackHypotheses:
-                hyp.processNewMeasurement(
-                    measurementList, measurementSet, scanNumber, P_d, lambda_ex, eta2)
+                hyp.processNewMeasurementRec(
+                    measurementList, measurementSet, scanNumber, lambda_ex, eta2)
 
     def _selectBestHypothesis(self):
         def recSearchBestHypothesis(target, bestScore, bestHypothesis):
-            if len(target.trackHypotheses) == 0:
+            if target.trackHypotheses is None:
                 if target.cummulativeNLLR <= bestScore[0]:
                     bestScore[0] = target.cummulativeNLLR
                     bestHypothesis[0] = target
@@ -284,7 +215,7 @@ class Target():
 
     def getLeafNodes(self):
         def recGetLeafNode(node, nodes):
-            if not node.trackHypotheses:
+            if node.trackHypotheses is None:
                 nodes.append(node)
             else:
                 for hyp in node.trackHypotheses:
@@ -312,18 +243,19 @@ class Target():
             return
         self.cummulativeNLLR -= score
 
-        for hyp in self.trackHypotheses:
-            hyp.recursiveSubtractScore(score)
+        if self.trackHypotheses is not None:
+            for hyp in self.trackHypotheses:
+                hyp.recursiveSubtractScore(score)
 
     def _checkScanNumberIntegrety(self):
         assert type(
             self.scanNumber) is int, "self.scanNumber is not an integer %r" % self.scanNumber
 
         if self.parent is not None:
-            assert type(
-                self.parent.scanNumber) is int, "self.parent.scanNumber is not an integer %r" % self.parent.scanNumber
-            assert self.parent.scanNumber == self.scanNumber - \
-                1, "self.parent.scanNumber(%r) == self.scanNumber-1(%r)" % (
+            assert type(self.parent.scanNumber) is int, \
+                "self.parent.scanNumber is not an integer %r" % self.parent.scanNumber
+            assert self.parent.scanNumber == self.scanNumber - 1,\
+                "self.parent.scanNumber(%r) == self.scanNumber-1(%r)" % (
                     self.parent.scanNumber, self.scanNumber)
 
         for hyp in self.trackHypotheses:
@@ -331,10 +263,14 @@ class Target():
 
     def _checkReferenceIntegrety(self):
         def recCheckReferenceIntegrety(target):
-            for hyp in target.trackHypotheses:
-                assert hyp.parent == target, "Inconsistent parent <-> child reference: Measurement(" + str(target.scanNumber) + ":" + str(
-                    target.measurementNumber) + ") <-> " + "Measurement(" + str(hyp.scanNumber) + ":" + str(hyp.measurementNumber) + ")"
-                recCheckReferenceIntegrety(hyp)
+            if target.trackHypotheses is not None:
+                for hyp in target.trackHypotheses:
+                    assert hyp.parent == target, \
+                        ("Inconsistent parent <-> child reference: Measurement(" +
+                         str(target.scanNumber) + ":" + str(target.measurementNumber) +
+                         ") <-> " + "Measurement(" + str(hyp.scanNumber) + ":" +
+                         str(hyp.measurementNumber) + ")")
+                    recCheckReferenceIntegrety(hyp)
         recCheckReferenceIntegrety(self.getRoot())
 
     def plotValidationRegion(self, eta2, stepsBack=0):

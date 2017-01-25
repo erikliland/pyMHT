@@ -13,8 +13,9 @@ ext = '.pyx' if USE_CYTHON else '.c'
 if USE_CYTHON:
     from distutils.extension import Extension
     import numpy
-    extensions = [Extension("pymht.utils.ckalman", ["pymht/utils/ckalman" + ext])]
-    # Extension("pymht.cTarget", ["pymht/cTarget" + ext],include_dirs=[numpy.get_include()])
+    extensions = [Extension("pymht.utils.cKalman", ["pymht/utils/cKalman" + ext]),
+                  Extension("pymht.utils.cFunctions", ["pymht/utils/cFunctions" + ext],
+                            include_dirs=[numpy.get_include()])]
 else:
     extensions = None
 

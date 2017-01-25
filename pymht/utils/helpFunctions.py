@@ -26,7 +26,7 @@ def plotRadarOutline(centerPosition, radarRange, **kwargs):
     if kwargs.get("center", True):
         plt.plot(centerPosition.x, centerPosition.y, "bo")
     ax = plt.subplot(111)
-    circle = Ellipse(centerPosition.toarray(), radarRange * 2, radarRange * 2)
+    circle = Ellipse(centerPosition.position, radarRange * 2, radarRange * 2)
     circle.set_facecolor("none")
     circle.set_linestyle("dotted")
     ax.add_artist(circle)
@@ -62,9 +62,7 @@ def printClusterList(clusterList):
 
 def printHypothesesScore(targetList):
     def recPrint(target, targetIndex):
-        if not target.trackHypotheses:
-            pass
-        else:
+        if target.trackHypotheses is not None:
             for hyp in target.trackHypotheses:
                 recPrint(hyp, targetIndex)
     for targetIndex, target in enumerate(targetList):
@@ -96,7 +94,7 @@ def nllr(*args):
             return (0.5 * (measurementResidual.T.dot(invCovariance).dot(measurementResidual))
                     + np.log((lambda_ex * np.sqrt(np.linalg.det(2 * np.pi * covariance))) / P_d))
     else:
-        raise TypeError("nllr() takes either 1 or 5 arguments (", len(args), ") given")
+        raise ValueError("nllr() takes either 1 or 5 arguments (", len(args), ") given")
 
 
 def backtrackMeasurementsIndices(selectedNodes, steps=None):

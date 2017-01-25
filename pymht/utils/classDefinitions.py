@@ -16,20 +16,11 @@ class Position:
         else:
             raise ValueError("Invalid arguments to Position")
 
-    def x(self):
-        return self.position[0]
-
-    def y(self):
-        return self.position[1]
-
     def __str__(self):
         return 'Pos: ({0: .2f},{1: .2f})'.format(self.position[0], self.position[1])
 
     def __repr__(self):
         return '({0:.3e},{1:.3e})'.format(self.position[0], self.position[1])
-
-    def toarray(self):
-        return self.position
 
     def __add__(self, other):
         return Position(self.position + other.position)
@@ -42,6 +33,12 @@ class Position:
 
     def __div__(self, other):
         return Position(self.position / other.position)
+
+    def x(self):
+        return self.position[0]
+
+    def y(self):
+        return self.position[1]
 
     def plot(self, measurementNumber, scanNumber=None, **kwargs):
         if measurementNumber == 0:
@@ -63,31 +60,37 @@ class Velocity:
         x = kwargs.get('x')
         y = kwargs.get('y')
         if (x is not None) and (y is not None):
-            self.position[0] = x
-            self.position[1] = y
+            self.velocity[0] = np.array([x, y])
         elif len(args) == 1:
-            self.position[0] = args[0][0]
-            self.position[1] = args[0][1]
+            self.velocity = np.array(args[0])
         elif len(args) == 2:
-            self.position[0] = args[0]
-            self.position[1] = args[1]
+            self.velocity = np.array(args[0], args[1])
         else:
             raise ValueError("Invalid arguments to Velocity")
 
     def __str__(self):
-        return 'Vel: ({: .2f},{: .2f})'.format(self.position[0], self.position[1])
+        return 'Vel: ({: .2f},{: .2f})'.format(self.velocity[0], self.velocity[1])
 
     def __repr__(self):
-        return '({:.3e},{:.3e})'.format(self.position[0], self.position[1])
+        return '({:.3e},{:.3e})'.format(self.velocity[0], self.velocity[1])
+
+    def __add__(self, other):
+        return Velocity(self.velocity + other.velocity)
+
+    def __sub__(self, other):
+        return Velocity(self.velocity - other.velocity)
 
     def __mul__(self, other):
-        return Velocity(self.position[0] * other, self.position[1] * other)
+        return Velocity(self.velocity * other.velocity)
 
     def __div__(self, other):
-        return Velocity(self.position[0] / other, self.position[1] / other)
+        return Velocity(self.velocity / other.velocity)
 
-    def toarray(self):
-        return np.array([self.position[0], self.position[1]])
+    def x(self):
+        return self.velocity[0]
+
+    def y(self):
+        return self.velocity[1]
 
 
 class MeasurementList:
@@ -95,9 +98,6 @@ class MeasurementList:
     def __init__(self, Time, measurements=[]):
         self.time = Time
         self.measurements = measurements
-
-    def add(self, measurement):
-        self.measurements.append(measurement)
 
     def __str__(self):
         from time import gmtime, strftime
@@ -107,6 +107,9 @@ class MeasurementList:
                     [str(measurement) for measurement in self.measurements]))
 
     __repr__ = __str__
+
+    def add(self, measurement):
+        self.measurements.append(measurement)
 
     def plot(self, **kwargs):
         for measurementIndex, measurement in enumerate(self.measurements):

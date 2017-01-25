@@ -15,7 +15,13 @@ try:
 except ImportError:
     from pymht.pyTarget import Target
     print("Using pyTarget")
-
+try:
+    raise ImportError
+    import pymht.utils.cKalman as kalman
+    print("Using cKalman")
+except ImportError:
+    print("Using pyKalman")
+    import pymht.utils.pyKalman as kalman
 import time
 import signal
 import os
@@ -28,7 +34,7 @@ import multiprocessing as mp
 from scipy.sparse.csgraph import connected_components
 
 
-def _setHightPriority():
+def _setHighPriority():
     import psutil
     import platform
     p = psutil.Process(os.getpid())
@@ -43,18 +49,17 @@ def initWorker():
     signal.signal(signal.SIGINT, signal.SIG_IGN)
 
 
-def addMeasurementToNode(measurementList, scanNumber,
-                         P_d, lambda_ex, eta2, params):
+def addMeasurementToNode(measurementList, scanNumber, lambda_ex, eta2, params):
     target, nodeIndex = params
-    trackHypotheses, newMeasurements, nodeComputationTime = (
+    trackHypotheses, newMeasurements = (
         target.gateAndCreateNewHypotheses(
-            measurementList, scanNumber, P_d, lambda_ex, eta2))
-    return nodeIndex, trackHypotheses, newMeasurements, nodeComputationTime
+            measurementList, scanNumber, lambda_ex, eta2))
+    return nodeIndex, trackHypotheses, newMeasurements
 
 
 class Tracker():
 
-    def __init__(self, Phi, C, Gamma, P_d, P0, R, Q, lambda_phi,
+    def __init__(self, Phi, C, Gamma, P_d, P_0, R, Q, lambda_phi,
                  lambda_nu, eta2, N, solverStr, **kwargs):
 
         self.logTime = kwargs.get("logTime", False)
@@ -94,7 +99,6 @@ class Tracker():
             self.createComputationTime = None
 
         # Tracker parameters
-        self.P_d = P_d
         self.lambda_phi = lambda_phi
         self.lambda_nu = lambda_nu
         self.lambda_ex = lambda_phi + lambda_nu
@@ -105,11 +109,9 @@ class Tracker():
 
         # State space model
         self.Phi = Phi
-        self.b = np.zeros(4)
         self.C = C
-        self.d = np.zeros(2)
         self.Gamma = Gamma
-        self.P0 = P0
+        self.P_0 = P_0
         self.R = R
         self.Q = Q
 
@@ -129,15 +131,17 @@ class Tracker():
             self.workers.join()
 
     def initiateTarget(self, newTarget):
-        target = Target(time=newTarget.time,
-                        scanNumber=len(self.__scanHistory__),
-                        filteredStateMean=newTarget.state,
-                        filteredStateCovariance=self.P0,
-                        Phi=self.Phi,
-                        Q=self.Q,
-                        Gamma=self.Gamma,
-                        C=self.C,
-                        R=self.R
+        target = Target(newTarget.time,
+                        len(self.__scanHistory__),
+                        kalman.KalmanFilter(newTarget.state,
+                                            self.P_0,
+                                            self.Phi,
+                                            self.C,
+                                            self.Gamma,
+                                            self.Q,
+                                            self.R
+                                            ),
+                        P_d=newTarget.P_d,
                         )
         self.__targetList__.append(target)
         self.__associatedMeasurements__.append(set())
@@ -167,21 +171,22 @@ class Tracker():
                 seachToc = time.time() - searchTic
                 predictTic = time.time()
                 for node in leafNodes:
-                    node.predictMeasurement(measurementList.time)
+                    node.predictMeasurement()
                 predictToc = time.time() - predictTic
                 createTic = time.time()
                 floatChunkSize = len(leafNodes) / self.nWorkers
                 workerIterations = 1
                 chunkSize = int(np.ceil(floatChunkSize / workerIterations))
                 self.createComputationTime = 0
-                for nodeIndex, trackHypotheses, newMeasurements, nodeComputationTime in (
+                for nodeIndex, trackHypotheses, newMeasurements in (
                         self.workers.imap_unordered(functools.partial(
-                            addMeasurementToNode, measurementList, scanNumber, self.P_d, self.lambda_ex, self.eta2), zip(leafNodes, range(len(leafNodes))), chunkSize)):
+                            addMeasurementToNode, measurementList, scanNumber, self.lambda_ex, self.eta2),
+                            zip(leafNodes, range(len(leafNodes))), chunkSize)):
                     leafNodes[nodeIndex].trackHypotheses = trackHypotheses
                     for hyp in leafNodes[nodeIndex].trackHypotheses:
                         hyp.parent = leafNodes[nodeIndex]
                     self.__associatedMeasurements__[targetIndex].update(newMeasurements)
-                    self.createComputationTime += nodeComputationTime
+                    # self.createComputationTime += nodeComputationTime
                 createToc = time.time() - createTic
                 addToc = 0
                 self.leafNodeTimeList.append([seachToc, predictToc, createToc, addToc])
@@ -190,10 +195,23 @@ class Tracker():
                     1 == targetStartDepth, "Multithreaded 'processNewMeasurements' did not increase the target depth"
                 target._checkReferenceIntegrety()
             else:
-                target.processNewMeasurement(
-                    measurementList, self.__associatedMeasurements__[targetIndex],
-                    scanNumber, self.P_d, self.lambda_ex, self.eta2)
-
+                if True:
+                    target.processNewMeasurementRec(measurementList,
+                                                    self.__associatedMeasurements__[
+                                                        targetIndex],
+                                                    scanNumber,
+                                                    self.lambda_ex,
+                                                    self.eta2)
+                else:
+                    targetNodes = target.getLeafNodes()
+                    measurementSet = set()
+                    for node in targetNodes:
+                        node.predictMeasurement()
+                        _, measurementSet = node.gateAndCreateNewHypotheses(
+                            measurementList, scanNumber,
+                            self.lambda_ex, self.eta2)
+                        self.__associatedMeasurements__[
+                            targetIndex].update(measurementSet)
         if self.logTime:
             self.toc[1] = time.time() - self.tic[1]
         if self.parallelize and self.debug:
@@ -251,9 +269,10 @@ class Tracker():
                    sep="")
 
         if kwargs.get("printTime", False):
-            self.printTimeLog()
-            if self.createComputationTime is not None:
-                print("createComputationTime", self.createComputationTime)
+            if self.logTime:
+                self.printTimeLog()
+                # if self.createComputationTime is not None:
+                #     print("createComputationTime", self.createComputationTime)
 
         # Covariance consistance
         if "trueState" in kwargs:
@@ -320,21 +339,21 @@ class Tracker():
         # print("selectedNodes",*selectedNodes, sep = "\n")
         # print("selectedNodesArray",*selectedNodesArray, sep = "\n")
 
-        assert (len(selectedHypotheses) == len(cluster),
-                "__solveOptimumAssociation did not find the correct number of hypotheses")
-        assert (len(selectedNodes) == len(cluster),
-                "__solveOptimumAssociation did not find the correct number of nodes")
-        assert (len(selectedHypotheses) == len(set(selectedHypotheses)),
-                "_solveOptimumAssociation selected two or more equal hyptheses")
-        assert (len(selectedNodes) == len(set(selectedNodes)),
-                "_solveOptimumAssociation found same node in more than one track in selectedNodes")
-        assert (len(selectedNodesArray) == len(set(selectedNodesArray)),
-                "_solveOptimumAssociation found same node in more than one track in selectedNodesArray")
+        # assert (len(selectedHypotheses) == len(cluster),
+        #        "__solveOptimumAssociation did not find the correct number of hypotheses")
+        assert len(selectedNodes) == len(cluster), \
+            "did not find the correct number of nodes"
+        assert len(selectedHypotheses) == len(set(selectedHypotheses)), \
+            "selected two or more equal hyptheses"
+        assert len(selectedNodes) == len(set(selectedNodes)), \
+            "found same node in more than one track in selectedNodes"
+        assert len(selectedNodesArray) == len(set(selectedNodesArray)), \
+            "found same node in more than one track in selectedNodesArray"
         return selectedNodesArray
 
     def _getHypInCluster(self, cluster):
         def nLeafNodes(target):
-            if not target.trackHypotheses:
+            if target.trackHypotheses is None:
                 return 1
             else:
                 return sum(nLeafNodes(hyp) for hyp in target.trackHypotheses)
@@ -347,7 +366,7 @@ class Tracker():
     def _createA1(self, nRow, nCol, cluster):
         def recActiveMeasurement(target, A1, measurementList,
                                  activeMeasurements, hypothesisIndex):
-            if len(target.trackHypotheses) == 0:
+            if target.trackHypotheses is None:
                 # we are at a real measurement
                 if ((target.measurementNumber != 0) and
                         (target.measurementNumber is not None)):
@@ -402,7 +421,7 @@ class Tracker():
 
     def _createC(self, cluster):
         def getTargetScore(target, scoreArray):
-            if len(target.trackHypotheses) == 0:
+            if target.trackHypotheses is None:
                 scoreArray.append(target.cummulativeNLLR)
             else:
                 for hyp in target.trackHypotheses:
@@ -414,7 +433,7 @@ class Tracker():
 
     def _hypotheses2Nodes(self, selectedHypotheses, cluster):
         def recDFS(target, selectedHypothesis, nodeList, counter):
-            if len(target.trackHypotheses) == 0:
+            if target.trackHypotheses is None:
                 if counter[0] in selectedHypotheses:
                     nodeList.append(target)
                 counter[0] += 1
@@ -517,7 +536,7 @@ class Tracker():
 
     def plotValidationRegionFromRoot(self, stepsBack=1):
         def recPlotValidationRegionFromTarget(target, eta2, stepsBack):
-            if not target.trackHypotheses:
+            if target.trackHypotheses is None:
                 target.plotValidationRegion(eta2, stepsBack)
             else:
                 for hyp in target.trackHypotheses:
@@ -533,7 +552,7 @@ class Tracker():
     def plotHypothesesTrack(self, **kwargs):
         def recPlotHypothesesTrack(target, track=[], **kwargs):
             newTrack = track[:] + [target.getPosition()]
-            if not target.trackHypotheses:
+            if target.trackHypotheses is None:
                 plt.plot([p.x() for p in newTrack], [p.y()
                                                      for p in newTrack], "--", **kwargs)
             else:
@@ -564,8 +583,9 @@ class Tracker():
                         if measurementID not in plottedMeasurements:
                             target.plotMeasurement(**kwargs)
                             plottedMeasurements.add(measurementID)
-            for hyp in target.trackHypotheses:
-                recPlotMeasurements(hyp, plottedMeasurements, plotReal, plotDummy)
+            if target.trackHypotheses is not None:
+                for hyp in target.trackHypotheses:
+                    recPlotMeasurements(hyp, plottedMeasurements, plotReal, plotDummy)
 
         if not (("real" in kwargs) or ("dummy" in kwargs)):
             return
@@ -631,11 +651,13 @@ class Tracker():
             from termcolor import colored, cprint
             totalTime = self.toc[0]
             sumTime = sum(self.toc[1:4])
-            deviation = ((totalTime - sumTime) / totalTime) > 0.015
+            deviation = ((totalTime - sumTime) / totalTime) > 0.02
             nNodes = sum([target.getNumOfNodes() for target in self.__targetList__])
             cprint(
-                "Total time {0:6.0f}/{1:6.0f}ms".format(self.toc[0] * 1000, sumTime * 1000) +
-                '  Process({0:3.0f}/{1:5.0f}) {2:6.1f}ms'.format(len(self.__scanHistory__[-1].measurements), nNodes, self.toc[1] * 1000) +
+                '{:3.0f} '.format(len(self.__scanHistory__)) +
+                'Total time {0:6.0f}ms'.format(self.toc[0] * 1000) +
+                '  Process({0:3.0f}/{1:5.0f}) {2:6.1f}ms'.format(
+                    len(self.__scanHistory__[-1].measurements), nNodes, self.toc[1] * 1000) +
                 '  Cluster {:5.1f}ms'.format(self.toc[2] * 1000) +
                 '  Optim({0:g}) {1:5.1f}ms'.format(self.nOptimSolved, self.toc[3] * 1000) +
                 '  Prune {:5.1f}ms'.format(self.toc[4] * 1000),

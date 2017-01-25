@@ -9,14 +9,21 @@ class SimTarget:
         p = kwargs.get('position')
         v = kwargs.get('velocity')
         t = kwargs.get('time')
-        if p and v and t is not None:
+        P_d = kwargs.get('P_d')
+        if None not in [p, v, t, P_d]:
             self.state = np.array([p.x, p.y, v.x, v.y])
             self.time = t
+            self.P_d = P_d
         elif len(args) == 2:
             self.state = args[0]
             self.time = args[1]
+            self.P_d = None
+        elif len(args) == 3:
+            self.state = args[0]
+            self.time = args[1]
+            self.P_d = args[2]
         else:
-            print("Invalid arguments to SimTarget")
+            raise ValueError("Invalid arguments to SimTarget")
 
     def __str__(self):
         return ('Pos: ({0: 6.1f},{1: 6.1f})'.format(self.state[0], self.state[1]) + " " +
@@ -41,7 +48,7 @@ class SimTarget:
     def calculateNextState(self, timeStep, Phi, Q, Gamma):
         w = np.random.multivariate_normal(np.zeros(2), Q)
         nextState = Phi.dot(self.state) + Gamma.dot(w.T)
-        return SimTarget(nextState, self.time + timeStep)
+        return SimTarget(nextState, self.time + timeStep, self.P_d)
 
     def positionWithNoiseAndLoss(self, H,  R, P_d=1, p0=Position(0, 0), radarRange=None):
         if np.random.uniform() < P_d:
@@ -54,7 +61,7 @@ class SimTarget:
             return _generateCartesianClutter(p0, radarRange)
 
 
-def generateInitialTargets(randomSeed, numOfTargets, centerPosition, radarRange, meanSpeed):
+def generateInitialTargets(randomSeed, numOfTargets, centerPosition, radarRange, meanSpeed, P_d):
     np.random.seed(randomSeed)
     initialTime = time.time()
     initialList = []
@@ -68,7 +75,7 @@ def generateInitialTargets(randomSeed, numOfTargets, centerPosition, radarRange,
         speed = np.random.choice(speeds)
         vx, vy = _pol2cart(heading, speed)
         V0 = Velocity(vx, vy)
-        target = SimTarget(np.array([px, py, vx, vy]), initialTime)
+        target = SimTarget(np.array([px, py, vx, vy]), initialTime, P_d)
         initialList.append(target)
     return initialList
 
@@ -93,7 +100,7 @@ def simulateScans(randomSeed, simList, H, R, lambda_phi=None, rRange=None, p0=No
     for scan in simList:
         measurementList = MeasurementList(scan[0].time)
         measurementList.measurements = [target.positionWithNoiseAndLoss(
-            H, R, kwargs.get("P_d", 1), p0, rRange) for target in scan]
+            H, R, target.P_d, p0, rRange) for target in scan]
         if (lambda_phi is not None) and (rRange is not None) and (p0 is not None):
             nClutter = np.random.poisson(lClutter)
             for i in range(nClutter):
