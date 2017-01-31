@@ -9,19 +9,9 @@ Spring 2017
 from __future__ import print_function
 
 import pymht.utils.helpFunctions as hpf
-try:
-    from pymht.cTarget import Target
-    print("Using cTarget")
-except ImportError:
-    from pymht.pyTarget import Target
-    print("Using pyTarget")
-try:
-    raise ImportError
-    import pymht.utils.cKalman as kalman
-    print("Using cKalman")
-except ImportError:
-    print("Using pyKalman")
-    import pymht.utils.pyKalman as kalman
+import pymht.pyTarget as pyTarget
+import pymht.utils.pyKalman as kalman
+import pymht.utils.cFunctions as cFunc
 import time
 import signal
 import os
@@ -32,6 +22,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import multiprocessing as mp
 from scipy.sparse.csgraph import connected_components
+from concurrent.futures import ThreadPoolExecutor
 
 
 def _setHighPriority():
@@ -108,7 +99,7 @@ class Tracker():
         self.pruneThreshold = kwargs.get("pruneThreshold")
 
         # State space model
-        self.Phi = Phi
+        self.A = Phi
         self.C = C
         self.Gamma = Gamma
         self.P_0 = P_0
@@ -131,18 +122,20 @@ class Tracker():
             self.workers.join()
 
     def initiateTarget(self, newTarget):
-        target = Target(newTarget.time,
-                        len(self.__scanHistory__),
-                        kalman.KalmanFilter(newTarget.state,
-                                            self.P_0,
-                                            self.Phi,
-                                            self.C,
-                                            self.Gamma,
-                                            self.Q,
-                                            self.R
-                                            ),
-                        P_d=newTarget.P_d,
-                        )
+        target = pyTarget.Target(newTarget.time,
+                                 len(self.__scanHistory__),
+                                 newTarget.state,
+                                 self.P_0,
+                                 # kalman.KalmanFilter(newTarget.state,
+                                 #                     self.P_0,
+                                 #                     self.A,
+                                 #                     self.C,
+                                 #                     self.Gamma,
+                                 #                     self.Q,
+                                 #                     self.R
+                                 #                     ),
+                                 P_d=newTarget.P_d,
+                                 )
         self.__targetList__.append(target)
         self.__associatedMeasurements__.append(set())
         self.__trackNodes__ = np.append(self.__trackNodes__, target)
@@ -160,6 +153,8 @@ class Tracker():
         nMeas = len(measurementList.measurements)
         nTargets = len(self.__targetList__)
         scanNumber = len(self.__scanHistory__)
+        scanTime = measurementList.time
+        measDim = self.C.shape[0]
 
         if self.logTime:
             self.leafNodeTimeList = []
@@ -180,7 +175,11 @@ class Tracker():
                 self.createComputationTime = 0
                 for nodeIndex, trackHypotheses, newMeasurements in (
                         self.workers.imap_unordered(functools.partial(
-                            addMeasurementToNode, measurementList, scanNumber, self.lambda_ex, self.eta2),
+                            addMeasurementToNode,
+                            measurementList,
+                            scanNumber,
+                            self.lambda_ex,
+                            self.eta2),
                             zip(leafNodes, range(len(leafNodes))), chunkSize)):
                     leafNodes[nodeIndex].trackHypotheses = trackHypotheses
                     for hyp in leafNodes[nodeIndex].trackHypotheses:
@@ -191,32 +190,84 @@ class Tracker():
                 addToc = 0
                 self.leafNodeTimeList.append([seachToc, predictToc, createToc, addToc])
                 targetEndDepth = target.depth()
-                assert targetEndDepth - \
-                    1 == targetStartDepth, "Multithreaded 'processNewMeasurements' did not increase the target depth"
+                assert targetEndDepth - 1 == targetStartDepth, \
+                    "'processNewMeasurements' did not increase the target depth"
                 target._checkReferenceIntegrety()
             else:
-                if True:
-                    target.processNewMeasurementRec(measurementList,
-                                                    self.__associatedMeasurements__[
-                                                        targetIndex],
-                                                    scanNumber,
-                                                    self.lambda_ex,
-                                                    self.eta2)
+                if kwargs.get('R', False):
+                    target.processNewMeasurementRec(
+                        measurementList,
+                        self.__associatedMeasurements__[targetIndex],
+                        scanNumber,
+                        self.lambda_ex,
+                        self.eta2,
+                        (self.A, self.C, self.Q, self.R, self.Gamma)
+                    )
                 else:
                     targetNodes = target.getLeafNodes()
-                    measurementSet = set()
-                    for node in targetNodes:
-                        node.predictMeasurement()
-                        _, measurementSet = node.gateAndCreateNewHypotheses(
-                            measurementList, scanNumber,
-                            self.lambda_ex, self.eta2)
-                        self.__associatedMeasurements__[
-                            targetIndex].update(measurementSet)
+                    nNodes = len(targetNodes)
+
+                    x_bar_list, P_bar_list, z_hat_list, S_list, S_inv_list, K_list, P_hat_list = self._predictPrecalcBulk(
+                        targetNodes)
+
+                    z_list = measurementList.measurements
+                    assert z_list.shape[1] == measDim
+
+                    z_tilde_list = kalman.z_tilde(z_list, z_hat_list, nNodes, measDim)
+                    assert z_tilde_list.shape == (nNodes, nMeas, measDim)
+
+                    nis = kalman.normalizedInnovationSquared(z_tilde_list, S_inv_list)
+                    assert nis.shape == (nNodes, nMeas,)
+
+                    gatedFilter = nis <= self.eta2
+                    assert gatedFilter.shape == (nNodes, nMeas)
+
+                    gatedIndeciesList = [np.nonzero(gatedFilter[row])[0]
+                                         for row in range(nNodes)]
+                    assert len(gatedIndeciesList) == nNodes
+
+                    gatedMeasurementsList = [np.array(z_list[gatedIndecies])
+                                             for gatedIndecies in gatedIndeciesList]
+                    assert len(gatedMeasurementsList) == nNodes
+                    assert all([m.shape[1] == measDim for m in gatedMeasurementsList])
+
+                    gated_z_tilde_list = [z_tilde_list[i, gatedIndeciesList[i]]
+                                          for i in range(nNodes)]
+                    assert len(gated_z_tilde_list) == nNodes
+
+                    gated_x_hat_list = [kalman.numpyFilter(
+                        x_bar_list[i], K_list[i], gated_z_tilde_list[i])
+                        for i in range(nNodes)]
+                    assert len(gated_x_hat_list) == nNodes
+
+                    nllrList = [kalman.nllr(self.lambda_ex,
+                                            targetNodes[i].P_d,
+                                            gated_z_tilde_list[i],
+                                            S_list[i],
+                                            S_inv_list[i])
+                                for i in range(nNodes)]
+                    assert len(nllrList) == nNodes
+
+                    for i, node in enumerate(targetNodes):
+                        node.spawnNewNodes(scanTime,
+                                           scanNumber,
+                                           x_bar_list[i],
+                                           P_bar_list[i],
+                                           gatedIndeciesList[i],
+                                           gatedMeasurementsList[i],
+                                           gated_x_hat_list[i],
+                                           P_hat_list[i],
+                                           nllrList[i])
+
+                    for i in range(nNodes):
+                        for measurementIndex in gatedIndeciesList[i]:
+                            self.__associatedMeasurements__[targetIndex].update(
+                                {(scanNumber, measurementIndex + 1)})
+
         if self.logTime:
             self.toc[1] = time.time() - self.tic[1]
         if self.parallelize and self.debug:
             print(*[round(e) for e in self.leafNodeTimeList], sep="ms\n", end="ms\n")
-
         if kwargs.get("printAssociation", False):
             print(*__associatedMeasurements__, sep="\n", end="\n\n")
 
@@ -279,6 +330,30 @@ class Tracker():
             xTrue = kwargs.get("trueState")
             return self._compareTracksWithTruth(xTrue)
 
+    def _predictPrecalcBulk(self, targetNodes):
+        nNodes = len(targetNodes)
+        measDim, nStates = self.C.shape
+        x_0_list = np.array([target.x_0 for target in targetNodes],
+                            ndmin=2)
+        P_0_list = np.array([target.P_0 for target in targetNodes],
+                            ndmin=3)
+        assert x_0_list.shape == (nNodes, nStates)
+        assert P_0_list.shape == (nNodes, nStates, nStates)
+
+        x_bar_list, P_bar_list, z_hat_list, S_list, S_inv_list, K_list, P_hat_list = kalman.numpyPredict(
+            self.A, self.C, self.Q, self.R, self.Gamma, x_0_list, P_0_list)
+
+        assert x_bar_list.shape == x_0_list.shape
+        assert x_bar_list.ndim == 2
+        assert P_bar_list.shape == P_0_list.shape
+        assert S_list.shape == (nNodes, measDim, measDim)
+        assert S_inv_list.shape == (nNodes, measDim, measDim)
+        assert K_list.shape == (nNodes, nStates, measDim)
+        assert P_hat_list.shape == P_bar_list.shape
+        assert z_hat_list.shape == (nNodes, measDim)
+
+        return x_bar_list, P_bar_list, z_hat_list, S_list, S_inv_list, K_list, P_hat_list
+
     def _compareTracksWithTruth(self, xTrue):
         return [	(target.filteredStateMean - xTrue[targetIndex].state).T.dot(
             np.linalg.inv(target.filteredStateCovariance)).dot(
@@ -302,7 +377,8 @@ class Tracker():
                 adjacencyMatrix[targetIndex, measurementIndex +
                                 nTargets] = (measurement in targetSet)
         (nClusters, labels) = connected_components(adjacencyMatrix)
-        return [np.where(labels[:nTargets] == clusterIndex)[0] for clusterIndex in range(nClusters)]
+        return [np.where(labels[:nTargets] == clusterIndex)[0]
+                for clusterIndex in range(nClusters)]
 
     def getTrackNodes(self):
         return self.__trackNodes__
@@ -325,22 +401,24 @@ class Tracker():
         selectedNodes = self._hypotheses2Nodes(selectedHypotheses, cluster)
         selectedNodesArray = np.array(selectedNodes)
         # print("Solving optimal association in cluster with targets",cluster,",   \t",
-        # sum(nHypInClusterArray)," hypotheses and",nRealMeasurementsInCluster,"real measurements.",sep = " ")
+        # sum(nHypInClusterArray, " hypotheses and",
+        #     nRealMeasurementsInCluster, "real measurements.", sep=" ")
         # print("nHypothesesInCluster",sum(nHypInClusterArray))
         # print("nRealMeasurementsInCluster", nRealMeasurementsInCluster)
         # print("nTargetsInCluster", len(cluster))
         # print("nHypInClusterArray",nHypInClusterArray)
         # print("c =", c)
         # print("A1", A1, sep = "\n")
-        # print("size(A1)", A1.shape, "\t=>\t", nRealMeasurementsInCluster*sum(nHypInClusterArray))
+        # print("size(A1)", A1.shape, "\t=>\t",
+        #       nRealMeasurementsInCluster * sum(nHypInClusterArray))
         # print("A2", A2, sep = "\n")
         # print("measurementList",measurementList)
         # print("selectedHypotheses",selectedHypotheses)
         # print("selectedNodes",*selectedNodes, sep = "\n")
         # print("selectedNodesArray",*selectedNodesArray, sep = "\n")
 
-        # assert (len(selectedHypotheses) == len(cluster),
-        #        "__solveOptimumAssociation did not find the correct number of hypotheses")
+        assert len(selectedHypotheses) == len(cluster), \
+            "__solveOptimumAssociation did not find the correct number of hypotheses"
         assert len(selectedNodes) == len(cluster), \
             "did not find the correct number of nodes"
         assert len(selectedHypotheses) == len(set(selectedHypotheses)), \
@@ -406,8 +484,11 @@ class Tracker():
         # TODO:
         # http://stackoverflow.com/questions/15148496/python-passing-an-integer-by-reference
         for targetIndex in cluster:
-            recActiveMeasurement(
-                self.__targetList__[targetIndex], A1, measurementList, activeMeasurements, hypothesisIndex)
+            recActiveMeasurement(self.__targetList__[targetIndex],
+                                 A1,
+                                 measurementList,
+                                 activeMeasurements,
+                                 hypothesisIndex)
         return A1, measurementList
 
     def _createA2(self, nTargetsInCluster, nHypInClusterArray):
@@ -489,15 +570,16 @@ class Tracker():
             if stepsLeft <= 0:
                 if node.parent is not None:
                     if self.__targetList__[targetIndex].scanNumber != node.scanNumber - 1:
-                        raise ValueError("nScanPruning1: from scanNumber", self.__targetList__[
-                                         targetIndex].scanNumber, "->", node.scanNumber)
+                        raise ValueError("nScanPruning1: from scanNumber",
+                                         self.__targetList__[targetIndex].scanNumber,
+                                         "->", node.scanNumber
+                                         )
                     changed = (self.__targetList__[targetIndex] != node)
-                    assert self.__targetList__[targetIndex].depth() == node.parent.depth(
-                    ), "nScanPrune: Inconsistent target.depth() and target.child.parent.depth()"
-
-                    self.__targetList__[targetIndex] = node  # Checked
-                    node.parent._pruneAllHypothesisExeptThis(node)  # Checked
-                    node.recursiveSubtractScore(node.cummulativeNLLR)  # Checked
+                    assert self.__targetList__[targetIndex].depth() == node.parent.depth(), \
+                        "nScanPrune: Inconsistent target.depth() and target.child.parent.depth()"
+                    self.__targetList__[targetIndex] = node
+                    node.parent._pruneAllHypothesisExeptThis(node)
+                    node.recursiveSubtractScore(node.cummulativeNLLR)
                     if node.parent.scanNumber != node.scanNumber - 1:
                         raise ValueError("nScanPruning2: from scanNumber",
                                          node.parent.scanNumber, "->", node.scanNumber)
@@ -522,17 +604,17 @@ class Tracker():
                 node.pruneSimilarState(threshold)
 
     def _checkTrackerIntegrety(self):
-        assert len(self.__trackNodes__) == len(
-            self.__targetList__), "There are not the same number trackNodes as targets"
-        assert len(self.__targetList__) == len(set(self.__targetList__)
-                                               ), "There are copies of targets in the target list"
-        assert len(self.__trackNodes__) == len(set(self.__trackNodes__)
-                                               ), "There are copies of track nodes in __trackNodes__"
+        assert len(self.__trackNodes__) == len(self.__targetList__), \
+            "There are not the same number trackNodes as targets"
+        assert len(self.__targetList__) == len(set(self.__targetList__)), \
+            "There are copies of targets in the target list"
+        assert len(self.__trackNodes__) == len(set(self.__trackNodes__)), \
+            "There are copies of track nodes in __trackNodes__"
         for target in self.__targetList__:
             target._checkScanNumberIntegrety()
             target._checkReferenceIntegrety()
-        assert len({node.scanNumber for node in self.__trackNodes__}
-                   ) == 1, "There are inconsistency in trackNodes scanNumber"
+        assert len({node.scanNumber for node in self.__trackNodes__}) == 1, \
+            "s"  # "there are inconsistency in trackNodes scanNumber"
 
     def plotValidationRegionFromRoot(self, stepsBack=1):
         def recPlotValidationRegionFromTarget(target, eta2, stepsBack):
@@ -623,8 +705,8 @@ class Tracker():
                      initialTarget.kalmanFilter.x_hat[1],
                      "k+")
             ax = plt.subplot(111)
-            normVelocity = (
-                initialTarget.kalmanFilter.x_hat[2:4] / np.linalg.norm(initialTarget.kalmanFilter.x_hat[2:4]))
+            normVelocity = (initialTarget.kalmanFilter.x_hat[2:4] /
+                            np.linalg.norm(initialTarget.kalmanFilter.x_hat[2:4]))
             offset = 0.1 * normVelocity
             position = initialTarget.kalmanFilter.x_hat[0:2] - offset
             ax.text(position[0],
@@ -638,6 +720,7 @@ class Tracker():
         return itertools.cycle(self.colors)
 
     def printTargetList(self, **kwargs):
+        np.set_printoptions(precision=2, suppress=True)
         print("TargetList:")
         for targetIndex, target in enumerate(self.__targetList__):
             if kwargs.get("backtrack", False):
@@ -649,22 +732,23 @@ class Tracker():
     def printTimeLog(self):
         if self.logTime:
             from termcolor import colored, cprint
+            self.toc *= 1000
             totalTime = self.toc[0]
             sumTime = sum(self.toc[1:4])
-            deviation = ((totalTime - sumTime) / totalTime) > 0.02
+            deviation = ((totalTime - sumTime) / totalTime) > 0.05
             nNodes = sum([target.getNumOfNodes() for target in self.__targetList__])
-            cprint(
-                '{:3.0f} '.format(len(self.__scanHistory__)) +
-                'Total time {0:6.0f}ms'.format(self.toc[0] * 1000) +
-                '  Process({0:3.0f}/{1:5.0f}) {2:6.1f}ms'.format(
-                    len(self.__scanHistory__[-1].measurements), nNodes, self.toc[1] * 1000) +
-                '  Cluster {:5.1f}ms'.format(self.toc[2] * 1000) +
-                '  Optim({0:g}) {1:5.1f}ms'.format(self.nOptimSolved, self.toc[3] * 1000) +
-                '  Prune {:5.1f}ms'.format(self.toc[4] * 1000),
-                'red' if deviation else None,
-                attrs=['bold'] if 'period' in self.kwargs and totalTime > self.kwargs.get(
-                    'period') * 0.5 else []
-            )
-
+            nMeasurements = len(self.__scanHistory__[-1].measurements)
+            cprint(('{:3.0f} '.format(len(self.__scanHistory__)) +
+                    'Total time {0:6.0f}ms'.format(totalTime) +
+                    '  Process({0:3.0f}/{1:5.0f}) {2:6.1f}ms'.format(nMeasurements,
+                                                                     nNodes,
+                                                                     self.toc[1]) +
+                    '  Cluster {:5.1f}ms'.format(self.toc[2]) +
+                    '  Optim({0:g}) {1:6.1f}ms'.format(self.nOptimSolved, self.toc[3]) +
+                    '  Prune {:5.1f}ms'.format(self.toc[4])),
+                   'red' if deviation else None,
+                   attrs=(['bold'] if 'period' in self.kwargs and totalTime >
+                          self.kwargs.get('period') * 500 else [])
+                   )
         else:
             print("Logging not activated")

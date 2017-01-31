@@ -72,29 +72,29 @@ def printHypothesesScore(targetList):
                "\tMeas",	target.measurement, sep="")
 
 
-def nllr(*args):
-    if len(args) == 1:
-        P_d = args[0]
-        if P_d == 1:
-            return -np.log(1e-6)
-        return -np.log(1 - P_d)
-    elif len(args) == 5:
-        P_d = args[0]
-        measurementResidual = args[1]
-        lambda_ex = args[2]
-        covariance = args[3]
-        invCovariance = args[4]
-        if (	(measurementResidual is not None) and
-                (lambda_ex is not None) and
-                (covariance is not None) and
-                (invCovariance is not None)):
-            if lambda_ex == 0:
-                print("RuntimeError('lambda_ex' can not be zero.)")
-                lambda_ex += 1e-20
-            return (0.5 * (measurementResidual.T.dot(invCovariance).dot(measurementResidual))
-                    + np.log((lambda_ex * np.sqrt(np.linalg.det(2 * np.pi * covariance))) / P_d))
-    else:
-        raise ValueError("nllr() takes either 1 or 5 arguments (", len(args), ") given")
+# def nllr(*args):
+#     if len(args) == 1:
+#         P_d = args[0]
+#         if P_d == 1:
+#             return -np.log(1e-6)
+#         return -np.log(1 - P_d)
+#     elif len(args) == 5:
+#         P_d = args[0]
+#         measurementResidual = args[1]
+#         lambda_ex = args[2]
+#         covariance = args[3]
+#         invCovariance = args[4]
+#         if (	(measurementResidual is not None) and
+#                 (lambda_ex is not None) and
+#                 (covariance is not None) and
+#                 (invCovariance is not None)):
+#             if lambda_ex == 0:
+#                 print("RuntimeError('lambda_ex' can not be zero.)")
+#                 lambda_ex += 1e-20
+#             return (0.5 * (measurementResidual.T.dot(invCovariance).dot(measurementResidual))
+#                     + np.log((lambda_ex * np.sqrt(np.linalg.det(2 * np.pi * covariance))) / P_d))
+#     else:
+#         raise ValueError("nllr() takes either 1 or 5 arguments (", len(args), ") given")
 
 
 def backtrackMeasurementsIndices(selectedNodes, steps=None):

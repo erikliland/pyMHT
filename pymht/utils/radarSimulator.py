@@ -11,7 +11,7 @@ class SimTarget:
         t = kwargs.get('time')
         P_d = kwargs.get('P_d')
         if None not in [p, v, t, P_d]:
-            self.state = np.array([p.x, p.y, v.x, v.y])
+            self.state = np.array([p.x, p.y, v.x, v.y], dtype=np.double)
             self.time = t
             self.P_d = P_d
         elif len(args) == 2:
@@ -65,7 +65,7 @@ def generateInitialTargets(randomSeed, numOfTargets, centerPosition, radarRange,
     np.random.seed(randomSeed)
     initialTime = time.time()
     initialList = []
-    speeds = np.array([1, 10, 12, 15, 28, 35]) * 0.5  # ~knots to m/s
+    speeds = np.array([1, 10, 12, 15, 28, 35], dtype=np.double) * 0.5  # ~knots to m/s
     for targetIndex in range(numOfTargets):
         heading = np.random.uniform(0, 360)
         distance = np.random.uniform(0, radarRange * 0.8)
@@ -75,7 +75,7 @@ def generateInitialTargets(randomSeed, numOfTargets, centerPosition, radarRange,
         speed = np.random.choice(speeds)
         vx, vy = _pol2cart(heading, speed)
         V0 = Velocity(vx, vy)
-        target = SimTarget(np.array([px, py, vx, vy]), initialTime, P_d)
+        target = SimTarget(np.array([px, py, vx, vy], dtype=np.double), initialTime, P_d)
         initialList.append(target)
     return initialList
 
@@ -108,7 +108,8 @@ def simulateScans(randomSeed, simList, H, R, lambda_phi=None, rRange=None, p0=No
                 measurementList.measurements.append(clutter)
         if kwargs.get("shuffle", True):
             np.random.shuffle(measurementList.measurements)
-        measurementList.measurements = np.array(measurementList.measurements, ndmin=2)
+        measurementList.measurements = np.array(
+            measurementList.measurements, ndmin=2, dtype=np.double)
         scanList.append(measurementList)
     return scanList
 
