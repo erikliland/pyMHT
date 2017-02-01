@@ -23,6 +23,7 @@ import numpy as np
 import multiprocessing as mp
 from scipy.sparse.csgraph import connected_components
 from concurrent.futures import ThreadPoolExecutor
+from ortools.linear_solver import pywraplp
 
 
 def _setHighPriority():
@@ -46,6 +47,20 @@ def addMeasurementToNode(measurementList, scanNumber, lambda_ex, eta2, params):
         target.gateAndCreateNewHypotheses(
             measurementList, scanNumber, lambda_ex, eta2))
     return nodeIndex, trackHypotheses, newMeasurements
+
+
+def _getSelectedHyp1(p, threshold=0):
+    hyp = [int(v.name[2:])
+           for v in p.variables() if abs(v.varValue - 1) <= threshold]
+    hyp.sort()
+    return hyp
+
+
+def _getSelectedHyp2(p, threshold=0):
+    hyp = [int(v[0][2:]) for v in p.variablesDict().items()
+           if abs(v[1].varValue - 1) <= threshold]
+    hyp.sort()
+    return hyp
 
 
 class Tracker():
@@ -397,9 +412,12 @@ class Tracker():
         t1 = time.time() - t0
         # print("matricesTime\t", round(t1,3))
 
-        selectedHypotheses = self._solveBLP(A1, A2, C, len(cluster))
+        selectedHypotheses0 = self._solveBLP_OR_TOOLS(A1, A2, C, len(cluster))
+        selectedHypotheses = self._solveBLP_PULP(A1, A2, C, len(cluster))
+        assert selectedHypotheses0 == selectedHypotheses
         selectedNodes = self._hypotheses2Nodes(selectedHypotheses, cluster)
         selectedNodesArray = np.array(selectedNodes)
+        assert False
         # print("Solving optimal association in cluster with targets",cluster,",   \t",
         # sum(nHypInClusterArray, " hypotheses and",
         #     nRealMeasurementsInCluster, "real measurements.", sep=" ")
@@ -528,41 +546,124 @@ class Tracker():
                    selectedHypotheses, nodeList, counter)
         return nodeList
 
-    def _solveBLP(self, A1, A2, f, nHyp):
+    def _solveBLP_OR_TOOLS(self, A1, A2, f, nHyp):
+
+        tic0 = time.time()
+        nScores = len(f)
         (nMeas, nHyp) = A1.shape
         (nTargets, _) = A2.shape
+
+        # Check matrix and vector dimension
+        assert nScores == nHyp
+        assert A1.shape[1] == A2.shape[1]
+
+        # Initiate solver
+        solver = pywraplp.Solver(
+            'MHT-solver', pywraplp.Solver.CBC_MIXED_INTEGER_PROGRAMMING)
+        # SCIP_MIXED_INTEGER_PROGRAMMING
+        # CBC_MIXED_INTEGER_PROGRAMMING
+        # GLPK_MIXED_INTEGER_PROGRAMMING
+
+        # Declate optimization variables
+        # tau = {}
+        # for i in range(nHyp):
+        #     tau[i] = solver.BoolVar('tau' + str(i))
+        tau = {i: solver.BoolVar("tau" + str(i)) for i in range(nHyp)}
+        # tau = [solver.BoolVar("tau" + str(i)) for i in range(nHyp)]
+        # Set objective
+        solver.Minimize(solver.Sum([f[i] * tau[i] for i in range(nHyp)]))
+
+        tempMatrix = [[A1[row, col] * tau[col] for col in range(nHyp) if A1[row, col]]
+                      for row in range(nMeas)]
+        toc0 = time.time() - tic0
+
+        def setConstaints(solver, nMeas, nTargets, nHyp, tempMatrix, A2):
+            print("nMeas", nMeas)  # ~21
+            print("nTargets", nTargets)  # ~2
+            print("nHyp", nHyp)  # ~2788
+
+            # <<< Problem child >>>
+            for row in range(nMeas):
+                solver.Add(solver.Sum(tempMatrix[row]) <= 1)
+            # <<< Problem child >>>
+
+            for row in range(nTargets):
+                solver.Add(solver.Sum([A2[row, col] * tau[col]
+                                       for col in range(nHyp) if A2[row, col]]) == 1)
+        tic1 = time.time()
+        # Set constaints
+        from timeit import default_timer as timer
+        import cProfile
+        import pstats
+        cProfile.runctx("setConstaints(solver, nMeas, nTargets, nHyp, tempMatrix, A2)",
+                        globals(), locals(), 'blpProfile.prof')
+
+        # setConstaints(solver, nMeas, nTargets, nHyp, tempMatrix, A2)
+        toc1 = time.time() - tic1
+
+        tic2 = time.time()
+        # Solving optimization problem
+        result_status = solver.Solve()
+        assert result_status == pywraplp.Solver.OPTIMAL
+        # print("Optim Time = ", solver.WallTime(), " milliseconds")
+        toc2 = time.time() - tic2
+
+        tic3 = time.time()
+        selectedHypotheses = [i for i in range(nHyp)
+                              if tau[i].solution_value() > 0.]
+        assert len(selectedHypotheses) == nTargets
+        toc3 = time.time() - tic3
+
+        print('_solveBLP_OR_TOOLS ({0:4.0f}|{1:4.0f}|{2:4.0f}|{3:4.0f})ms = {4:4.0f}'.format(
+            toc0 * 1000, toc1 * 1000, toc2 * 1000, toc3 * 1000, (toc0 + toc1 + toc2 + toc3) * 1000))
+        p = pstats.Stats('blpProfile.prof')
+        p.strip_dirs().sort_stats('time').print_stats(20)
+        p.strip_dirs().sort_stats('cumulative').print_stats(20)
+        return selectedHypotheses
+
+    def _solveBLP_PULP(self, A1, A2, f, nHyp):
+
+        tic0 = time.time()
+        nScores = len(f)
+        (nMeas, nHyp) = A1.shape
+        (nTargets, _) = A2.shape
+
+        # Check matrix and vector dimension
+        assert nScores == nHyp
+        assert A1.shape[1] == A2.shape[1]
+
+        # Initialize solver
         prob = pulp.LpProblem("Association problem", pulp.LpMinimize)
         x = pulp.LpVariable.dicts("x", range(nHyp), 0, 1, pulp.LpBinary)
         c = pulp.LpVariable.dicts("c", range(nHyp))
         for i in range(len(f)):
             c[i] = f[i]
         prob += pulp.lpSum(c[i] * x[i] for i in range(nHyp))
+        toc0 = time.time() - tic0
+
+        tic1 = time.time()
         for row in range(nMeas):
             prob += pulp.lpSum([A1[row, col] * x[col]
                                 for col in range(nHyp) if A1[row, col]]) <= 1
         for row in range(nTargets):
             prob += pulp.lpSum([A2[row, col] * x[col]
                                 for col in range(nHyp) if A2[row, col]]) == 1
-        tic = time.time()
+        toc1 = time.time() - tic1
+
+        tic2 = time.time()
         sol = prob.solve(self.solver)
-        toc = time.time() - tic
+        toc2 = time.time() - tic2
 
-        def getSelectedHyp1(p, threshold=0):
-            hyp = [int(v.name[2:])
-                   for v in p.variables() if abs(v.varValue - 1) <= threshold]
-            hyp.sort()
-            return hyp
-
-        def getSelectedHyp2(p, threshold=0):
-            hyp = [int(v[0][2:]) for v in p.variablesDict().items()
-                   if abs(v[1].varValue - 1) <= threshold]
-            hyp.sort()
-            return hyp
+        tic3 = time.time()
 
         for threshold in [0, 1e-10, 1e-8, 1e-6, 1e-4, 1e-2]:
-            selectedHypotheses = getSelectedHyp2(prob, threshold)
+            selectedHypotheses = _getSelectedHyp2(prob, threshold)
             if len(selectedHypotheses) == nHyp:
                 break
+        toc3 = time.time() - tic3
+
+        print('_solveBLP_PULP     ({0:4.0f}|{1:4.0f}|{2:4.0f}|{3:4.0f})ms = {4:4.0f}'.format(
+            toc0 * 1000, toc1 * 1000, toc2 * 1000, toc3 * 1000, (toc0 + toc1 + toc2 + toc3) * 1000))
         return selectedHypotheses
 
     def _nScanPruning(self):
@@ -614,7 +715,7 @@ class Tracker():
             target._checkScanNumberIntegrety()
             target._checkReferenceIntegrety()
         assert len({node.scanNumber for node in self.__trackNodes__}) == 1, \
-            "s"  # "there are inconsistency in trackNodes scanNumber"
+            "there are inconsistency in trackNodes scanNumber"  # he
 
     def plotValidationRegionFromRoot(self, stepsBack=1):
         def recPlotValidationRegionFromTarget(target, eta2, stepsBack):

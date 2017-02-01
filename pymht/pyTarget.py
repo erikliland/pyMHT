@@ -313,9 +313,9 @@ class Target():
             assert self.parent.scanNumber == self.scanNumber - 1,\
                 "self.parent.scanNumber(%r) == self.scanNumber-1(%r)" % (
                     self.parent.scanNumber, self.scanNumber)
-
-        for hyp in self.trackHypotheses:
-            hyp._checkScanNumberIntegrety()
+        if self.trackHypotheses is not None:
+            for hyp in self.trackHypotheses:
+                hyp._checkScanNumberIntegrety()
 
     def _checkReferenceIntegrety(self):
         def recCheckReferenceIntegrety(target):
