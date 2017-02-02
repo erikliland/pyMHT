@@ -568,13 +568,19 @@ class Tracker():
         # tau = {}
         # for i in range(nHyp):
         #     tau[i] = solver.BoolVar('tau' + str(i))
-        tau = {i: solver.BoolVar("tau" + str(i)) for i in range(nHyp)}
-        # tau = [solver.BoolVar("tau" + str(i)) for i in range(nHyp)]
+        # tau = {i: solver.BoolVar("tau" + str(i)) for i in range(nHyp)}
+        tau = [solver.BoolVar("tau" + str(i)) for i in range(nHyp)]
         # Set objective
         solver.Minimize(solver.Sum([f[i] * tau[i] for i in range(nHyp)]))
 
+        # <<< Problem child >>>
         tempMatrix = [[A1[row, col] * tau[col] for col in range(nHyp) if A1[row, col]]
                       for row in range(nMeas)]
+        # <<< Problem child >>>
+        # tempMatrix2 = A1.dot(np.array(tau).T)
+        # print(tempMatrix[0][0])
+        # print(tempMatrix2.shape)
+        # print(tempMatrix2[0][0])
         toc0 = time.time() - tic0
 
         def setConstaints(solver, nMeas, nTargets, nHyp, tempMatrix, A2):
@@ -582,10 +588,8 @@ class Tracker():
             print("nTargets", nTargets)  # ~2
             print("nHyp", nHyp)  # ~2788
 
-            # <<< Problem child >>>
             for row in range(nMeas):
                 solver.Add(solver.Sum(tempMatrix[row]) <= 1)
-            # <<< Problem child >>>
 
             for row in range(nTargets):
                 solver.Add(solver.Sum([A2[row, col] * tau[col]
