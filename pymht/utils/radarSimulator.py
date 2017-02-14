@@ -1,6 +1,7 @@
 import numpy as np
 from pymht.utils.classDefinitions import *
 import time
+import copy
 
 
 class SimTarget:
@@ -11,7 +12,7 @@ class SimTarget:
         t = kwargs.get('time')
         P_d = kwargs.get('P_d')
         if None not in [p, v, t, P_d]:
-            self.state = np.array([p.x, p.y, v.x, v.y], dtype=np.double)
+            self.state = np.array([p.x, p.y, v.x, v.y], dtype=np.float32)
             self.time = t
             self.P_d = P_d
         elif len(args) == 2:
@@ -26,12 +27,13 @@ class SimTarget:
             raise ValueError("Invalid arguments to SimTarget")
 
     def __str__(self):
-        return ('Pos: ({0: 6.1f},{1: 6.1f})'.format(self.state[0], self.state[1]) + " " +
-                'Vel: ({0: 6.1f},{1: 6.1f})'.format(self.state[2], self.state[3]) + " " +
-                'Speed: {:4.1f}m/s'.format(self.speed()))
+        return ('Pos: ({0: 7.1f},{1: 7.1f})'.format(self.state[0], self.state[1]) + " " +
+                'Vel: ({0: 5.1f},{1: 5.1f})'.format(self.state[2], self.state[3]) + " " +
+                'Speed: {0:4.1f}m/s ({1:4.1f}knt)'.format(self.speed('m/s'), self.speed('knots')))
 
-    def __repr__(self):
-        return '({:.3e},{:.3e},{:.3e},{:.3e})'.format(*self.state)
+    # def __repr__(self):
+    #     return str(self) + "\n"
+    #     # return '({:.3e},{:.3e},{:.3e},{:.3e})'.format(*self.state)
 
     def storeString(self):
         return ',{0:.2f},{1:.2f}'.format(*self.state[0:2])
@@ -42,30 +44,31 @@ class SimTarget:
     def velocity(self):
         return Velocity(self.state[2], self.state[3])
 
-    def speed(self):
-        return np.linalg.norm(self.state[2:4])
+    def speed(self, unit='m/s'):
+        speed_ms = np.linalg.norm(self.state[2:4])
+        if unit == 'm/s':
+            return speed_ms
+        elif unit == 'knots':
+            return speed_ms * 1.94384449
+        else:
+            raise ValueError("Unknown unit")
 
     def calculateNextState(self, timeStep, Phi, Q, Gamma):
         w = np.random.multivariate_normal(np.zeros(2), Q)
         nextState = Phi.dot(self.state) + Gamma.dot(w.T)
         return SimTarget(nextState, self.time + timeStep, self.P_d)
 
-    def positionWithNoiseAndLoss(self, H,  R, P_d=1, p0=Position(0, 0), radarRange=None):
-        if np.random.uniform() < P_d:
-            v = np.random.multivariate_normal(np.zeros(2), R)
-            return H.dot(self.state) + v
-            # return Position(state[0], state[1])
-        else:
-            if radarRange is None:
-                raise ValueError("If P_d < 1, p0 and radarRange is needed")
-            return _generateCartesianClutter(p0, radarRange)
+    def positionWithNoise(self, H,  R):
+        v = np.random.multivariate_normal(np.zeros(2), R)
+        return H.dot(self.state) + v
 
 
-def generateInitialTargets(randomSeed, numOfTargets, centerPosition, radarRange, meanSpeed, P_d):
+def generateInitialTargets(randomSeed, numOfTargets, centerPosition,
+                           radarRange, meanSpeed, P_d):
     np.random.seed(randomSeed)
     initialTime = time.time()
     initialList = []
-    speeds = np.array([1, 10, 12, 15, 28, 35], dtype=np.double) * 0.5  # ~knots to m/s
+    speeds = np.array([1, 10, 12, 15, 28, 35], dtype=np.float32) * 0.5  # ~knots to m/s
     for targetIndex in range(numOfTargets):
         heading = np.random.uniform(0, 360)
         distance = np.random.uniform(0, radarRange * 0.8)
@@ -75,7 +78,7 @@ def generateInitialTargets(randomSeed, numOfTargets, centerPosition, radarRange,
         speed = np.random.choice(speeds)
         vx, vy = _pol2cart(heading, speed)
         V0 = Velocity(vx, vy)
-        target = SimTarget(np.array([px, py, vx, vy], dtype=np.double), initialTime, P_d)
+        target = SimTarget(np.array([px, py, vx, vy], dtype=np.float32), initialTime, P_d)
         initialList.append(target)
     return initialList
 
@@ -92,15 +95,18 @@ def simulateTargets(randomSeed, initialTargets, numOfSteps, timeStep, Phi, Q, Ga
     return simList
 
 
-def simulateScans(randomSeed, simList, H, R, lambda_phi=None, rRange=None, p0=None, **kwargs):
+def simulateScans(randomSeed, simList, H, R, lambda_phi=None,
+                  rRange=None, p0=None, **kwargs):
     np.random.seed(randomSeed)
     area = np.pi * np.power(rRange, 2)
     lClutter = lambda_phi * area
     scanList = []
     for scan in simList:
         measurementList = MeasurementList(scan[0].time)
-        measurementList.measurements = [target.positionWithNoiseAndLoss(
-            H, R, target.P_d, p0, rRange) for target in scan]
+        measurementList.measurements = []  # BUG: Why is this neccesary
+        for target in scan:
+            if np.random.uniform() <= target.P_d:
+                measurementList.measurements.append(target.positionWithNoise(H, R))
         if (lambda_phi is not None) and (rRange is not None) and (p0 is not None):
             nClutter = np.random.poisson(lClutter)
             for i in range(nClutter):
@@ -109,8 +115,8 @@ def simulateScans(randomSeed, simList, H, R, lambda_phi=None, rRange=None, p0=No
         if kwargs.get("shuffle", True):
             np.random.shuffle(measurementList.measurements)
         measurementList.measurements = np.array(
-            measurementList.measurements, ndmin=2, dtype=np.double)
-        scanList.append(measurementList)
+            measurementList.measurements, ndmin=2, dtype=np.float32)
+        scanList.append(copy.deepcopy(measurementList))
     return scanList
 
 
@@ -167,13 +173,13 @@ def importFromFile(filename, **kwargs):
     for scanIndex, scan in enumerate(simList):
         for targetIndex, target in enumerate(scan):
             if scanIndex == 0:
-                target.state[2:4] = target.state[0:2] - \
-                    firstPositions[targetIndex].toarray()
+                target.state[2:4] = (target.state[0:2] -
+                                     firstPositions[targetIndex].toarray())
             elif scanIndex == (len(simList) - 1):
                 target.state[2:4] = simList[scanIndex - 1][targetIndex].state[2:4]
             else:
-                target.state[2:4] = target.state[0:2] - \
-                    simList[scanIndex - 1][targetIndex].state[0:2]
+                target.state[2:4] = (target.state[0:2] -
+                                     simList[scanIndex - 1][targetIndex].state[0:2])
 
     return initialTargets, simList
 
@@ -206,7 +212,7 @@ def _generateCartesianClutter(centerPosition, radarRange):
     while True:
         x = np.random.uniform(-radarRange, radarRange)
         y = np.random.uniform(-radarRange, radarRange)
-        pos = np.array([x, y])
+        pos = np.array([x, y], dtype=np.float32)
         if np.linalg.norm(pos) <= radarRange:
             return centerPosition.position + pos
 
