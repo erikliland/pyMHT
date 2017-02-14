@@ -3,7 +3,7 @@ function[assignment, cost] = munkres(costMat)
 assignment = zeros(1, size(costMat, 1));
 cost = 0;
 
-validMat = costMat == costMat & costMat < Inf;
+validMat = (costMat == (costMat & (costMat < Inf)));
 bigM = 10^(ceil(log10(sum(costMat(validMat)))) + 1);
 costMat( ~ validMat) = bigM;
 
