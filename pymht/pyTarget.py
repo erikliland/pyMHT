@@ -11,8 +11,7 @@ import pymht.utils.pyKalman as kalman
 
 
 class Target():
-
-    def __init__(self, time, scanNumber, x_0, P_0, ** kwargs):
+    def __init__(self, time, scanNumber, x_0, P_0, **kwargs):
         self.time = time
         self.scanNumber = scanNumber
         self.x_0 = x_0
@@ -74,7 +73,7 @@ class Target():
             ret += "T" + str(targetIndex) + ": " + repr(self) + "\n"
         else:
             ret += "   " + " " * min(level, 8) + "H" + \
-                str(hypIndex) + ": " + repr(self) + "\n"
+                   str(hypIndex) + ": " + repr(self) + "\n"
         if self.trackHypotheses is not None:
             for hypIndex, hyp in enumerate(self.trackHypotheses):
                 hasNotZeroHyp = (self.trackHypotheses[0].measurementNumber != 0)
@@ -108,9 +107,9 @@ class Target():
         return (count if self.trackHypotheses is None
                 else self.trackHypotheses[0].depth(count + 1))
 
-    def predictMeasurement(self, **kwargs):
-        self.kalmanFilter.predict()
-        self.kalmanFilter._precalculateMeasurementUpdate()
+    # def predictMeasurement(self, **kwargs):
+    #     self.kalmanFilter.predict()
+    #     self.kalmanFilter._precalculateMeasurementUpdate()
 
     def gateAndCreateNewHypotheses(self, measurementList, scanNumber, lambda_ex, eta2, kfVars):
         assert self.scanNumber == scanNumber - 1, "inconsistent scan numbering"
@@ -150,7 +149,7 @@ class Target():
                                    S,
                                    S_inv)[0]
                 x_hat = kalman.numpyFilter(
-                    x_bar, K.reshape(4, 2), z_tilde[measurementIndex].reshape(1, 2)).reshape(4,)
+                    x_bar, K.reshape(4, 2), z_tilde[measurementIndex].reshape(1, 2)).reshape(4, )
                 assert x_hat.shape == self.x_0.shape
                 newNodes.append(
                     Target(scanTime,
@@ -208,7 +207,7 @@ class Target():
         P_d = self.P_d
         return (self.cummulativeNLLR +
                 (0.5 * (measurementResidual.T.dot(S_inv).dot(measurementResidual)) +
-                    np.log((lambda_ex * np.sqrt(np.linalg.det(2 * np.pi * S))) / P_d)))
+                 np.log((lambda_ex * np.sqrt(np.linalg.det(2 * np.pi * S))) / P_d)))
 
     def measurementIsInsideErrorEllipse(self, measurement, eta2):
         measRes = measurement.position - self.predictedMeasurement
@@ -264,6 +263,7 @@ class Target():
             else:
                 for hyp in target.trackHypotheses:
                     recSearchBestHypothesis(hyp, bestScore, bestHypothesis)
+
         bestScore = [float('Inf')]
         bestHypothesis = np.empty(1, dtype=np.dtype(object))
         recSearchBestHypothesis(self, bestScore, bestHypothesis)
@@ -276,6 +276,7 @@ class Target():
             else:
                 for hyp in node.trackHypotheses:
                     recGetLeafNode(hyp, nodes)
+
         nodes = []
         recGetLeafNode(self, nodes)
         return nodes
@@ -310,7 +311,7 @@ class Target():
         if self.parent is not None:
             assert type(self.parent.scanNumber) is int, \
                 "self.parent.scanNumber is not an integer %r" % self.parent.scanNumber
-            assert self.parent.scanNumber == self.scanNumber - 1,\
+            assert self.parent.scanNumber == self.scanNumber - 1, \
                 "self.parent.scanNumber(%r) == self.scanNumber-1(%r)" % (
                     self.parent.scanNumber, self.scanNumber)
         if self.trackHypotheses is not None:
@@ -327,10 +328,11 @@ class Target():
                          ") <-> " + "Measurement(" + str(hyp.scanNumber) + ":" +
                          str(hyp.measurementNumber) + ")")
                     recCheckReferenceIntegrety(hyp)
+
         recCheckReferenceIntegrety(self.getRoot())
 
     def plotValidationRegion(self, eta2, stepsBack=0):
-        if self.kalmanFilter.S is not None:
+        if False:  # self.kalmanFilter.S is not None:
             self._plotCovarianceEllipse(eta2)
         if (self.parent is not None) and (stepsBack > 0):
             self.parent.plotValidationRegion(eta2, stepsBack - 1)
