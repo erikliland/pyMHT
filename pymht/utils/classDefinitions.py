@@ -2,8 +2,53 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 
-class Position:
+class Target:
+    def __init__(self, *args, **kwargs):
+        p = kwargs.get('position')
+        v = kwargs.get('velocity')
+        t = kwargs.get('time')
+        P_d = kwargs.get('P_d', 0.9)
+        if None not in [p, v, t, P_d]:
+            self.state = np.array([p.x, p.y, v.x, v.y], dtype=np.float32)
+            self.time = t
+            self.P_d = P_d
+        elif len(args) == 2:
+            self.state = args[0]
+            self.time = args[1]
+            self.P_d = P_d
+        elif len(args) == 3:
+            self.state = args[0]
+            self.time = args[1]
+            self.P_d = args[2]
+        else:
+            raise ValueError("Invalid arguments to SimTarget")
 
+    def __str__(self):
+        return ('Pos: ({0: 7.1f},{1: 7.1f})'.format(self.state[0], self.state[1]) + " " +
+                'Vel: ({0: 5.1f},{1: 5.1f})'.format(self.state[2], self.state[3]) + " " +
+                'Speed: {0:4.1f}m/s ({1:4.1f}knt)'.format(self.speed('m/s'), self.speed('knots')) + " " +
+                'Pd: {:5.1f}%'.format(self.P_d*100.))
+
+    def storeString(self):
+        return ',{0:.2f},{1:.2f}'.format(*self.state[0:2])
+
+    def position(self):
+        return Position(self.state[0], self.state[1])
+
+    def velocity(self):
+        return Velocity(self.state[2], self.state[3])
+
+    def speed(self, unit='m/s'):
+        speed_ms = np.linalg.norm(self.state[2:4])
+        if unit == 'm/s':
+            return speed_ms
+        elif unit == 'knots':
+            return speed_ms * 1.94384449
+        else:
+            raise ValueError("Unknown unit")
+
+
+class Position:
     def __init__(self, *args, **kwargs):
         x = kwargs.get('x')
         y = kwargs.get('y')
@@ -46,7 +91,7 @@ class Position:
                      color="black", fillstyle="none", marker="o")
         else:
             plt.plot(self.position[0], self.position[1], 'kx')
-        if (	(scanNumber is not None) and
+        if ((scanNumber is not None) and
                 (measurementNumber is not None) and
                 kwargs.get("labels", False)):
             ax = plt.subplot(111)
@@ -55,7 +100,6 @@ class Position:
 
 
 class Velocity:
-
     def __init__(self, *args, **kwargs):
         x = kwargs.get('x')
         y = kwargs.get('y')
@@ -94,17 +138,18 @@ class Velocity:
 
 
 class MeasurementList:
-
     def __init__(self, Time, measurements=[]):
         self.time = Time
         self.measurements = measurements
 
     def __str__(self):
         from time import gmtime, strftime
+        np.set_printoptions(precision=1, suppress=True)
+
         timeString = strftime("%H:%M:%S", gmtime(self.time))
         return ("Time: " + timeString +
                 "\tMeasurements:\t" + "".join(
-                    [str(measurement) for measurement in self.measurements]))
+            [str(measurement) for measurement in self.measurements]))
 
     __repr__ = __str__
 
@@ -114,3 +159,11 @@ class MeasurementList:
     def plot(self, **kwargs):
         for measurementIndex, measurement in enumerate(self.measurements):
             Position(measurement).plot(measurementIndex + 1, **kwargs)
+
+    def filter(self, unused_measurement_indices):
+        # nMeas = unused_measurement_indices.shape[0]
+        # mask = np.hstack((unused_measurement_indices.reshape(nMeas, 1),
+        #                   unused_measurement_indices.reshape(nMeas, 1)))
+        # measurements = np.ma.array(self.measurements, mask=np.logical_not(mask))
+        measurements = self.measurements[np.where(unused_measurement_indices)]
+        return MeasurementList(self.time, measurements)
