@@ -2,8 +2,8 @@ from __future__ import print_function
 
 import matplotlib.pyplot as plt
 import numpy as np
-import pulp
-import itertools
+
+# import itertools
 import copy
 
 
@@ -24,11 +24,10 @@ def plotVelocityArrowFromNode(nodes, **kwargs):
 def plotRadarOutline(centerPosition, radarRange, **kwargs):
     from matplotlib.patches import Ellipse
     if kwargs.get("center", True):
-        plt.plot(centerPosition.x, centerPosition.y, "bo")
+        plt.plot(centerPosition.x(), centerPosition.y(), "bo")
     ax = plt.subplot(111)
-    circle = Ellipse(centerPosition.position, radarRange * 2, radarRange * 2)
-    circle.set_facecolor("none")
-    circle.set_linestyle("dotted")
+    circle = Ellipse((centerPosition.x(),centerPosition.y()), radarRange * 2, radarRange * 2,
+                     edgecolor = "black", linestyle="dotted", facecolor="none")
     ax.add_artist(circle)
 
 
@@ -45,7 +44,8 @@ def plotTrueTrack(simList, **kwargs):
     for col in range(nTargets):
         plt.plot(posArray[:, col, 0], posArray[:, col, 1], '.', alpha=0.7,
                  markeredgewidth=0.6, color=next(colors) if colors is not None else None, **newArgs)
-
+    for col in range(nTargets):
+        plt.plot(posArray[0,col,0], posArray[0,col,1], '.', color = 'black')
 
 def printScanList(scanList):
     for index, measurement in enumerate(scanList):
@@ -153,6 +153,7 @@ def writeTracksToFile(filename, trackList, time, **kwargs):
 
 
 def parseSolver(solverString):
+    import pulp
     s = solverString.strip().lower()
     if s == "cplex":
         return pulp.CPLEX_CMD(None, 0, 1, 0, [])
