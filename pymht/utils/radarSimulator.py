@@ -4,63 +4,15 @@ import time
 import copy
 
 
-class SimTarget:
+def positionWithNoise(state, H, R):
+    v = np.random.multivariate_normal(np.zeros(2), R)
+    return H.dot(state) + v
 
-    def __init__(self, *args, **kwargs):
-        p = kwargs.get('position')
-        v = kwargs.get('velocity')
-        t = kwargs.get('time')
-        P_d = kwargs.get('P_d')
-        if None not in [p, v, t, P_d]:
-            self.state = np.array([p.x, p.y, v.x, v.y], dtype=np.float32)
-            self.time = t
-            self.P_d = P_d
-        elif len(args) == 2:
-            self.state = args[0]
-            self.time = args[1]
-            self.P_d = None
-        elif len(args) == 3:
-            self.state = args[0]
-            self.time = args[1]
-            self.P_d = args[2]
-        else:
-            raise ValueError("Invalid arguments to SimTarget")
 
-    def __str__(self):
-        return ('Pos: ({0: 7.1f},{1: 7.1f})'.format(self.state[0], self.state[1]) + " " +
-                'Vel: ({0: 5.1f},{1: 5.1f})'.format(self.state[2], self.state[3]) + " " +
-                'Speed: {0:4.1f}m/s ({1:4.1f}knt)'.format(self.speed('m/s'), self.speed('knots')))
-
-    # def __repr__(self):
-    #     return str(self) + "\n"
-    #     # return '({:.3e},{:.3e},{:.3e},{:.3e})'.format(*self.state)
-
-    def storeString(self):
-        return ',{0:.2f},{1:.2f}'.format(*self.state[0:2])
-
-    def position(self):
-        return Position(self.state[0], self.state[1])
-
-    def velocity(self):
-        return Velocity(self.state[2], self.state[3])
-
-    def speed(self, unit='m/s'):
-        speed_ms = np.linalg.norm(self.state[2:4])
-        if unit == 'm/s':
-            return speed_ms
-        elif unit == 'knots':
-            return speed_ms * 1.94384449
-        else:
-            raise ValueError("Unknown unit")
-
-    def calculateNextState(self, timeStep, Phi, Q, Gamma):
-        w = np.random.multivariate_normal(np.zeros(2), Q)
-        nextState = Phi.dot(self.state) + Gamma.dot(w.T)
-        return SimTarget(nextState, self.time + timeStep, self.P_d)
-
-    def positionWithNoise(self, H,  R):
-        v = np.random.multivariate_normal(np.zeros(2), R)
-        return H.dot(self.state) + v
+def calculateNextState(target, timeStep, Phi, Q, Gamma):
+    w = np.random.multivariate_normal(np.zeros(2), Q)
+    nextState = Phi.dot(target.state) + Gamma.dot(w.T)
+    return Target(nextState, target.time + timeStep, target.P_d)
 
 
 def generateInitialTargets(randomSeed, numOfTargets, centerPosition,
@@ -78,7 +30,7 @@ def generateInitialTargets(randomSeed, numOfTargets, centerPosition,
         speed = np.random.choice(speeds)
         vx, vy = _pol2cart(heading, speed)
         V0 = Velocity(vx, vy)
-        target = SimTarget(np.array([px, py, vx, vy], dtype=np.float32), initialTime, P_d)
+        target = Target(np.array([px, py, vx, vy], dtype=np.float32), initialTime, P_d)
         initialList.append(target)
     return initialList
 
@@ -88,8 +40,8 @@ def simulateTargets(randomSeed, initialTargets, numOfSteps, timeStep, Phi, Q, Ga
     simList = []
     simList.append(initialTargets)
     for scan in range(numOfSteps):
-        targetList = [target.calculateNextState(
-            timeStep, Phi, Q, Gamma) for target in simList[-1]]
+        targetList = [calculateNextState(target, timeStep, Phi, Q, Gamma)
+                      for target in simList[-1]]
         simList.append(targetList)
     simList.pop(0)
     return simList
@@ -106,7 +58,7 @@ def simulateScans(randomSeed, simList, H, R, lambda_phi=None,
         measurementList.measurements = []  # BUG: Why is this neccesary
         for target in scan:
             if np.random.uniform() <= target.P_d:
-                measurementList.measurements.append(target.positionWithNoise(H, R))
+                measurementList.measurements.append(positionWithNoise(target.state, H, R))
         if (lambda_phi is not None) and (rRange is not None) and (p0 is not None):
             nClutter = np.random.poisson(lClutter)
             for i in range(nClutter):
@@ -114,8 +66,10 @@ def simulateScans(randomSeed, simList, H, R, lambda_phi=None,
                 measurementList.measurements.append(clutter)
         if kwargs.get("shuffle", True):
             np.random.shuffle(measurementList.measurements)
+        nMeas = len(measurementList.measurements)
         measurementList.measurements = np.array(
             measurementList.measurements, ndmin=2, dtype=np.float32)
+        measurementList.measurements = measurementList.measurements.reshape((nMeas, 2))
         scanList.append(copy.deepcopy(measurementList))
     return scanList
 
@@ -158,12 +112,13 @@ def importFromFile(filename, **kwargs):
             if lineIndex == 1:
                 for i, initPos in enumerate(firstPositions):
                     initialTargets.append(
-                        SimTarget(	time=firstTime,
-                                   position=initPos,
-                                   velocity=(Position(elements[2 * i + 1], elements[2 * i + 2]) - initPos) * (1 / (localTime - firstTime))))
+                        Target(time=firstTime,
+                                  position=initPos,
+                                  velocity=(Position(elements[2 * i + 1], elements[2 * i + 2]) - initPos) * (
+                                      1 / (localTime - firstTime))))
 
             if localTime.is_integer():
-                targetList = [SimTarget(time=localTime,
+                targetList = [Target(time=localTime,
                                         position=Position(elements[i], elements[i + 1]),
                                         velocity=Velocity(0, 0)
                                         ) for i in range(1, len(elements), 2)
