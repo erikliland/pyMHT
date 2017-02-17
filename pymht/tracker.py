@@ -6,23 +6,23 @@ Trondheim, Norway
 Spring 2017
 ========================================================================================
 """
-from __future__ import print_function
-
+# from __future__ import print_function
 import pymht.utils.helpFunctions as hpf
 import pymht.pyTarget as pyTarget
 import pymht.utils.pyKalman as kalman
-import pymht.utils.cFunctions as cFunc
+import pymht.initiators.m_of_n as m_of_n
+# import pymht.utils.cFunctions as cFunc
 import time
 import signal
 import os
-import pulp
+# import pulp
 import itertools
 import functools
 import matplotlib.pyplot as plt
 import numpy as np
 import multiprocessing as mp
 from scipy.sparse.csgraph import connected_components
-from concurrent.futures import ThreadPoolExecutor
+# from concurrent.futures import ThreadPoolExecutor
 from ortools.linear_solver import pywraplp
 
 
@@ -63,8 +63,32 @@ def _getSelectedHyp2(p, threshold=0):
     return hyp
 
 
-class Tracker():
+def _getBestTextPosition(normVelocity, **kwargs):
+    DEBUG = kwargs.get('debug', False)
+    compassHeading = np.arctan2(normVelocity[0], normVelocity[1]) * 180. / np.pi
+    compassHeading = (compassHeading + 360.) % 360.
+    assert compassHeading >= 0, str(compassHeading)
+    assert compassHeading <= 360, str(compassHeading)
+    quadrant = int(2 + (compassHeading - 90) // 90)
+    assert quadrant >= 1, str(quadrant)
+    assert quadrant <= 4, str(quadrant)
+    assert type(quadrant) is int
+    if DEBUG: print("Vector {0:} Heading {1:5.1f} Quadrant {2:}".format(normVelocity, compassHeading, quadrant))
+    # return horizontal_alignment, vertical_alignment
+    if quadrant == 1:
+        return 'right', 'top'
+    elif quadrant == 2:
+        return 'right', 'bottom'
+    elif quadrant == 3:
+        return 'left', 'bottom'
+    elif quadrant == 4:
+        return 'left', 'top'
+    else:
+        print('_getBestTextPosition failed. Returning default')
+        return 'center', 'center'
 
+
+class Tracker():
     def __init__(self, Phi, C, Gamma, P_d, P_0, R, Q, lambda_phi,
                  lambda_nu, eta2, N, solverStr, **kwargs):
 
@@ -83,6 +107,12 @@ class Tracker():
             print("Using ", self.nWorkers + 1, " proceess(es) with ",
                   os.cpu_count(), " cores", sep="")
 
+        # Target initiator
+        maxSpeed = kwargs.get('maxSpeed', 20)
+        M_required = kwargs.get('M', 2)
+        N_checks = kwargs.get('N', 3)
+        self.initiator = m_of_n.Initiator(M_required, N_checks, maxSpeed)
+
         # Tracker storage
         self.__targetList__ = []
         self.__scanHistory__ = []
@@ -92,12 +122,12 @@ class Tracker():
 
         # Timing and logging
         if self.logTime:
-            self.runtimeLog = {	'Total':	np.array([0.0, 0]),
-                                'Process':	np.array([0.0, 0]),
-                                'Cluster':	np.array([0.0, 0]),
-                                'Optim':	np.array([0.0, 0]),
-                                'Prune':	np.array([0.0, 0]),
-                                }
+            self.runtimeLog = {'Total': np.array([0.0, 0]),
+                               'Process': np.array([0.0, 0]),
+                               'Cluster': np.array([0.0, 0]),
+                               'Optim': np.array([0.0, 0]),
+                               'Prune': np.array([0.0, 0]),
+                               }
             self.tic = np.zeros(5)
             self.toc = np.zeros(5)
             self.nOptimSolved = 0
@@ -110,7 +140,7 @@ class Tracker():
         self.lambda_ex = lambda_phi + lambda_nu
         self.eta2 = eta2
         self.N = N
-        self.solver = hpf.parseSolver(solverStr)
+        # self.solver = hpf.parseSolver(solverStr)
         self.pruneThreshold = kwargs.get("pruneThreshold")
 
         # State space model
@@ -141,14 +171,6 @@ class Tracker():
                                  len(self.__scanHistory__),
                                  newTarget.state,
                                  self.P_0,
-                                 # kalman.KalmanFilter(newTarget.state,
-                                 #                     self.P_0,
-                                 #                     self.A,
-                                 #                     self.C,
-                                 #                     self.Gamma,
-                                 #                     self.Q,
-                                 #                     self.R
-                                 #                     ),
                                  P_d=newTarget.P_d,
                                  )
         self.__targetList__.append(target)
@@ -170,6 +192,7 @@ class Tracker():
         scanNumber = len(self.__scanHistory__)
         scanTime = measurementList.time
         measDim = self.C.shape[0]
+        unused_measurement_indices = np.ones(nMeas, dtype=np.bool)
 
         if self.logTime:
             self.leafNodeTimeList = []
@@ -239,6 +262,9 @@ class Tracker():
 
                     gatedIndeciesList = [np.nonzero(gatedFilter[row])[0]
                                          for row in range(nNodes)]
+                    for gated_index in gatedIndeciesList:
+                        unused_measurement_indices[gated_index] = False
+
                     assert len(gatedIndeciesList) == nNodes
 
                     gatedMeasurementsList = [np.array(z_list[gatedIndecies])
@@ -252,7 +278,7 @@ class Tracker():
 
                     gated_x_hat_list = [kalman.numpyFilter(
                         x_bar_list[i], K_list[i], gated_z_tilde_list[i])
-                        for i in range(nNodes)]
+                                        for i in range(nNodes)]
                     assert len(gated_x_hat_list) == nNodes
 
                     nllrList = [kalman.nllr(self.lambda_ex,
@@ -330,9 +356,9 @@ class Tracker():
             self.runtimeLog['Prune'] += np.array([self.toc[4], 1])
 
         if kwargs.get("printInfo", False):
-            print(	"Added scan number:", len(self.__scanHistory__),
-                   " \tnMeas ", nMeas,
-                   sep="")
+            print("Added scan number:", len(self.__scanHistory__),
+                  " \tnMeas ", nMeas,
+                  sep="")
 
         if kwargs.get("printTime", False):
             if self.logTime:
@@ -344,6 +370,12 @@ class Tracker():
         if "trueState" in kwargs:
             xTrue = kwargs.get("trueState")
             return self._compareTracksWithTruth(xTrue)
+
+        unused_measurements = measurementList.filter(unused_measurement_indices)
+        new_initial_targets = self.initiator.processMeasurements(unused_measurements)
+        for initial_target in new_initial_targets:
+            print("\tNew target({}): ".format(len(self.__targetList__)+1), initial_target)
+            self.initiateTarget(initial_target)
 
     def _predictPrecalcBulk(self, targetNodes):
         nNodes = len(targetNodes)
@@ -370,10 +402,10 @@ class Tracker():
         return x_bar_list, P_bar_list, z_hat_list, S_list, S_inv_list, K_list, P_hat_list
 
     def _compareTracksWithTruth(self, xTrue):
-        return [	(target.filteredStateMean - xTrue[targetIndex].state).T.dot(
+        return [(target.filteredStateMean - xTrue[targetIndex].state).T.dot(
             np.linalg.inv(target.filteredStateCovariance)).dot(
             (target.filteredStateMean - xTrue[targetIndex].state))
-            for targetIndex, target in enumerate(self.__trackNodes__)]
+                for targetIndex, target in enumerate(self.__trackNodes__)]
 
     def getRuntimeAverage(self, **kwargs):
         p = kwargs.get("precision", 3)
@@ -402,22 +434,21 @@ class Tracker():
         nHypInClusterArray = self._getHypInCluster(cluster)
         nRealMeasurementsInCluster = len(
             set.union(*[self.__associatedMeasurements__[i] for i in cluster]))
-        problemSize = nRealMeasurementsInCluster * sum(nHypInClusterArray)
+        # problemSize = nRealMeasurementsInCluster * sum(nHypInClusterArray)
 
-        t0 = time.time()
+        # t0 = time.time()
         (A1, measurementList) = self._createA1(
             nRealMeasurementsInCluster, sum(nHypInClusterArray), cluster)
         A2 = self._createA2(len(cluster), nHypInClusterArray)
         C = self._createC(cluster)
-        t1 = time.time() - t0
+        # t1 = time.time() - t0
         # print("matricesTime\t", round(t1,3))
 
-        selectedHypotheses0 = self._solveBLP_OR_TOOLS(A1, A2, C, len(cluster))
-        selectedHypotheses = self._solveBLP_PULP(A1, A2, C, len(cluster))
-        assert selectedHypotheses0 == selectedHypotheses
+        selectedHypotheses = self._solveBLP_OR_TOOLS(A1, A2, C, len(cluster))
+        # selectedHypotheses = self._solveBLP_PULP(A1, A2, C, len(cluster))
+        # assert selectedHypotheses0 == selectedHypotheses
         selectedNodes = self._hypotheses2Nodes(selectedHypotheses, cluster)
         selectedNodesArray = np.array(selectedNodes)
-        assert False
         # print("Solving optimal association in cluster with targets",cluster,",   \t",
         # sum(nHypInClusterArray, " hypotheses and",
         #     nRealMeasurementsInCluster, "real measurements.", sep=" ")
@@ -453,6 +484,7 @@ class Tracker():
                 return 1
             else:
                 return sum(nLeafNodes(hyp) for hyp in target.trackHypotheses)
+
         nHypInClusterArray = np.zeros(len(cluster), dtype=int)
         for i, targetIndex in enumerate(cluster):
             nHypInTarget = nLeafNodes(self.__targetList__[targetIndex])
@@ -494,6 +526,7 @@ class Tracker():
                         activeMeasurementsCpy[measurementIndex] = True
                     recActiveMeasurement(hyp, A1, measurementList,
                                          activeMeasurementsCpy, hypothesisIndex)
+
         A1 = np.zeros((nRow, nCol), dtype=bool)  # Numpy Array
         # A1 = sp.dok_matrix((nRow,nCol),dtype = bool) #pulp.sparse Matrix
         activeMeasurements = np.zeros(nRow, dtype=bool)
@@ -525,6 +558,7 @@ class Tracker():
             else:
                 for hyp in target.trackHypotheses:
                     getTargetScore(hyp, scoreArray)
+
         scoreArray = []
         for targetIndex in cluster:
             getTargetScore(self.__targetList__[targetIndex], scoreArray)
@@ -539,6 +573,7 @@ class Tracker():
             else:
                 for hyp in target.trackHypotheses:
                     recDFS(hyp, selectedHypotheses, nodeList, counter)
+
         nodeList = []
         counter = [0]
         for targetIndex in cluster:
@@ -560,16 +595,11 @@ class Tracker():
         # Initiate solver
         solver = pywraplp.Solver(
             'MHT-solver', pywraplp.Solver.CBC_MIXED_INTEGER_PROGRAMMING)
-        # SCIP_MIXED_INTEGER_PROGRAMMING
-        # CBC_MIXED_INTEGER_PROGRAMMING
-        # GLPK_MIXED_INTEGER_PROGRAMMING
 
-        # Declate optimization variables
-        # tau = {}
-        # for i in range(nHyp):
-        #     tau[i] = solver.BoolVar('tau' + str(i))
-        # tau = {i: solver.BoolVar("tau" + str(i)) for i in range(nHyp)}
-        tau = [solver.BoolVar("tau" + str(i)) for i in range(nHyp)]
+        # Declare optimization variables
+        tau = {i: solver.BoolVar("tau" + str(i)) for i in range(nHyp)}
+        # tau = [solver.BoolVar("tau" + str(i)) for i in range(nHyp)]
+
         # Set objective
         solver.Minimize(solver.Sum([f[i] * tau[i] for i in range(nHyp)]))
 
@@ -577,32 +607,27 @@ class Tracker():
         tempMatrix = [[A1[row, col] * tau[col] for col in range(nHyp) if A1[row, col]]
                       for row in range(nMeas)]
         # <<< Problem child >>>
-        # tempMatrix2 = A1.dot(np.array(tau).T)
-        # print(tempMatrix[0][0])
-        # print(tempMatrix2.shape)
-        # print(tempMatrix2[0][0])
         toc0 = time.time() - tic0
 
         def setConstaints(solver, nMeas, nTargets, nHyp, tempMatrix, A2):
-            print("nMeas", nMeas)  # ~21
-            print("nTargets", nTargets)  # ~2
-            print("nHyp", nHyp)  # ~2788
-
+            # print("nMeas", nMeas)  # ~21
+            # print("nTargets", nTargets)  # ~2
+            # print("nHyp", nHyp)  # ~2788
+            import numbers
             for row in range(nMeas):
-                solver.Add(solver.Sum(tempMatrix[row]) <= 1)
+                constraint = (solver.Sum(tempMatrix[row]) <= 1)
+                solver.Add(constraint)
 
             for row in range(nTargets):
                 solver.Add(solver.Sum([A2[row, col] * tau[col]
                                        for col in range(nHyp) if A2[row, col]]) == 1)
+
         tic1 = time.time()
         # Set constaints
-        from timeit import default_timer as timer
-        import cProfile
-        import pstats
-        cProfile.runctx("setConstaints(solver, nMeas, nTargets, nHyp, tempMatrix, A2)",
-                        globals(), locals(), 'blpProfile.prof')
-
-        # setConstaints(solver, nMeas, nTargets, nHyp, tempMatrix, A2)
+        # import cProfile
+        # cProfile.runctx("setConstaints(solver, nMeas, nTargets, nHyp, tempMatrix, A2)",
+        #                 globals(), locals(), 'blpProfile.prof')
+        setConstaints(solver, nMeas, nTargets, nHyp, tempMatrix, A2)
         toc1 = time.time() - tic1
 
         tic2 = time.time()
@@ -618,11 +643,12 @@ class Tracker():
         assert len(selectedHypotheses) == nTargets
         toc3 = time.time() - tic3
 
-        print('_solveBLP_OR_TOOLS ({0:4.0f}|{1:4.0f}|{2:4.0f}|{3:4.0f})ms = {4:4.0f}'.format(
-            toc0 * 1000, toc1 * 1000, toc2 * 1000, toc3 * 1000, (toc0 + toc1 + toc2 + toc3) * 1000))
-        p = pstats.Stats('blpProfile.prof')
-        p.strip_dirs().sort_stats('time').print_stats(20)
-        p.strip_dirs().sort_stats('cumulative').print_stats(20)
+        # print('_solveBLP_OR_TOOLS ({0:4.0f}|{1:4.0f}|{2:4.0f}|{3:4.0f}) ms = {4:4.0f}'.format(
+        #     toc0 * 1000, toc1 * 1000, toc2 * 1000, toc3 * 1000, (toc0 + toc1 + toc2 + toc3) * 1000))
+        # import pstats
+        # p = pstats.Stats('blpProfile.prof')
+        # p.strip_dirs().sort_stats('time').print_stats(20)
+        # p.strip_dirs().sort_stats('cumulative').print_stats(20)
         return selectedHypotheses
 
     def _solveBLP_PULP(self, A1, A2, f, nHyp):
@@ -744,7 +770,8 @@ class Tracker():
                                                      for p in newTrack], "--", **kwargs)
             else:
                 for hyp in target.trackHypotheses:
-                    recPlotHypothesesTrack(hyp,  newTrack, **kwargs)
+                    recPlotHypothesesTrack(hyp, newTrack, **kwargs)
+
         colors = kwargs.get("colors", self._getColorCycle())
         for target in self.__targetList__:
             recPlotHypothesesTrack(target, c=next(colors))
@@ -801,25 +828,30 @@ class Tracker():
 
     def plotInitialTargets(self, **kwargs):
         initialTargets = [target.getRoot() for target in self.__targetList__]
+        fig = plt.gcf()
+        size = fig.get_size_inches() * fig.dpi
         for i, initialTarget in enumerate(initialTargets):
             index = kwargs.get("index", list(range(len(initialTargets))))
             if len(index) != len(initialTargets):
                 raise ValueError(
                     "plotInitialTargets: Need equal number of targets and indecies")
-            plt.plot(initialTarget.kalmanFilter.x_hat[0],
-                     initialTarget.kalmanFilter.x_hat[1],
-                     "k+")
+            plt.plot(initialTarget.x_0[0],
+                     initialTarget.x_0[1],
+                     "ks",
+                     markerfacecolor='white',
+                     markeredgecolor='black')
             ax = plt.subplot(111)
-            normVelocity = (initialTarget.kalmanFilter.x_hat[2:4] /
-                            np.linalg.norm(initialTarget.kalmanFilter.x_hat[2:4]))
-            offset = 0.1 * normVelocity
-            position = initialTarget.kalmanFilter.x_hat[0:2] - offset
+            normVelocity = (initialTarget.x_0[2:4] /
+                            np.linalg.norm(initialTarget.x_0[2:4]))
+            offset = 0.05 * size * normVelocity
+            position = initialTarget.x_0[0:2] - offset
+            horizontalalignment, verticalalignment = _getBestTextPosition(normVelocity)
             ax.text(position[0],
                     position[1],
                     "T" + str(index[i]),
                     fontsize=8,
-                    horizontalalignment="center",
-                    verticalalignment="center")
+                    horizontalalignment=horizontalalignment,
+                    verticalalignment=verticalalignment)
 
     def _getColorCycle(self):
         return itertools.cycle(self.colors)
@@ -840,20 +872,30 @@ class Tracker():
             self.toc *= 1000
             totalTime = self.toc[0]
             sumTime = sum(self.toc[1:4])
-            deviation = ((totalTime - sumTime) / totalTime) > 0.05
+            timeDelta = totalTime - sumTime
+            if timeDelta < 0.1:
+                deviation = False
+            elif (timeDelta / totalTime) < 0.05:
+                deviation = False
+            else:
+                deviation = True
+            tooLong = totalTime > (self.kwargs.get('period', float('inf'))*1000)
             nNodes = sum([target.getNumOfNodes() for target in self.__targetList__])
             nMeasurements = len(self.__scanHistory__[-1].measurements)
             cprint(('{:3.0f} '.format(len(self.__scanHistory__)) +
-                    'Total time {0:6.0f}ms'.format(totalTime) +
-                    '  Process({0:3.0f}/{1:5.0f}) {2:6.1f}ms'.format(nMeasurements,
-                                                                     nNodes,
-                                                                     self.toc[1]) +
-                    '  Cluster {:5.1f}ms'.format(self.toc[2]) +
-                    '  Optim({0:g}) {1:6.1f}ms'.format(self.nOptimSolved, self.toc[3]) +
-                    '  Prune {:5.1f}ms'.format(self.toc[4])),
-                   'red' if deviation else None,
-                   attrs=(['bold'] if 'period' in self.kwargs and totalTime >
-                          self.kwargs.get('period') * 500 else [])
+                    'nTargets {:2.0f}'.format(len(self.__targetList__)) + "  " +
+                    'Total time {0:6.0f}ms'.format(totalTime) + "  " +
+                    'Process({0:3.0f}/{1:6.0f}) {2:6.1f}ms'.format(
+                        nMeasurements, nNodes, self.toc[1]) + "  " +
+                    'Cluster {:5.1f}ms'.format(self.toc[2]) + "  " +
+                    'Optim({0:g}) {1:6.1f}ms'.format(self.nOptimSolved, self.toc[3]) + "  " +
+                    'Prune {:5.1f}ms'.format(self.toc[4])),
+                   'red' if tooLong else None,
+                   attrs=(['bold'] if tooLong else [])
                    )
         else:
             print("Logging not activated")
+
+
+if __name__ == '__main__':
+    pass
