@@ -57,7 +57,14 @@ def simulateScans(randomSeed, simList, H, R, lambda_phi=None,
         measurementList = MeasurementList(scan[0].time)
         measurementList.measurements = []  # BUG: Why is this neccesary
         for target in scan:
-            if np.random.uniform() <= target.P_d:
+            visible = np.random.uniform() <= target.P_d
+            if (rRange is not None) and (p0 is not None):
+                distance = np.linalg.norm(target.state[0:2] - p0.position)
+                inRange = distance <= rRange
+            else:
+                inRange = True
+
+            if visible and inRange:
                 measurementList.measurements.append(positionWithNoise(target.state, H, R))
         if (lambda_phi is not None) and (rRange is not None) and (p0 is not None):
             nClutter = np.random.poisson(lClutter)
@@ -113,15 +120,15 @@ def importFromFile(filename, **kwargs):
                 for i, initPos in enumerate(firstPositions):
                     initialTargets.append(
                         Target(time=firstTime,
-                                  position=initPos,
-                                  velocity=(Position(elements[2 * i + 1], elements[2 * i + 2]) - initPos) * (
-                                      1 / (localTime - firstTime))))
+                               position=initPos,
+                               velocity=(Position(elements[2 * i + 1], elements[2 * i + 2]) - initPos) * (
+                                   1 / (localTime - firstTime))))
 
             if localTime.is_integer():
                 targetList = [Target(time=localTime,
-                                        position=Position(elements[i], elements[i + 1]),
-                                        velocity=Velocity(0, 0)
-                                        ) for i in range(1, len(elements), 2)
+                                     position=Position(elements[i], elements[i + 1]),
+                                     velocity=Velocity(0, 0)
+                                     ) for i in range(1, len(elements), 2)
                               ]
 
                 simList.append(targetList)

@@ -11,18 +11,15 @@ import pymht.utils.helpFunctions as hpf
 import pymht.pyTarget as pyTarget
 import pymht.utils.pyKalman as kalman
 import pymht.initiators.m_of_n as m_of_n
-# import pymht.utils.cFunctions as cFunc
 import time
 import signal
 import os
-# import pulp
 import itertools
 import functools
 import matplotlib.pyplot as plt
 import numpy as np
 import multiprocessing as mp
 from scipy.sparse.csgraph import connected_components
-# from concurrent.futures import ThreadPoolExecutor
 from ortools.linear_solver import pywraplp
 
 
@@ -119,6 +116,7 @@ class Tracker():
         self.__associatedMeasurements__ = []
         self.__targetProcessList__ = []
         self.__trackNodes__ = np.empty(0, dtype=np.dtype(object))
+        self.__terminatedTargets__ = []
 
         # Timing and logging
         if self.logTime:
@@ -374,7 +372,7 @@ class Tracker():
         unused_measurements = measurementList.filter(unused_measurement_indices)
         new_initial_targets = self.initiator.processMeasurements(unused_measurements)
         for initial_target in new_initial_targets:
-            print("\tNew target({}): ".format(len(self.__targetList__)+1), initial_target)
+            print("\tNew target({}): ".format(len(self.__targetList__) + 1), initial_target)
             self.initiateTarget(initial_target)
 
     def _predictPrecalcBulk(self, targetNodes):
@@ -879,7 +877,7 @@ class Tracker():
                 deviation = False
             else:
                 deviation = True
-            tooLong = totalTime > (self.kwargs.get('period', float('inf'))*1000)
+            tooLong = totalTime > (self.kwargs.get('period', float('inf')) * 1000)
             nNodes = sum([target.getNumOfNodes() for target in self.__targetList__])
             nMeasurements = len(self.__scanHistory__[-1].measurements)
             cprint(('{:3.0f} '.format(len(self.__scanHistory__)) +
