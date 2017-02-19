@@ -364,7 +364,7 @@ class Tracker():
                 # if self.createComputationTime is not None:
                 #     print("createComputationTime", self.createComputationTime)
 
-        # Covariance consistance
+        # Covariance consistence
         if "trueState" in kwargs:
             xTrue = kwargs.get("trueState")
             return self._compareTracksWithTruth(xTrue)
