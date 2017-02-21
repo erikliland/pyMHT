@@ -1,5 +1,6 @@
 import numpy as np
-from pymht.utils.classDefinitions import *
+from pymht.utils.classDefinitions import TempTarget as Target
+from pymht.utils.classDefinitions import MeasurementList as MeasurementList
 import time
 import copy
 
@@ -59,7 +60,7 @@ def simulateScans(randomSeed, simList, H, R, lambda_phi=None,
         for target in scan:
             visible = np.random.uniform() <= target.P_d
             if (rRange is not None) and (p0 is not None):
-                distance = np.linalg.norm(target.state[0:2] - p0.position)
+                distance = np.linalg.norm(target.state[0:2] - p0.array)
                 inRange = distance <= rRange
             else:
                 inRange = True
@@ -176,7 +177,7 @@ def _generateCartesianClutter(centerPosition, radarRange):
         y = np.random.uniform(-radarRange, radarRange)
         pos = np.array([x, y], dtype=np.float32)
         if np.linalg.norm(pos) <= radarRange:
-            return centerPosition.position + pos
+            return centerPosition.array + pos
 
 
 def _pol2cart(bearingDEG, distance):
