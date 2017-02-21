@@ -14,6 +14,7 @@ import pymht.initiators.m_of_n as m_of_n
 import time
 import signal
 import os
+import copy
 import itertools
 import functools
 import matplotlib.pyplot as plt
@@ -60,34 +61,9 @@ def _getSelectedHyp2(p, threshold=0):
     return hyp
 
 
-def _getBestTextPosition(normVelocity, **kwargs):
-    DEBUG = kwargs.get('debug', False)
-    compassHeading = np.arctan2(normVelocity[0], normVelocity[1]) * 180. / np.pi
-    compassHeading = (compassHeading + 360.) % 360.
-    assert compassHeading >= 0, str(compassHeading)
-    assert compassHeading <= 360, str(compassHeading)
-    quadrant = int(2 + (compassHeading - 90) // 90)
-    assert quadrant >= 1, str(quadrant)
-    assert quadrant <= 4, str(quadrant)
-    assert type(quadrant) is int
-    if DEBUG: print("Vector {0:} Heading {1:5.1f} Quadrant {2:}".format(normVelocity, compassHeading, quadrant))
-    # return horizontal_alignment, vertical_alignment
-    if quadrant == 1:
-        return 'right', 'top'
-    elif quadrant == 2:
-        return 'right', 'bottom'
-    elif quadrant == 3:
-        return 'left', 'bottom'
-    elif quadrant == 4:
-        return 'left', 'top'
-    else:
-        print('_getBestTextPosition failed. Returning default')
-        return 'center', 'center'
-
-
 class Tracker():
     def __init__(self, Phi, C, Gamma, P_d, P_0, R, Q, lambda_phi,
-                 lambda_nu, eta2, N, solverStr, **kwargs):
+                 lambda_nu, eta2, N, p0, radarRange, solverStr, **kwargs):
 
         self.logTime = kwargs.get("logTime", False)
         self.debug = kwargs.get("debug", False)
@@ -118,6 +94,10 @@ class Tracker():
         self.__trackNodes__ = np.empty(0, dtype=np.dtype(object))
         self.__terminatedTargets__ = []
 
+        # Radar position
+        self.position = p0
+        self.range = radarRange
+
         # Timing and logging
         if self.logTime:
             self.runtimeLog = {'Total': np.array([0.0, 0]),
@@ -138,6 +118,7 @@ class Tracker():
         self.lambda_ex = lambda_phi + lambda_nu
         self.eta2 = eta2
         self.N = N
+        self.NLLR_UPPER_LIMIT = -(np.log(1 - 0.7)) * 7
         # self.solver = hpf.parseSolver(solverStr)
         self.pruneThreshold = kwargs.get("pruneThreshold")
 
@@ -169,19 +150,21 @@ class Tracker():
                                  len(self.__scanHistory__),
                                  newTarget.state,
                                  self.P_0,
-                                 P_d=newTarget.P_d,
+                                 P_d=0.8,
                                  )
         self.__targetList__.append(target)
         self.__associatedMeasurements__.append(set())
         self.__trackNodes__ = np.append(self.__trackNodes__, target)
 
     def addMeasurementList(self, measurementList, **kwargs):
+        # 0 --Iterative procedure for tracking --
         if self.logTime:
             self.tic[0] = time.time()
 
-        if kwargs.get("checkIntegrety", False):
-            self._checkTrackerIntegrety()
+        if kwargs.get("checkIntegrity", False):
+            self._checkTrackerIntegrity()
 
+        # 1 --Grow each track tree--
         if self.logTime:
             self.tic[1] = time.time()
         self.__scanHistory__.append(measurementList)
@@ -228,8 +211,8 @@ class Tracker():
                 targetEndDepth = target.depth()
                 assert targetEndDepth - 1 == targetStartDepth, \
                     "'processNewMeasurements' did not increase the target depth"
-                target._checkReferenceIntegrety()
-            else:
+                target._checkReferenceIntegrity()
+            else: # Relatively easy to adapt to TargetManager style
                 if kwargs.get('R', False):
                     target.processNewMeasurementRec(
                         measurementList,
@@ -258,19 +241,19 @@ class Tracker():
                     gatedFilter = nis <= self.eta2
                     assert gatedFilter.shape == (nNodes, nMeas)
 
-                    gatedIndeciesList = [np.nonzero(gatedFilter[row])[0]
+                    gatedIndicesList = [np.nonzero(gatedFilter[row])[0]
                                          for row in range(nNodes)]
-                    for gated_index in gatedIndeciesList:
+                    for gated_index in gatedIndicesList:
                         unused_measurement_indices[gated_index] = False
 
-                    assert len(gatedIndeciesList) == nNodes
+                    assert len(gatedIndicesList) == nNodes
 
                     gatedMeasurementsList = [np.array(z_list[gatedIndecies])
-                                             for gatedIndecies in gatedIndeciesList]
+                                             for gatedIndecies in gatedIndicesList]
                     assert len(gatedMeasurementsList) == nNodes
                     assert all([m.shape[1] == measDim for m in gatedMeasurementsList])
 
-                    gated_z_tilde_list = [z_tilde_list[i, gatedIndeciesList[i]]
+                    gated_z_tilde_list = [z_tilde_list[i, gatedIndicesList[i]]
                                           for i in range(nNodes)]
                     assert len(gated_z_tilde_list) == nNodes
 
@@ -292,14 +275,14 @@ class Tracker():
                                            scanNumber,
                                            x_bar_list[i],
                                            P_bar_list[i],
-                                           gatedIndeciesList[i],
+                                           gatedIndicesList[i],
                                            gatedMeasurementsList[i],
                                            gated_x_hat_list[i],
                                            P_hat_list[i],
                                            nllrList[i])
 
                     for i in range(nNodes):
-                        for measurementIndex in gatedIndeciesList[i]:
+                        for measurementIndex in gatedIndicesList[i]:
                             self.__associatedMeasurements__[targetIndex].update(
                                 {(scanNumber, measurementIndex + 1)})
 
@@ -308,9 +291,9 @@ class Tracker():
         if self.parallelize and self.debug:
             print(*[round(e) for e in self.leafNodeTimeList], sep="ms\n", end="ms\n")
         if kwargs.get("printAssociation", False):
-            print(*__associatedMeasurements__, sep="\n", end="\n\n")
+            print(*self.__associatedMeasurements__, sep="\n", end="\n\n")
 
-        # --Cluster targets --
+        # 2 --Cluster targets --
         if self.logTime:
             self.tic[2] = time.time()
         clusterList = self._findClustersFromSets()
@@ -319,32 +302,76 @@ class Tracker():
         if kwargs.get("printCluster", False):
             hpf.printClusterList(clusterList)
 
-        # --Maximize global (cluster vise) likelihood--
+        # 3 --Maximize global (cluster vise) likelihood--
         if self.logTime:
             self.tic[3] = time.time()
         self.nOptimSolved = 0
         for cluster in clusterList:
             if len(cluster) == 1:
-                # self._pruneSmilarState(cluster, self.pruneThreshold)
+                # self._pruneSimilarState(cluster, self.pruneThreshold)
                 self.__trackNodes__[cluster] = self.__targetList__[
                     cluster[0]]._selectBestHypothesis()
             else:
-                # self._pruneSmilarState(cluster, self.pruneThreshold/2)
+                # self._pruneSimilarState(cluster, self.pruneThreshold/2)
                 self.__trackNodes__[cluster] = self._solveOptimumAssociation(cluster)
                 self.nOptimSolved += 1
         if self.logTime:
             self.toc[3] = time.time() - self.tic[3]
 
+        # 4 --Prune sliding window --
         if self.logTime:
             self.tic[4] = time.time()
         self._nScanPruning()
         if self.logTime:
             self.toc[4] = time.time() - self.tic[4]
+
+        if kwargs.get("checkIntegrity", False):
+            self._checkTrackerIntegrity()
+
+        # 5 -- Pick out dead tracks
+        deadTracks = []
+        for trackIndex, trackNode in enumerate(self.__trackNodes__):
+            # Check outside range
+            if trackNode.isOutsideRange(self.position.array, self.range):
+                deadTracks.append(trackIndex)
+                print("\tTerminating track {:} since it is out of range".format(trackIndex))
+
+            # Check if track is to insecure
+            elif trackNode.cumulativeNLLR > self.NLLR_UPPER_LIMIT:
+                deadTracks.append(trackIndex)
+                print("\tTerminating track {:} since its cost is above the threshold".format(trackIndex))
+
+        if deadTracks:
+            for trackIndex in deadTracks:
+                nTargetPre = len(self.__targetList__)
+                nTracksPre = self.__trackNodes__.shape[0]
+                nAssociationsPre = len(self.__associatedMeasurements__)
+                targetListTypePre = type(self.__targetList__)
+                trackListTypePre = type(self.__trackNodes__)
+                associationTypePre = type(self.__associatedMeasurements__)
+                self.__terminatedTargets__.append(copy.copy(self.__trackNodes__[trackIndex]))
+                del self.__targetList__[trackIndex]
+                self.__trackNodes__ = np.delete(self.__trackNodes__, trackIndex)
+                del self.__associatedMeasurements__[trackIndex]
+                self.__terminatedTargets__[-1]._pruneEverythingExceptHistory()
+                nTargetsPost = len(self.__targetList__)
+                nTracksPost = self.__trackNodes__.shape[0]
+                nAssociationsPost = len(self.__associatedMeasurements__)
+                targetListTypePost = type(self.__targetList__)
+                trackListTypePost = type(self.__trackNodes__)
+                associationTypePost = type(self.__associatedMeasurements__)
+                assert nTargetsPost == nTargetPre - 1
+                assert nTracksPost == nTracksPre - 1, str(nTracksPre) + '=>' + str(nTracksPost)
+                assert nAssociationsPost == nAssociationsPre - 1
+                assert targetListTypePost == targetListTypePre
+                assert trackListTypePost == trackListTypePre
+                assert associationTypePost == associationTypePre
+
         if self.logTime:
             self.toc[0] = time.time() - self.tic[0]
 
-        if kwargs.get("checkIntegrety", False):
-            self._checkTrackerIntegrety()
+        if kwargs.get("checkIntegrity", False):
+            self._checkTrackerIntegrity()
 
         if self.logTime:
             self.runtimeLog['Total'] += np.array([self.toc[0], 1])
@@ -526,7 +553,6 @@ class Tracker():
                                          activeMeasurementsCpy, hypothesisIndex)
 
         A1 = np.zeros((nRow, nCol), dtype=bool)  # Numpy Array
-        # A1 = sp.dok_matrix((nRow,nCol),dtype = bool) #pulp.sparse Matrix
         activeMeasurements = np.zeros(nRow, dtype=bool)
         measurementList = []
         hypothesisIndex = [0]
@@ -552,7 +578,7 @@ class Tracker():
     def _createC(self, cluster):
         def getTargetScore(target, scoreArray):
             if target.trackHypotheses is None:
-                scoreArray.append(target.cummulativeNLLR)
+                scoreArray.append(target.cumulativeNLLR)
             else:
                 for hyp in target.trackHypotheses:
                     getTargetScore(hyp, scoreArray)
@@ -708,7 +734,7 @@ class Tracker():
                         "nScanPrune: Inconsistent target.depth() and target.child.parent.depth()"
                     self.__targetList__[targetIndex] = node
                     node.parent._pruneAllHypothesisExeptThis(node)
-                    node.recursiveSubtractScore(node.cummulativeNLLR)
+                    node.recursiveSubtractScore(node.cumulativeNLLR)
                     if node.parent.scanNumber != node.scanNumber - 1:
                         raise ValueError("nScanPruning2: from scanNumber",
                                          node.parent.scanNumber, "->", node.scanNumber)
@@ -732,7 +758,7 @@ class Tracker():
             for node in leafParents:
                 node.pruneSimilarState(threshold)
 
-    def _checkTrackerIntegrety(self):
+    def _checkTrackerIntegrity(self):
         assert len(self.__trackNodes__) == len(self.__targetList__), \
             "There are not the same number trackNodes as targets"
         assert len(self.__targetList__) == len(set(self.__targetList__)), \
@@ -740,8 +766,8 @@ class Tracker():
         assert len(self.__trackNodes__) == len(set(self.__trackNodes__)), \
             "There are copies of track nodes in __trackNodes__"
         for target in self.__targetList__:
-            target._checkScanNumberIntegrety()
-            target._checkReferenceIntegrety()
+            target._checkScanNumberIntegrity()
+            target._checkReferenceIntegrity()
         assert len({node.scanNumber for node in self.__trackNodes__}) == 1, \
             "there are inconsistency in trackNodes scanNumber"  # he
 
@@ -777,7 +803,12 @@ class Tracker():
     def plotActiveTracks(self, **kwargs):
         colors = kwargs.get("colors", self._getColorCycle())
         for track in self.__trackNodes__:
-            track.plotTrack(c=next(colors))
+            track.plotTrack(c=next(colors), **kwargs)
+
+    def plotTerminatedTracks(self, **kwargs):
+        colors = kwargs.get("colors", self._getColorCycle())
+        for track in self.__terminatedTargets__:
+            track.plotTrack(c=next(colors), markInitial=True, markEnd=True, **kwargs)
 
     def plotMeasurementsFromTracks(self, stepsBack=float('inf'), **kwargs):
         for node in self.__trackNodes__:
@@ -830,26 +861,11 @@ class Tracker():
         size = fig.get_size_inches() * fig.dpi
         for i, initialTarget in enumerate(initialTargets):
             index = kwargs.get("index", list(range(len(initialTargets))))
+            offset = 0.05 * size
             if len(index) != len(initialTargets):
                 raise ValueError(
-                    "plotInitialTargets: Need equal number of targets and indecies")
-            plt.plot(initialTarget.x_0[0],
-                     initialTarget.x_0[1],
-                     "ks",
-                     markerfacecolor='white',
-                     markeredgecolor='black')
-            ax = plt.subplot(111)
-            normVelocity = (initialTarget.x_0[2:4] /
-                            np.linalg.norm(initialTarget.x_0[2:4]))
-            offset = 0.05 * size * normVelocity
-            position = initialTarget.x_0[0:2] - offset
-            horizontalalignment, verticalalignment = _getBestTextPosition(normVelocity)
-            ax.text(position[0],
-                    position[1],
-                    "T" + str(index[i]),
-                    fontsize=8,
-                    horizontalalignment=horizontalalignment,
-                    verticalalignment=verticalalignment)
+                    "plotInitialTargets: Need equal number of targets and indices")
+            initialTarget.plotInitial(index=index[i], offset=offset)
 
     def _getColorCycle(self):
         return itertools.cycle(self.colors)
