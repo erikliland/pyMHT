@@ -1,13 +1,49 @@
-# import pymht.utils.helpFunctions as hpf
-# import pymht.utils.cFunctions as hpf2
-from pymht.utils.classDefinitions import Position, Velocity
+from pymht.utils.classDefinitions import Position, Velocity, MeasurementList
+import pymht.models.pv as model
+import pymht.utils.pyKalman as kalman
+import pymht.utils.helpFunctions as hpf
 import numpy as np
 import time
 import copy
 import itertools
+import queue
 import matplotlib.pyplot as plt
 import multiprocessing as mp
-import pymht.utils.pyKalman as kalman
+
+
+class TargetManager(mp.Process):
+    def __init__(self, q, idx):
+        super(TargetManager, self).__init__()
+        self.exit_flag = False
+        self.queue = q
+        self.idx = idx
+        self.rootNode = None
+
+    def exit_request(self):
+        print(self.idx, "got exit flag")
+        self.exit_flag = True
+        print(self.idx, self.exit_flag)
+
+    def parseInput(self, data):
+        dataType = type(data)
+        if dataType is MeasurementList:
+            return self.processMeasurements
+
+    def processMeasurements(self, measurementList):
+        print("Processing measurements")
+        pass
+
+    def run(self):
+        print("Starting run")
+        while not self.exit_flag:
+            try:
+                data = self.queue.get()
+                print(data)
+                functionToCall = self.parseInput(data)
+                functionToCall(*data)
+            except queue.Empty:
+                pass
+        print("Exiting run and terminating")
 
 
 class Target():
@@ -16,12 +52,11 @@ class Target():
         self.scanNumber = scanNumber
         self.x_0 = x_0
         self.P_0 = P_0
-        # self.kalmanFilter = kalmanFilter
         self.P_d = copy.copy(kwargs.get('P_d', 0.8))
         self.parent = kwargs.get("parent")
         self.measurementNumber = kwargs.get("measurementNumber", 0)
         self.measurement = kwargs.get("measurement")
-        self.cummulativeNLLR = copy.copy(kwargs.get("cummulativeNLLR", 0))
+        self.cumulativeNLLR = copy.copy(kwargs.get("cumulativeNLLR", 0))
         self.trackHypotheses = None
 
     def __repr__(self):
@@ -55,7 +90,7 @@ class Target():
         return ("Time: " + time.strftime("%H:%M:%S", time.gmtime(self.time)) +
                 "\t" + str(self.getPosition()) +
                 " \t" + str(self.getVelocity()) +
-                " \tcNLLR:" + '{: 06.4f}'.format(self.cummulativeNLLR) +
+                " \tcNLLR:" + '{: 06.4f}'.format(self.cumulativeNLLR) +
                 measStr +
                 predStateStr +
                 gateStr
@@ -107,9 +142,13 @@ class Target():
         return (count if self.trackHypotheses is None
                 else self.trackHypotheses[0].depth(count + 1))
 
-    # def predictMeasurement(self, **kwargs):
-    #     self.kalmanFilter.predict()
-    #     self.kalmanFilter._precalculateMeasurementUpdate()
+    def predictMeasurement(self, **kwargs):
+        self.kalmanFilter.predict()
+        self.kalmanFilter._precalculateMeasurementUpdate()
+
+    def isOutsideRange(self, position, range):
+        distance = np.linalg.norm(model.C.dot(self.x_0) - position)
+        return distance > range
 
     def gateAndCreateNewHypotheses(self, measurementList, scanNumber, lambda_ex, eta2, kfVars):
         assert self.scanNumber == scanNumber - 1, "inconsistent scan numbering"
@@ -158,7 +197,7 @@ class Target():
                            P_hat[0],
                            measurementNumber=measurementIndex + 1,
                            measurement=z_list[measurementIndex],
-                           cummulativeNLLR=self.cummulativeNLLR + nllr,
+                           cumulativeNLLR=self.cumulativeNLLR + nllr,
                            P_d=self.P_d,
                            parent=self
                            )
@@ -193,7 +232,7 @@ class Target():
                     P_0=covariance,
                     measurementNumber=measurementsIndecies[i] + 1,
                     measurement=measurements[i],
-                    cummulativeNLLR=self.cummulativeNLLR + nllrList[i],
+                    cumulativeNLLR=self.cumulativeNLLR + nllrList[i],
                     P_d=self.P_d,
                     parent=self
                     ) for i in range(nNewMeasurements)]
@@ -205,9 +244,11 @@ class Target():
 
     def calculateCNLLR(self, lambda_ex, measurementResidual, S, S_inv):
         P_d = self.P_d
-        return (self.cummulativeNLLR +
-                (0.5 * (measurementResidual.T.dot(S_inv).dot(measurementResidual)) +
-                 np.log((lambda_ex * np.sqrt(np.linalg.det(2 * np.pi * S))) / P_d)))
+        nis = measurementResidual.T.dot(S_inv).dot(measurementResidual)
+        nllr = (0.5 * nis +
+                np.log((lambda_ex * np.sqrt(np.linalg.det(2. * np.pi * S))) / P_d))
+        print("nllr", nllr)
+        return self.cumulativeNLLR + nllr
 
     def measurementIsInsideErrorEllipse(self, measurement, eta2):
         measRes = measurement.position - self.predictedMeasurement
@@ -219,7 +260,7 @@ class Target():
                       x_0,
                       P_0,
                       measurementNumber=0,
-                      cummulativeNLLR=self.cummulativeNLLR - np.log(1 - self.P_d),
+                      cumulativeNLLR=self.cumulativeNLLR - np.log(1 - self.P_d),
                       P_d=self.P_d,
                       parent=self
                       )
@@ -230,6 +271,13 @@ class Target():
             if hyp != keep:
                 index = np.where(self.trackHypotheses == hyp)
                 self.trackHypotheses = np.delete(self.trackHypotheses, index)
+
+    def _pruneEverythingExceptHistory(self, activeChild=None):
+        if self.parent is not None:
+            self.parent._pruneEverythingExceptHistory(self)
+        if activeChild is not None:
+            indices = np.where(self.trackHypotheses != activeChild)
+            self.trackHypotheses = np.delete(self.trackHypotheses, indices)
 
     def getMeasurementSet(self, root=True):
         subSet = set()
@@ -257,8 +305,8 @@ class Target():
     def _selectBestHypothesis(self):
         def recSearchBestHypothesis(target, bestScore, bestHypothesis):
             if target.trackHypotheses is None:
-                if target.cummulativeNLLR <= bestScore[0]:
-                    bestScore[0] = target.cummulativeNLLR
+                if target.cumulativeNLLR <= bestScore[0]:
+                    bestScore[0] = target.cumulativeNLLR
                     bestHypothesis[0] = target
             else:
                 for hyp in target.trackHypotheses:
@@ -298,13 +346,13 @@ class Target():
     def recursiveSubtractScore(self, score):
         if score == 0:
             return
-        self.cummulativeNLLR -= score
+        self.cumulativeNLLR -= score
 
         if self.trackHypotheses is not None:
             for hyp in self.trackHypotheses:
                 hyp.recursiveSubtractScore(score)
 
-    def _checkScanNumberIntegrety(self):
+    def _checkScanNumberIntegrity(self):
         assert type(self.scanNumber) is int, \
             "self.scanNumber is not an integer %r" % self.scanNumber
 
@@ -316,9 +364,9 @@ class Target():
                     self.parent.scanNumber, self.scanNumber)
         if self.trackHypotheses is not None:
             for hyp in self.trackHypotheses:
-                hyp._checkScanNumberIntegrety()
+                hyp._checkScanNumberIntegrity()
 
-    def _checkReferenceIntegrety(self):
+    def _checkReferenceIntegrity(self):
         def recCheckReferenceIntegrety(target):
             if target.trackHypotheses is not None:
                 for hyp in target.trackHypotheses:
@@ -359,9 +407,13 @@ class Target():
             return self.parent.backtrackPosition(stepsBack) + [self.getPosition()]
 
     def plotTrack(self, stepsBack=float('inf'), **kwargs):
+        if kwargs.get('markInitial', False) and stepsBack == float('inf'):
+            self.getRoot().plotInitial()
+        if kwargs.get('markEnd'):
+            self.plotEnd()
         colors = itertools.cycle(["r", "b", "g"])
         track = self.backtrackPosition(stepsBack)
-        plt.plot([p.x() for p in track], [p.y() for p in track], **kwargs)
+        plt.plot([p.x() for p in track], [p.y() for p in track], c=kwargs.get('c'))
 
     def plotMeasurement(self, stepsBack=0, **kwargs):
         if self.measurement is not None:
@@ -390,3 +442,35 @@ class Target():
                      linewidth=1)
         if (self.parent is not None) and (stepsBack > 0):
             self.parent.plotVelocityArrow(stepsBack - 1)
+
+    def plotInitial(self, **kwargs):
+        plt.plot(self.x_0[0],
+                 self.x_0[1],
+                 "s",
+                 markerfacecolor=(1, 1, 0, 0.),
+                 markeredgecolor='black')
+        index = kwargs.get("index")
+        if index is not None:
+            ax = plt.subplot(111)
+            normVelocity = (self.x_0[2:4] /
+                            np.linalg.norm(self.x_0[2:4]))
+            offset = kwargs.get('offset', np.zeros_like(normVelocity))
+            position = self.x_0[0:2] - offset
+            horizontalalignment, verticalalignment = hpf._getBestTextPosition(normVelocity)
+            ax.text(position[0],
+                    position[1],
+                    "T" + str(index),
+                    fontsize=8,
+                    horizontalalignment=horizontalalignment,
+                    verticalalignment=verticalalignment)
+
+    def plotEnd(self):
+        plt.plot(self.x_0[0],
+                 self.x_0[1],
+                 "h",
+                 markerfacecolor=(1, 1, 0, 0.),
+                 markeredgecolor='black')
+
+
+if __name__ == '__main__':
+    pass
