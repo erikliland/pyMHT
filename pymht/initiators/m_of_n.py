@@ -1,6 +1,6 @@
 import numpy as np
 import pymht.models.pv as pv
-from pymht.utils.classDefinitions import Target
+from pymht.utils.classDefinitions import TempTarget as Target
 from munkres import Munkres
 from scipy.stats import chi2
 
