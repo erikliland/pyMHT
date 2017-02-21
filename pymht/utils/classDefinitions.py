@@ -2,7 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 
-class Target:
+class TempTarget:
     def __init__(self, *args, **kwargs):
         p = kwargs.get('position')
         v = kwargs.get('velocity')
@@ -53,49 +53,49 @@ class Position:
         x = kwargs.get('x')
         y = kwargs.get('y')
         if (x is not None) and (y is not None):
-            self.position = np.array([x, y])
+            self.array = np.array([x, y])
         elif len(args) == 1:
-            self.position = np.array(args[0])
+            self.array = np.array(args[0])
         elif len(args) == 2:
-            self.position = np.array([args[0], args[1]])
+            self.array = np.array([args[0], args[1]])
         else:
             raise ValueError("Invalid arguments to Position")
 
     def __str__(self):
-        return 'Pos: ({0: .2f},{1: .2f})'.format(self.position[0], self.position[1])
+        return 'Pos: ({0: .2f},{1: .2f})'.format(self.array[0], self.array[1])
 
     def __repr__(self):
-        return '({0:.3e},{1:.3e})'.format(self.position[0], self.position[1])
+        return '({0:.3e},{1:.3e})'.format(self.array[0], self.array[1])
 
     def __add__(self, other):
-        return Position(self.position + other.position)
+        return Position(self.array + other.position)
 
     def __sub__(self, other):
-        return Position(self.position - other.position)
+        return Position(self.array - other.position)
 
     def __mul__(self, other):
-        return Position(self.position * other.position)
+        return Position(self.array * other.position)
 
     def __div__(self, other):
-        return Position(self.position / other.position)
+        return Position(self.array / other.position)
 
     def x(self):
-        return self.position[0]
+        return self.array[0]
 
     def y(self):
-        return self.position[1]
+        return self.array[1]
 
     def plot(self, measurementNumber, scanNumber=None, **kwargs):
         if measurementNumber == 0:
-            plt.plot(self.position[0], self.position[1],
+            plt.plot(self.array[0], self.array[1],
                      color="black", fillstyle="none", marker="o")
         else:
-            plt.plot(self.position[0], self.position[1], 'kx')
+            plt.plot(self.array[0], self.array[1], 'kx')
         if ((scanNumber is not None) and
                 (measurementNumber is not None) and
                 kwargs.get("labels", False)):
             ax = plt.subplot(111)
-            ax.text(self.position[0], self.position[1], str(
+            ax.text(self.array[0], self.array[1], str(
                 scanNumber) + ":" + str(measurementNumber), size=7, ha="left", va="top")
 
 
