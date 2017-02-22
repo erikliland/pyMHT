@@ -48,11 +48,13 @@ def simulateTargets(randomSeed, initialTargets, numOfSteps, timeStep, Phi, Q, Ga
     return simList
 
 
-def simulateScans(randomSeed, simList, H, R, lambda_phi=None,
+def simulateScans(randomSeed, simList, H, R, lambda_phi=0,
                   rRange=None, p0=None, **kwargs):
+    DEBUG = kwargs.get('debug', False)
     np.random.seed(randomSeed)
     area = np.pi * np.power(rRange, 2)
-    lClutter = lambda_phi * area
+    gClutter = lambda_phi * area
+    lClutter = 3e-2 * np.power(3*R[0,0],2) * np.pi
     scanList = []
     for scan in simList:
         measurementList = MeasurementList(scan[0].time)
@@ -67,8 +69,13 @@ def simulateScans(randomSeed, simList, H, R, lambda_phi=None,
 
             if visible and inRange:
                 measurementList.measurements.append(positionWithNoise(target.state, H, R))
-        if (lambda_phi is not None) and (rRange is not None) and (p0 is not None):
-            nClutter = np.random.poisson(lClutter)
+                if kwargs.get('localClutter'):
+                    nClutter = np.random.poisson(lClutter)
+                    if DEBUG: print(nClutter)
+                    measurementList.measurements.extend([positionWithNoise(target.state,H,R*5)
+                                                         for _ in range(nClutter)])
+        if all(e is not None for e in [rRange, p0 ]) and kwargs.get('globalClutter', True):
+            nClutter = np.random.poisson(gClutter)
             for i in range(nClutter):
                 clutter = _generateCartesianClutter(p0, rRange)
                 measurementList.measurements.append(clutter)
@@ -168,7 +175,7 @@ def _generateRadialClutter(centerPosition, radarRange):
     heading = np.random.uniform(0, 360)
     distance = np.random.uniform(0, radarRange)
     px, py = _pol2cart(heading, distance)
-    return centerPosition + Position(px, py)
+    return centerPosition.array + np.array([px, py])
 
 
 def _generateCartesianClutter(centerPosition, radarRange):
