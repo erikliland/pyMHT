@@ -4,12 +4,11 @@ A module with operations useful for Kalman filtering.
 import numpy as np
 
 
-def nllr(lambda_ex, P_d, z_tilde_list, S_list, S_inv_list):
+def nllr(lambda_ex, P_d, S_list, nis):
     if lambda_ex == 0:
         print("RuntimeError('lambda_ex' can not be zero.)")
         lambda_ex += 1e-20
-    return (0.5 * np.sum(np.matmul(z_tilde_list, S_inv_list) * z_tilde_list, axis=1) +
-            np.log((lambda_ex * np.sqrt(np.linalg.det(2 * np.pi * S_list))) / P_d))
+    return (0.5 * nis + np.log((lambda_ex * np.sqrt(np.linalg.det(2 * np.pi * S_list))) / P_d))
 
 
 def normalizedInnovationSquared(z_tilde_list, S_inv_list):
@@ -88,20 +87,20 @@ class KalmanFilter():
         #     'Gamma',
         #     np.eye(Q(1).shape[0]) if callable(Q) else np.eye(Q.shape[0]))
 
-        self.A = A              # Transition matrix
-        self.C = C              # Observation matrix
-        self.Q = Q              # Process noise covariance
-        self.R = R              # Measurement noise covariance
-        self.Gamma = Gamma      # Process noise "observability"
+        self.A = A  # Transition matrix
+        self.C = C  # Observation matrix
+        self.Q = Q  # Process noise covariance
+        self.R = R  # Measurement noise covariance
+        self.Gamma = Gamma  # Process noise "observability"
         self.x_hat = np.copy(x_0)  # Filtered state
         self.P_hat = np.copy(P_0)  # Filtered state covariance
-        self.x_bar = None       # Prediced state
-        self.P_bar = None       # Predictes state covariance
+        self.x_bar = None  # Prediced state
+        self.P_bar = None  # Predictes state covariance
         # self.dT = np.copy(dT)   # Sampling period (dynamic if None)
-        self.z_hat = None       # Predicted measurement
-        self.S = None           # Residual covariance
-        self.S_inv = None       # Inverse residual covariance
-        self.K = None           # Kalman gain
+        self.z_hat = None  # Predicted measurement
+        self.S = None  # Residual covariance
+        self.S_inv = None  # Inverse residual covariance
+        self.K = None  # Kalman gain
         self.precalculated = False
 
     def predict(self, **kwargs):
