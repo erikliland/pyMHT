@@ -77,12 +77,12 @@ def _solve_global_nearest_neighbour(delta_matrix, gate_distance=np.Inf, **kwargs
         # print debug info
         np.set_printoptions(precision=1, suppress=True)
         print("#" * 20, "CRASH DEBUG INFO", "#" * 20)
-        print("deltaMatrix",delta_matrix.shape,"\n", delta_matrix)
+        print("deltaMatrix", delta_matrix.shape, "\n", delta_matrix)
         print("gateDistance", gate_distance)
-        print("Valid matrix",valid_matrix.shape,"\n", valid_matrix.astype(int))
+        print("Valid matrix", valid_matrix.shape, "\n", valid_matrix.astype(int))
         print("validCol", validCol.astype(int))
         print("validRow", validRow.astype(int))
-        print("dMat",dMat.shape,"\n", dMat)
+        print("dMat", dMat.shape, "\n", dMat)
         print("preliminary assignments", preliminary_assignments)
         print("rowIdx", rowIdx)
         print("colIdx", colIdx)
@@ -165,6 +165,7 @@ class Initiator():
         if self.DEBUG: print("processMeasurements", measurement_list.measurements.shape[0])
         if self.DEBUG: print(measurement_list)
         unused_indices, initial_targets = self._processPreliminaryTracks(measurement_list)
+
         unused_indices = self._processInitiators(unused_indices, measurement_list)
         self._processUnusedMeasurements(unused_indices, measurement_list)
         self.last_timestamp = measurement_list.time
@@ -299,9 +300,14 @@ class Initiator():
                            for index in unused_indices]
 
     def __spawn_preliminary_tracks(self, measurement_list, assignments):
-        if self.DEBUG: print("__spawn_preliminary_tracks", len(assignments))
         time = measurement_list.time
         measurements = measurement_list.measurements
+        if self.DEBUG:
+            print("__spawn_preliminary_tracks", len(assignments),
+                  *[str(self.initiators[old_index].value) + "->" +
+                    str(measurements[new_index])
+                    for old_index, new_index in assignments])
+
         for old_index, new_index in assignments:
             delta_vector = measurements[new_index] - self.initiators[old_index].value
             dt = time - self.initiators[old_index].timestamp
@@ -322,6 +328,7 @@ if __name__ == "__main__":
     print("test assignment", assignment)
 
     import sys
+
     sys.exit()
 
     np.set_printoptions(precision=1, suppress=True)
