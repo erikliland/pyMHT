@@ -207,7 +207,7 @@ class Target():
         self.trackHypotheses.extend(newNodes)
         return associatedMeasurements
 
-    def spawnNewNodes(self, scanTime, scanNumber, x_bar, P_bar, measurementsIndecies,
+    def spawnNewNodes(self, scanTime, scanNumber, x_bar, P_bar, measurementsIndices,
                       measurements, states, covariance, nllrList):
         assert scanTime > self.time
         assert self.scanNumber == scanNumber - 1
@@ -215,13 +215,11 @@ class Target():
         assert P_bar.shape == (4, 4)
         assert all([state.shape == (4,) for state in states])
         assert covariance.shape == (4, 4)
-        nNewMeasurementsIndecies = len(measurementsIndecies)
+        nNewMeasurementsIndices = len(measurementsIndices)
         nNewMeasurements = len(measurements)
         nNewStates = len(states)
         nNewScores = len(nllrList)
-        assert nNewMeasurementsIndecies == nNewMeasurements == nNewStates == nNewScores
-        # print(nNewMeasurements)
-        # print(measurementsIndecies, measurements, states, covariance, nllrList)
+        assert nNewMeasurementsIndices == nNewMeasurements == nNewStates == nNewScores
         self.trackHypotheses = [self.createZeroHypothesis(
             scanTime, scanNumber, x_bar, P_bar)]
 
@@ -230,7 +228,7 @@ class Target():
                     scanNumber,
                     x_0=states[i],
                     P_0=covariance,
-                    measurementNumber=measurementsIndecies[i] + 1,
+                    measurementNumber=measurementsIndices[i] + 1,
                     measurement=measurements[i],
                     cumulativeNLLR=self.cumulativeNLLR + nllrList[i],
                     P_d=self.P_d,
