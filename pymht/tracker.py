@@ -14,7 +14,9 @@ import pymht.initiators.m_of_n as m_of_n
 import time
 import signal
 import os
+import logging
 import copy
+import sys
 import itertools
 import functools
 import matplotlib.pyplot as plt
@@ -64,6 +66,20 @@ def _getSelectedHyp2(p, threshold=0):
 class Tracker():
     def __init__(self, Phi, C, Gamma, P_d, P_0, R, Q, lambda_phi,
                  lambda_nu, eta2, N, p0, radarRange, solverStr, **kwargs):
+
+        # ----------------------------------------------------------------------------
+        # Instantiate logging object
+        # ----------------------------------------------------------------------------
+        self.log = logging.getLogger(__name__)
+        log_handler = logging.StreamHandler(sys.stdout)
+        log_handler.setLevel(kwargs.get('logLevel', 'INFO'))
+        self.log.setLevel(kwargs.get('logLevel', 'INFO'))
+        log_format = '%(message)s'
+        log_formatter = logging.Formatter(log_format)
+        log_handler.setFormatter(log_formatter)
+        self.log.handlers = []
+        self.log.addHandler(log_handler)
+        self.log.info('Running base main')
 
         self.logTime = kwargs.get("logTime", False)
         self.debug = kwargs.get("debug", False)
@@ -169,14 +185,14 @@ class Tracker():
             self.tic[1] = time.time()
         self.__scanHistory__.append(measurementList)
         nMeas = len(measurementList.measurements)
-        nTargets = len(self.__targetList__)
+        measDim = self.C.shape[0]
         scanNumber = len(self.__scanHistory__)
         scanTime = measurementList.time
-        measDim = self.C.shape[0]
         unused_measurement_indices = np.ones(nMeas, dtype=np.bool)
 
         if self.logTime:
             self.leafNodeTimeList = []
+
         for targetIndex, target in enumerate(self.__targetList__):
             if self.parallelize:
                 targetStartDepth = target.depth()
@@ -212,8 +228,9 @@ class Tracker():
                 assert targetEndDepth - 1 == targetStartDepth, \
                     "'processNewMeasurements' did not increase the target depth"
                 target._checkReferenceIntegrity()
-            else: # Relatively easy to adapt to TargetManager style
+            else:  # Relatively easy to adapt to TargetManager style
                 if kwargs.get('R', False):
+                    print("Hei")
                     target.processNewMeasurementRec(
                         measurementList,
                         self.__associatedMeasurements__[targetIndex],
@@ -225,50 +242,16 @@ class Tracker():
                 else:
                     targetNodes = target.getLeafNodes()
                     nNodes = len(targetNodes)
+                    newNodesData = self._processTarget(targetNodes, measurementList)
+                    x_bar_list, P_bar_list, gated_x_hat_list, P_hat_list, gatedIndicesList, nllrList = newNodesData
 
-                    x_bar_list, P_bar_list, z_hat_list, S_list, S_inv_list, K_list, P_hat_list = self._predictPrecalcBulk(
-                        targetNodes)
-
-                    z_list = measurementList.measurements
-                    assert z_list.shape[1] == measDim
-
-                    z_tilde_list = kalman.z_tilde(z_list, z_hat_list, nNodes, measDim)
-                    assert z_tilde_list.shape == (nNodes, nMeas, measDim)
-
-                    nis = kalman.normalizedInnovationSquared(z_tilde_list, S_inv_list)
-                    assert nis.shape == (nNodes, nMeas,)
-
-                    gatedFilter = nis <= self.eta2
-                    assert gatedFilter.shape == (nNodes, nMeas)
-
-                    gatedIndicesList = [np.nonzero(gatedFilter[row])[0]
-                                         for row in range(nNodes)]
-                    for gated_index in gatedIndicesList:
-                        unused_measurement_indices[gated_index] = False
-
-                    assert len(gatedIndicesList) == nNodes
-
-                    gatedMeasurementsList = [np.array(z_list[gatedIndecies])
-                                             for gatedIndecies in gatedIndicesList]
+                    gatedMeasurementsList = [np.array(measurementList.measurements[gatedIndices])
+                                             for gatedIndices in gatedIndicesList]
                     assert len(gatedMeasurementsList) == nNodes
                     assert all([m.shape[1] == measDim for m in gatedMeasurementsList])
 
-                    gated_z_tilde_list = [z_tilde_list[i, gatedIndicesList[i]]
-                                          for i in range(nNodes)]
-                    assert len(gated_z_tilde_list) == nNodes
-
-                    gated_x_hat_list = [kalman.numpyFilter(
-                        x_bar_list[i], K_list[i], gated_z_tilde_list[i])
-                                        for i in range(nNodes)]
-                    assert len(gated_x_hat_list) == nNodes
-
-                    nllrList = [kalman.nllr(self.lambda_ex,
-                                            targetNodes[i].P_d,
-                                            gated_z_tilde_list[i],
-                                            S_list[i],
-                                            S_inv_list[i])
-                                for i in range(nNodes)]
-                    assert len(nllrList) == nNodes
+                    for gated_index in gatedIndicesList:
+                        unused_measurement_indices[gated_index] = False
 
                     for i, node in enumerate(targetNodes):
                         node.spawnNewNodes(scanTime,
@@ -388,8 +371,6 @@ class Tracker():
         if kwargs.get("printTime", False):
             if self.logTime:
                 self.printTimeLog()
-                # if self.createComputationTime is not None:
-                #     print("createComputationTime", self.createComputationTime)
 
         # Covariance consistence
         if "trueState" in kwargs:
@@ -401,6 +382,51 @@ class Tracker():
         for initial_target in new_initial_targets:
             print("\tNew target({}): ".format(len(self.__targetList__) + 1), initial_target)
             self.initiateTarget(initial_target)
+
+    def _processTarget(self, targetNodes, measurementList):
+        nMeas = len(measurementList.measurements)
+        measDim = self.C.shape[0]
+        nNodes = len(targetNodes)
+
+        x_bar_list, P_bar_list, z_hat_list, S_list, S_inv_list, K_list, P_hat_list = self._predictPrecalcBulk(
+            targetNodes)
+
+        z_list = measurementList.measurements
+        assert z_list.shape[1] == measDim
+
+        z_tilde_list = kalman.z_tilde(z_list, z_hat_list, nNodes, measDim)
+        assert z_tilde_list.shape == (nNodes, nMeas, measDim)
+
+        nis = kalman.normalizedInnovationSquared(z_tilde_list, S_inv_list)
+        assert nis.shape == (nNodes, nMeas,)
+
+        gatedFilter = nis <= self.eta2
+        assert gatedFilter.shape == (nNodes, nMeas)
+
+        gatedIndicesList = [np.nonzero(gatedFilter[row])[0]
+                            for row in range(nNodes)]
+
+        assert len(gatedIndicesList) == nNodes
+
+        gated_z_tilde_list = [z_tilde_list[i, gatedIndicesList[i]]
+                              for i in range(nNodes)]
+        assert len(gated_z_tilde_list) == nNodes
+
+        gated_x_hat_list = [kalman.numpyFilter(
+            x_bar_list[i], K_list[i], gated_z_tilde_list[i])
+                            for i in range(nNodes)]
+        assert len(gated_x_hat_list) == nNodes
+
+        nllrList = [kalman.nllr(self.lambda_ex,
+                                targetNodes[i].P_d,
+                                S_list[i],
+                                nis[i, gatedFilter[i]])
+                    for i in range(nNodes)]
+        assert len(nllrList) == nNodes
+
+        # Return (x_bar, P_bar, x_hat_list, P_hat_list, measurementIndices, NLLR_list)
+        newNodesData = (x_bar_list, P_bar_list, gated_x_hat_list, P_hat_list, gatedIndicesList, nllrList)
+        return newNodesData
 
     def _predictPrecalcBulk(self, targetNodes):
         nNodes = len(targetNodes)
@@ -474,9 +500,9 @@ class Tracker():
         # assert selectedHypotheses0 == selectedHypotheses
         selectedNodes = self._hypotheses2Nodes(selectedHypotheses, cluster)
         selectedNodesArray = np.array(selectedNodes)
-        # print("Solving optimal association in cluster with targets",cluster,",   \t",
-        # sum(nHypInClusterArray, " hypotheses and",
-        #     nRealMeasurementsInCluster, "real measurements.", sep=" ")
+        self.log.debug("Solving optimal association in cluster with targets" + str(cluster) + ",   \t" +
+                  str(sum(nHypInClusterArray)) + " hypotheses and " +
+                  str(nRealMeasurementsInCluster) + " real measurements.")
         # print("nHypothesesInCluster",sum(nHypInClusterArray))
         # print("nRealMeasurementsInCluster", nRealMeasurementsInCluster)
         # print("nTargetsInCluster", len(cluster))
