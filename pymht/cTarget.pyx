@@ -241,7 +241,7 @@ class Target():
 	def createZeroHypothesisDictionary(self, time, scanNumber, P_d, **kwargs):
 		return self.__dict__
 
-	def _pruneAllHypothesisExeptThis(self, keep):
+	def _pruneAllHypothesisExceptThis(self, keep):
 		for hyp in self.trackHypotheses:
 			if hyp != keep:
 				self.trackHypotheses.remove(hyp)
@@ -322,7 +322,7 @@ class Target():
 		for hyp in self.trackHypotheses:
 			hyp._checkScanNumberIntegrety()
 
-	def _checkReferenceIntegrety(self):
+	def _checkReferenceIntegrity(self):
 		def recCheckReferenceIntegrety(target):
 			for hyp in target.trackHypotheses:
 				assert hyp.parent == target, "Inconsistent parent <-> child reference: Measurement("+str(target.scanNumber)+":"+str(target.measurementNumber)+") <-> "+"Measurement("+str(hyp.scanNumber)+":"+str(hyp.measurementNumber)+")"
