@@ -110,9 +110,12 @@ class Tracker():
         self.__trackNodes__ = np.empty(0, dtype=np.dtype(object))
         self.__terminatedTargets__ = []
 
-        # Radar position
+        # Radar parameters
         self.position = p0
         self.range = radarRange
+        self.period = kwargs.get('period')
+        self.fixedPeriod = 'period' in kwargs
+        self.default_P_d = 0.8
 
         # Timing and logging
         if self.logTime:
@@ -121,9 +124,12 @@ class Tracker():
                                'Cluster': np.array([0.0, 0]),
                                'Optim': np.array([0.0, 0]),
                                'Prune': np.array([0.0, 0]),
+                               'Term': np.array([0.0, 0]),
+                               'Init': np.array([0.0, 0]),
+                               'Window': np.array([0.0, 0]),
                                }
-            self.tic = np.zeros(5)
-            self.toc = np.zeros(5)
+            self.tic = np.zeros(8)
+            self.toc = np.zeros(8)
             self.nOptimSolved = 0
             self.leafNodeTimeList = []
             self.createComputationTime = None
@@ -133,7 +139,7 @@ class Tracker():
         self.lambda_nu = lambda_nu
         self.lambda_ex = lambda_phi + lambda_nu
         self.eta2 = eta2
-        self.N = N
+        self.N = copy.copy(N)
         self.NLLR_UPPER_LIMIT = -(np.log(1 - 0.7)) * 7
         # self.solver = hpf.parseSolver(solverStr)
         self.pruneThreshold = kwargs.get("pruneThreshold")
@@ -162,20 +168,22 @@ class Tracker():
             self.workers.join()
 
     def initiateTarget(self, newTarget):
-        target = pyTarget.Target(newTarget.time,
-                                 len(self.__scanHistory__),
-                                 newTarget.state,
-                                 self.P_0,
-                                 P_d=0.8,
-                                 )
+        target = copy.copy(newTarget)
+        target.scanNumber = len(self.__scanHistory__)
+        target.P_d = self.default_P_d
+        # target = pyTarget.Target(newTarget.time,
+        #                          len(self.__scanHistory__),
+        #                          newTarget.state,
+        #                          self.P_0,
+        #                          P_d=0.8,
+        #                          )
         self.__targetList__.append(target)
         self.__associatedMeasurements__.append(set())
         self.__trackNodes__ = np.append(self.__trackNodes__, target)
 
     def addMeasurementList(self, measurementList, **kwargs):
         # 0 --Iterative procedure for tracking --
-        if self.logTime:
-            self.tic[0] = time.time()
+        self.tic[0] = time.time()
 
         if kwargs.get("checkIntegrity", False):
             self._checkTrackerIntegrity()
@@ -188,6 +196,10 @@ class Tracker():
         measDim = self.C.shape[0]
         scanNumber = len(self.__scanHistory__)
         scanTime = measurementList.time
+        timeSinceLastScan = scanTime - self.__scanHistory__[-1].time
+        if not self.fixedPeriod:
+            self.period = timeSinceLastScan
+
         unused_measurement_indices = np.ones(nMeas, dtype=np.bool)
 
         if self.logTime:
@@ -242,7 +254,7 @@ class Tracker():
                 else:
                     targetNodes = target.getLeafNodes()
                     nNodes = len(targetNodes)
-                    newNodesData = self._processTarget(targetNodes, measurementList)
+                    newNodesData = self._processTargetNodes(targetNodes, measurementList)
                     x_bar_list, P_bar_list, gated_x_hat_list, P_hat_list, gatedIndicesList, nllrList = newNodesData
 
                     gatedMeasurementsList = [np.array(measurementList.measurements[gatedIndices])
@@ -311,7 +323,9 @@ class Tracker():
         if kwargs.get("checkIntegrity", False):
             self._checkTrackerIntegrity()
 
-        # 5 -- Pick out dead tracks
+        # 5 -- Pick out dead tracks (terminate)
+        if self.logTime:
+            self.tic[5] = time.time()
         deadTracks = []
         for trackIndex, trackNode in enumerate(self.__trackNodes__):
             # Check outside range
@@ -349,9 +363,38 @@ class Tracker():
                 assert targetListTypePost == targetListTypePre
                 assert trackListTypePost == trackListTypePre
                 assert associationTypePost == associationTypePre
+        if self.logTime:
+            self.toc[5] = time.time() - self.tic[5]
+
+        # 6 -- Initiate new tracks
+        if self.logTime:
+            self.tic[6] = time.time()
+        unused_measurements = measurementList.filter(unused_measurement_indices)
+        new_initial_targets = self.initiator.processMeasurements(unused_measurements)
+        for initial_target in new_initial_targets:
+            print("\tNew target({}): ".format(len(self.__targetList__) + 1), initial_target)
+            self.initiateTarget(initial_target)
+        if self.logTime:
+            self.toc[6] = time.time() - self.tic[6]
+
+        # 7 -- Dynamic window size
+        if self.logTime:
+            self.tic[7] = time.time()
+            tempTotalTime = time.time() - self.tic[0]
+        if tempTotalTime > self.period:
+            reduceN = int(round(tempTotalTime / self.period, 0))
+            oldN = self.N
+            # self.N = max(1, self.N - reduceN)
+            self.N -= 1
+            self.log.info(
+                '\tIteration took to long time ({0:.1f}ms), reducing window size from {1:} to  {2:}'.format(
+                    tempTotalTime * 1000, oldN, self.N))
+            self._nScanPruning()
 
         if self.logTime:
-            self.toc[0] = time.time() - self.tic[0]
+            self.toc[7] = time.time() - self.tic[7]
+
+        self.toc[0] = time.time() - self.tic[0]
 
         if kwargs.get("checkIntegrity", False):
             self._checkTrackerIntegrity()
@@ -362,6 +405,9 @@ class Tracker():
             self.runtimeLog['Cluster'] += np.array([self.toc[2], 1])
             self.runtimeLog['Optim'] += np.array([self.toc[3], 1])
             self.runtimeLog['Prune'] += np.array([self.toc[4], 1])
+            self.runtimeLog['Term'] += np.array([self.toc[5], 1])
+            self.runtimeLog['Init'] += np.array([self.toc[6], 1])
+            self.runtimeLog['Window'] += np.array([self.toc[7], 1])
 
         if kwargs.get("printInfo", False):
             print("Added scan number:", len(self.__scanHistory__),
@@ -377,13 +423,7 @@ class Tracker():
             xTrue = kwargs.get("trueState")
             return self._compareTracksWithTruth(xTrue)
 
-        unused_measurements = measurementList.filter(unused_measurement_indices)
-        new_initial_targets = self.initiator.processMeasurements(unused_measurements)
-        for initial_target in new_initial_targets:
-            print("\tNew target({}): ".format(len(self.__targetList__) + 1), initial_target)
-            self.initiateTarget(initial_target)
-
-    def _processTarget(self, targetNodes, measurementList):
+    def _processTargetNodes(self, targetNodes, measurementList):
         nMeas = len(measurementList.measurements)
         measDim = self.C.shape[0]
         nNodes = len(targetNodes)
@@ -501,8 +541,8 @@ class Tracker():
         selectedNodes = self._hypotheses2Nodes(selectedHypotheses, cluster)
         selectedNodesArray = np.array(selectedNodes)
         self.log.debug("Solving optimal association in cluster with targets" + str(cluster) + ",   \t" +
-                  str(sum(nHypInClusterArray)) + " hypotheses and " +
-                  str(nRealMeasurementsInCluster) + " real measurements.")
+                       str(sum(nHypInClusterArray)) + " hypotheses and " +
+                       str(nRealMeasurementsInCluster) + " real measurements.")
         # print("nHypothesesInCluster",sum(nHypInClusterArray))
         # print("nRealMeasurementsInCluster", nRealMeasurementsInCluster)
         # print("nTargetsInCluster", len(cluster))
@@ -750,16 +790,17 @@ class Tracker():
         def recPruneNScan(node, targetIndex, stepsLeft):
             if stepsLeft <= 0:
                 if node.parent is not None:
-                    if self.__targetList__[targetIndex].scanNumber != node.scanNumber - 1:
-                        raise ValueError("nScanPruning1: from scanNumber",
-                                         self.__targetList__[targetIndex].scanNumber,
-                                         "->", node.scanNumber
-                                         )
+                    assert self.__targetList__[targetIndex].scanNumber == node.scanNumber - 1, \
+                        "nScanPruning1: from scanNumber " + \
+                        str(self.__targetList__[targetIndex].scanNumber) + \
+                        " -> " + \
+                        str(node.scanNumber)
+
                     changed = (self.__targetList__[targetIndex] != node)
                     assert self.__targetList__[targetIndex].depth() == node.parent.depth(), \
                         "nScanPrune: Inconsistent target.depth() and target.child.parent.depth()"
                     self.__targetList__[targetIndex] = node
-                    node.parent._pruneAllHypothesisExeptThis(node)
+                    node.parent._pruneAllHypothesisExceptThis(node, backtrack=True)
                     node.recursiveSubtractScore(node.cumulativeNLLR)
                     if node.parent.scanNumber != node.scanNumber - 1:
                         raise ValueError("nScanPruning2: from scanNumber",
@@ -778,7 +819,7 @@ class Tracker():
                 self.__associatedMeasurements__[targetIndex] = self.__targetList__[
                     targetIndex].getMeasurementSet()
 
-    def _pruneSmilarState(self, cluster, threshold):
+    def _pruneSimilarState(self, cluster, threshold):
         for targetIndex in cluster:
             leafParents = self.__targetList__[targetIndex].getLeafParents()
             for node in leafParents:
@@ -919,7 +960,7 @@ class Tracker():
                 deviation = False
             else:
                 deviation = True
-            tooLong = totalTime > (self.kwargs.get('period', float('inf')) * 1000)
+            tooLong = totalTime > (self.period * 1000)
             nNodes = sum([target.getNumOfNodes() for target in self.__targetList__])
             nMeasurements = len(self.__scanHistory__[-1].measurements)
             cprint(('{:3.0f} '.format(len(self.__scanHistory__)) +
