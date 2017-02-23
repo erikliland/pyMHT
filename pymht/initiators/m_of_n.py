@@ -1,6 +1,7 @@
 import numpy as np
 import pymht.models.pv as pv
-from pymht.utils.classDefinitions import TempTarget as Target
+# from pymht.utils.classDefinitions import TempTarget as Target
+from pymht.pyTarget import Target
 from munkres import Munkres
 from scipy.stats import chi2
 
@@ -253,7 +254,11 @@ class Initiator():
             elif track_status == CONFIRMED:
                 if self.DEBUG: print("Removing CONFIRMED track", track_index)
                 assert len(track.estimates) == self.N + 1
-                new_target = Target(np.array(track.estimates[-1]), self.last_timestamp)
+                new_target = Target(self.last_timestamp,
+                                    None,
+                                    np.array(track.estimates[-1]),
+                                    track.covariance,
+                                    measurementNumber=None)
                 newInitialTargets.append(new_target)
                 removeIndices.append(track_index)
         for i in reversed(removeIndices):
