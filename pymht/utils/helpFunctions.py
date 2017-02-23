@@ -48,7 +48,7 @@ def plotVelocityArrowFromNode(nodes, **kwargs):
 
 def plotRadarOutline(centerPosition, radarRange, **kwargs):
     from matplotlib.patches import Ellipse
-    if kwargs.get("center", True):
+    if kwargs.get("markCenter", True):
         plt.plot(centerPosition.x(), centerPosition.y(), "bo")
     ax = plt.subplot(111)
     circle = Ellipse((centerPosition.x(),centerPosition.y()), radarRange * 2, radarRange * 2,
