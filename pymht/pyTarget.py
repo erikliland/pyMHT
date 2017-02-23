@@ -87,10 +87,15 @@ class Target():
         else:
             gateStr = ""
 
+        if self.cumulativeNLLR == 0.0:
+            nllrStr = ""
+        else:
+            nllrStr = " \tcNLLR:" + '{: 06.4f}'.format(self.cumulativeNLLR)
+
         return ("Time: " + time.strftime("%H:%M:%S", time.gmtime(self.time)) +
                 "\t" + str(self.getPosition()) +
                 " \t" + str(self.getVelocity()) +
-                " \tcNLLR:" + '{: 06.4f}'.format(self.cumulativeNLLR) +
+                nllrStr +
                 measStr +
                 predStateStr +
                 gateStr
@@ -263,19 +268,16 @@ class Target():
                       parent=self
                       )
 
-    def _pruneAllHypothesisExeptThis(self, keep):
-        # TODO: Vectorize this
-        for hyp in self.trackHypotheses:
-            if hyp != keep:
-                index = np.where(self.trackHypotheses == hyp)
-                self.trackHypotheses = np.delete(self.trackHypotheses, index)
+    def _pruneAllHypothesisExceptThis(self, keep, backtrack = False):
+        indices = np.where(self.trackHypotheses != keep)
+        self.trackHypotheses = np.delete(self.trackHypotheses, indices)
 
-    def _pruneEverythingExceptHistory(self, activeChild=None):
+        if backtrack and self.parent is not None:
+            self.parent._pruneAllHypothesisExceptThis(self, backtrack=backtrack)
+
+    def _pruneEverythingExceptHistory(self):
         if self.parent is not None:
-            self.parent._pruneEverythingExceptHistory(self)
-        if activeChild is not None:
-            indices = np.where(self.trackHypotheses != activeChild)
-            self.trackHypotheses = np.delete(self.trackHypotheses, indices)
+            self.parent._pruneAllHypothesisExceptThis(self, backtrack=True)
 
     def getMeasurementSet(self, root=True):
         subSet = set()
@@ -414,10 +416,10 @@ class Target():
         plt.plot([p.x() for p in track], [p.y() for p in track], c=kwargs.get('c'))
 
     def plotMeasurement(self, stepsBack=0, **kwargs):
-        if self.measurement is not None:
+        if (self.measurement is not None) and kwargs.get('real', True):
             Position(self.measurement).plot(
                 self.measurementNumber, self.scanNumber, **kwargs)
-        elif kwargs.get("dummy", False):
+        if kwargs.get("dummy", False):
             self.getPosition().plot(self.measurementNumber, self.scanNumber, **kwargs)
 
         if (self.parent is not None) and (stepsBack > 0):
