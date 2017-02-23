@@ -62,7 +62,7 @@ class Position:
             raise ValueError("Invalid arguments to Position")
 
     def __str__(self):
-        return 'Pos: ({0: .2f},{1: .2f})'.format(self.array[0], self.array[1])
+        return 'Pos: ({0: 8.2f},{1: 8.2f})'.format(self.array[0], self.array[1])
 
     def __repr__(self):
         return '({0:.3e},{1:.3e})'.format(self.array[0], self.array[1])
@@ -113,7 +113,7 @@ class Velocity:
             raise ValueError("Invalid arguments to Velocity")
 
     def __str__(self):
-        return 'Vel: ({: .2f},{: .2f})'.format(self.velocity[0], self.velocity[1])
+        return 'Vel: ({: 6.2f},{: 6.2f})'.format(self.velocity[0], self.velocity[1])
 
     def __repr__(self):
         return '({:.3e},{:.3e})'.format(self.velocity[0], self.velocity[1])
