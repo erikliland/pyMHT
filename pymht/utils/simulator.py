@@ -36,11 +36,11 @@ def generateInitialTargets(randomSeed, numOfTargets, centerPosition,
     return initialList
 
 
-def simulateTargets(randomSeed, initialTargets, numOfSteps, timeStep, Phi, Q, Gamma):
+def simulateTargets(randomSeed, initialTargets, nTimeSteps, timeStep, Phi, Q, Gamma):
     np.random.seed(randomSeed)
     simList = []
     simList.append(initialTargets)
-    for scan in range(numOfSteps):
+    for _ in range(nTimeSteps):
         targetList = [calculateNextState(target, timeStep, Phi, Q, Gamma)
                       for target in simList[-1]]
         simList.append(targetList)
@@ -54,11 +54,11 @@ def simulateScans(randomSeed, simList, H, R, lambda_phi=0,
     np.random.seed(randomSeed)
     area = np.pi * np.power(rRange, 2)
     gClutter = lambda_phi * area
-    lClutter = 3e-2 * np.power(3*R[0,0],2) * np.pi
+    lClutter = 3e-2 * np.power(3 * R[0, 0], 2) * np.pi
     scanList = []
     for scan in simList:
         measurementList = MeasurementList(scan[0].time)
-        measurementList.measurements = []  # BUG: Why is this neccesary
+        measurementList.measurements = []  # BUG: Why is this necessary
         for target in scan:
             visible = np.random.uniform() <= target.P_d
             if (rRange is not None) and (p0 is not None):
@@ -72,9 +72,9 @@ def simulateScans(randomSeed, simList, H, R, lambda_phi=0,
                 if kwargs.get('localClutter'):
                     nClutter = np.random.poisson(lClutter)
                     if DEBUG: print(nClutter)
-                    measurementList.measurements.extend([positionWithNoise(target.state,H,R*5)
+                    measurementList.measurements.extend([positionWithNoise(target.state, H, R * 5)
                                                          for _ in range(nClutter)])
-        if all(e is not None for e in [rRange, p0 ]) and kwargs.get('globalClutter', True):
+        if all(e is not None for e in [rRange, p0]) and kwargs.get('globalClutter', True):
             nClutter = np.random.poisson(gClutter)
             for i in range(nClutter):
                 clutter = _generateCartesianClutter(p0, rRange)
@@ -87,6 +87,10 @@ def simulateScans(randomSeed, simList, H, R, lambda_phi=0,
         measurementList.measurements = measurementList.measurements.reshape((nMeas, 2))
         scanList.append(copy.deepcopy(measurementList))
     return scanList
+
+
+def simulateAIS(randomSeed, simList, **kwargs):
+    pass
 
 
 def writeSimList(initialTargets, simList, filename):
