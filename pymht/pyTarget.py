@@ -157,7 +157,7 @@ class Target():
 
     def gateAndCreateNewHypotheses(self, measurementList, scanNumber, lambda_ex, eta2, kfVars):
         assert self.scanNumber == scanNumber - 1, "inconsistent scan numbering"
-        nMeasurements = len(measurementList.measurements)
+        # nMeasurements = len(measurementList.measurements)
         x_bar, P_bar, z_hat, S, S_inv, K, P_hat = kalman.numpyPredict(
             *kfVars, self.x_0.reshape(1, 4), self.P_0.reshape(1, 4, 4))
 
@@ -166,7 +166,7 @@ class Target():
         z_tilde = z_list - z_hat
         nis = self._normalizedInnovationSquared(z_tilde, S_inv.reshape(2, 2))
         gatedMeasurements = nis <= eta2
-        nMeasurementInsideGate = np.sum(gatedMeasurements)
+        # nMeasurementInsideGate = np.sum(gatedMeasurements)
 
         # print(nMeasurements)
         # print("x_0", self.x_0)
@@ -215,7 +215,7 @@ class Target():
     def spawnNewNodes(self, scanTime, scanNumber, x_bar, P_bar, measurementsIndices,
                       measurements, states, covariance, nllrList):
         assert scanTime > self.time
-        assert self.scanNumber == scanNumber - 1
+        assert self.scanNumber == scanNumber - 1, str(self.scanNumber) + "->" + str(scanNumber)
         assert x_bar.shape == (4,)
         assert P_bar.shape == (4, 4)
         assert all([state.shape == (4,) for state in states])
@@ -268,7 +268,7 @@ class Target():
                       parent=self
                       )
 
-    def _pruneAllHypothesisExceptThis(self, keep, backtrack = False):
+    def _pruneAllHypothesisExceptThis(self, keep, backtrack=False):
         indices = np.where(self.trackHypotheses != keep)
         self.trackHypotheses = np.delete(self.trackHypotheses, indices)
 
@@ -278,6 +278,28 @@ class Target():
     def _pruneEverythingExceptHistory(self):
         if self.parent is not None:
             self.parent._pruneAllHypothesisExceptThis(self, backtrack=True)
+
+    def pruneDepth(self, stepsLeft):
+        if stepsLeft <= 0:
+            if self.parent is not None:
+                self.parent._pruneAllHypothesisExceptThis(self, backtrack=True)
+                self.recursiveSubtractScore(self.cumulativeNLLR)
+                assert self.parent.scanNumber == self.scanNumber - 1, \
+                    "nScanPruning2: from scanNumber" + str(self.parent.scanNumber) + "->" + str(self.scanNumber)
+                return self
+            else:
+                return self
+        elif self.parent is not None:
+            return self.parent.pruneDepth(stepsLeft - 1)
+        else:
+            return self
+
+    def pruneSimilarState(self, threshold):
+        for hyp in self.trackHypotheses[1:]:
+            deltaPos = np.linalg.norm(self.trackHypotheses[0] - hyp)
+            if deltaPos <= threshold:
+                self.trackHypotheses.pop(0)
+                break
 
     def getMeasurementSet(self, root=True):
         subSet = set()
@@ -336,13 +358,6 @@ class Target():
             parents.add(node.parent)
         return parents
 
-    def pruneSimilarState(self, threshold):
-        for hyp in self.trackHypotheses[1:]:
-            deltaPos = np.linalg.norm(self.trackHypotheses[0] - hyp)
-            if deltaPos <= threshold:
-                self.trackHypotheses.pop(0)
-                break
-
     def recursiveSubtractScore(self, score):
         if score == 0:
             return
@@ -380,7 +395,9 @@ class Target():
         recCheckReferenceIntegrety(self.getRoot())
 
     def plotValidationRegion(self, eta2, stepsBack=0):
-        if False:  # self.kalmanFilter.S is not None:
+        print("plotValidationRegion is not functional in this version")
+        return
+        if self.kalmanFilter.S is not None:
             self._plotCovarianceEllipse(eta2)
         if (self.parent is not None) and (stepsBack > 0):
             self.parent.plotValidationRegion(eta2, stepsBack - 1)

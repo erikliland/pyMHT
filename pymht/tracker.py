@@ -6,9 +6,7 @@ Trondheim, Norway
 Spring 2017
 ========================================================================================
 """
-# from __future__ import print_function
 import pymht.utils.helpFunctions as hpf
-import pymht.pyTarget as pyTarget
 import pymht.utils.pyKalman as kalman
 import pymht.initiators.m_of_n as m_of_n
 import time
@@ -141,7 +139,6 @@ class Tracker():
         self.eta2 = eta2
         self.N = copy.copy(N)
         self.NLLR_UPPER_LIMIT = -(np.log(1 - 0.7)) * 7
-        # self.solver = hpf.parseSolver(solverStr)
         self.pruneThreshold = kwargs.get("pruneThreshold")
 
         # State space model
@@ -171,12 +168,6 @@ class Tracker():
         target = copy.copy(newTarget)
         target.scanNumber = len(self.__scanHistory__)
         target.P_d = self.default_P_d
-        # target = pyTarget.Target(newTarget.time,
-        #                          len(self.__scanHistory__),
-        #                          newTarget.state,
-        #                          self.P_0,
-        #                          P_d=0.8,
-        #                          )
         self.__targetList__.append(target)
         self.__associatedMeasurements__.append(set())
         self.__trackNodes__ = np.append(self.__trackNodes__, target)
@@ -196,6 +187,7 @@ class Tracker():
         measDim = self.C.shape[0]
         scanNumber = len(self.__scanHistory__)
         scanTime = measurementList.time
+        nTargets = len(self.__targetList__)
         timeSinceLastScan = scanTime - self.__scanHistory__[-1].time
         if not self.fixedPeriod:
             self.period = timeSinceLastScan
@@ -205,12 +197,13 @@ class Tracker():
         if self.logTime:
             self.leafNodeTimeList = []
 
+        targetProcessTimes = np.zeros(nTargets)
         for targetIndex, target in enumerate(self.__targetList__):
             if self.parallelize:
                 targetStartDepth = target.depth()
                 searchTic = time.time()
                 leafNodes = target.getLeafNodes()
-                seachToc = time.time() - searchTic
+                searchToc = time.time() - searchTic
                 predictTic = time.time()
                 for node in leafNodes:
                     node.predictMeasurement()
@@ -232,15 +225,14 @@ class Tracker():
                     for hyp in leafNodes[nodeIndex].trackHypotheses:
                         hyp.parent = leafNodes[nodeIndex]
                     self.__associatedMeasurements__[targetIndex].update(newMeasurements)
-                    # self.createComputationTime += nodeComputationTime
                 createToc = time.time() - createTic
                 addToc = 0
-                self.leafNodeTimeList.append([seachToc, predictToc, createToc, addToc])
+                self.leafNodeTimeList.append([searchToc, predictToc, createToc, addToc])
                 targetEndDepth = target.depth()
                 assert targetEndDepth - 1 == targetStartDepth, \
                     "'processNewMeasurements' did not increase the target depth"
                 target._checkReferenceIntegrity()
-            else:  # Relatively easy to adapt to TargetManager style
+            else:
                 if kwargs.get('R', False):
                     print("Hei")
                     target.processNewMeasurementRec(
@@ -252,6 +244,7 @@ class Tracker():
                         (self.A, self.C, self.Q, self.R, self.Gamma)
                     )
                 else:
+                    tic = time.time()
                     targetNodes = target.getLeafNodes()
                     nNodes = len(targetNodes)
                     newNodesData = self._processTargetNodes(targetNodes, measurementList)
@@ -280,6 +273,7 @@ class Tracker():
                         for measurementIndex in gatedIndicesList[i]:
                             self.__associatedMeasurements__[targetIndex].update(
                                 {(scanNumber, measurementIndex + 1)})
+                    targetProcessTimes[targetIndex] = time.time() - tic
 
         if self.logTime:
             self.toc[1] = time.time() - self.tic[1]
@@ -303,11 +297,11 @@ class Tracker():
         self.nOptimSolved = 0
         for cluster in clusterList:
             if len(cluster) == 1:
-                # self._pruneSimilarState(cluster, self.pruneThreshold)
+                if self.kwargs.get('pruneSimilar', False):
+                    self._pruneSimilarState(cluster, self.pruneThreshold)
                 self.__trackNodes__[cluster] = self.__targetList__[
                     cluster[0]]._selectBestHypothesis()
             else:
-                # self._pruneSimilarState(cluster, self.pruneThreshold/2)
                 self.__trackNodes__[cluster] = self._solveOptimumAssociation(cluster)
                 self.nOptimSolved += 1
         if self.logTime:
@@ -338,31 +332,7 @@ class Tracker():
                 deadTracks.append(trackIndex)
                 print("\tTerminating track {:} since its cost is above the threshold".format(trackIndex))
 
-        if deadTracks:
-            for trackIndex in deadTracks:
-                nTargetPre = len(self.__targetList__)
-                nTracksPre = self.__trackNodes__.shape[0]
-                nAssociationsPre = len(self.__associatedMeasurements__)
-                targetListTypePre = type(self.__targetList__)
-                trackListTypePre = type(self.__trackNodes__)
-                associationTypePre = type(self.__associatedMeasurements__)
-                self.__terminatedTargets__.append(copy.copy(self.__trackNodes__[trackIndex]))
-                del self.__targetList__[trackIndex]
-                self.__trackNodes__ = np.delete(self.__trackNodes__, trackIndex)
-                del self.__associatedMeasurements__[trackIndex]
-                self.__terminatedTargets__[-1]._pruneEverythingExceptHistory()
-                nTargetsPost = len(self.__targetList__)
-                nTracksPost = self.__trackNodes__.shape[0]
-                nAssociationsPost = len(self.__associatedMeasurements__)
-                targetListTypePost = type(self.__targetList__)
-                trackListTypePost = type(self.__trackNodes__)
-                associationTypePost = type(self.__associatedMeasurements__)
-                assert nTargetsPost == nTargetPre - 1
-                assert nTracksPost == nTracksPre - 1, str(nTracksPre) + '=>' + str(nTracksPost)
-                assert nAssociationsPost == nAssociationsPre - 1
-                assert targetListTypePost == targetListTypePre
-                assert trackListTypePost == trackListTypePre
-                assert associationTypePost == associationTypePre
+        self._terminateTracks(deadTracks)
         if self.logTime:
             self.toc[5] = time.time() - self.tic[5]
 
@@ -380,16 +350,27 @@ class Tracker():
         # 7 -- Dynamic window size
         if self.logTime:
             self.tic[7] = time.time()
-            tempTotalTime = time.time() - self.tic[0]
-        if tempTotalTime > self.period:
-            reduceN = int(round(tempTotalTime / self.period, 0))
-            oldN = self.N
-            # self.N = max(1, self.N - reduceN)
-            self.N -= 1
-            self.log.info(
-                '\tIteration took to long time ({0:.1f}ms), reducing window size from {1:} to  {2:}'.format(
-                    tempTotalTime * 1000, oldN, self.N))
-            self._nScanPruning()
+
+        # for targetIndex, targetProcessTime in enumerate(targetProcessTimes):
+        #     if targetProcessTime > 100e-3:
+        #         target = self.__targetList__[targetIndex]
+        #         targetDepth = target.depth()
+        #         self.log.info("\tProcessing of target {0:} took to long. Reducing window size from {1:} to {2:}".format(
+        #             targetIndex + 1, targetDepth, targetDepth - 1))
+        #         self._pruneTargetIndex(targetIndex, targetDepth - 1)
+
+
+
+        # tempTotalTime = time.time() - self.tic[0]
+        # if tempTotalTime > self.period:
+        #     reduceN = int(round(tempTotalTime / self.period, 0))
+        #     oldN = self.N
+        #     self.N = max(1, self.N - reduceN)
+        #     # self.N -= 1
+        #     self.log.info(
+        #         '\tIteration took to long time ({0:.1f}ms), reducing window size from {1:} to  {2:}'.format(
+        #             tempTotalTime * 1000, oldN, self.N))
+        #     self._nScanPruning()
 
         if self.logTime:
             self.toc[7] = time.time() - self.tic[7]
@@ -422,6 +403,32 @@ class Tracker():
         if "trueState" in kwargs:
             xTrue = kwargs.get("trueState")
             return self._compareTracksWithTruth(xTrue)
+
+    def _terminateTracks(self, deadTracks):
+        for trackIndex in deadTracks:
+            nTargetPre = len(self.__targetList__)
+            nTracksPre = self.__trackNodes__.shape[0]
+            nAssociationsPre = len(self.__associatedMeasurements__)
+            targetListTypePre = type(self.__targetList__)
+            trackListTypePre = type(self.__trackNodes__)
+            associationTypePre = type(self.__associatedMeasurements__)
+            self.__terminatedTargets__.append(copy.copy(self.__trackNodes__[trackIndex]))
+            del self.__targetList__[trackIndex]
+            self.__trackNodes__ = np.delete(self.__trackNodes__, trackIndex)
+            del self.__associatedMeasurements__[trackIndex]
+            self.__terminatedTargets__[-1]._pruneEverythingExceptHistory()
+            nTargetsPost = len(self.__targetList__)
+            nTracksPost = self.__trackNodes__.shape[0]
+            nAssociationsPost = len(self.__associatedMeasurements__)
+            targetListTypePost = type(self.__targetList__)
+            trackListTypePost = type(self.__trackNodes__)
+            associationTypePost = type(self.__associatedMeasurements__)
+            assert nTargetsPost == nTargetPre - 1
+            assert nTracksPost == nTracksPre - 1, str(nTracksPre) + '=>' + str(nTracksPost)
+            assert nAssociationsPost == nAssociationsPre - 1
+            assert targetListTypePost == targetListTypePre
+            assert trackListTypePost == trackListTypePre
+            assert associationTypePost == associationTypePre
 
     def _processTargetNodes(self, targetNodes, measurementList):
         nMeas = len(measurementList.measurements)
@@ -786,38 +793,17 @@ class Tracker():
             toc0 * 1000, toc1 * 1000, toc2 * 1000, toc3 * 1000, (toc0 + toc1 + toc2 + toc3) * 1000))
         return selectedHypotheses
 
+    def _pruneTargetIndex(self,targetIndex, N):
+        node = self.__trackNodes__[targetIndex]
+        newRootNode = node.pruneDepth(N)
+        if newRootNode != self.__targetList__[targetIndex]:
+            self.__targetList__[targetIndex] = newRootNode
+            self.__associatedMeasurements__[targetIndex] = self.__targetList__[
+                targetIndex].getMeasurementSet()
+
     def _nScanPruning(self):
-        def recPruneNScan(node, targetIndex, stepsLeft):
-            if stepsLeft <= 0:
-                if node.parent is not None:
-                    assert self.__targetList__[targetIndex].scanNumber == node.scanNumber - 1, \
-                        "nScanPruning1: from scanNumber " + \
-                        str(self.__targetList__[targetIndex].scanNumber) + \
-                        " -> " + \
-                        str(node.scanNumber)
-
-                    changed = (self.__targetList__[targetIndex] != node)
-                    assert self.__targetList__[targetIndex].depth() == node.parent.depth(), \
-                        "nScanPrune: Inconsistent target.depth() and target.child.parent.depth()"
-                    self.__targetList__[targetIndex] = node
-                    node.parent._pruneAllHypothesisExceptThis(node, backtrack=True)
-                    node.recursiveSubtractScore(node.cumulativeNLLR)
-                    if node.parent.scanNumber != node.scanNumber - 1:
-                        raise ValueError("nScanPruning2: from scanNumber",
-                                         node.parent.scanNumber, "->", node.scanNumber)
-                    return changed
-                else:
-                    return False
-            elif node.parent is not None:
-                return recPruneNScan(node.parent, targetIndex, stepsLeft - 1)
-            else:
-                return False
-
         for targetIndex, node in enumerate(self.__trackNodes__):
-            changed = recPruneNScan(node, targetIndex, self.N)
-            if changed:
-                self.__associatedMeasurements__[targetIndex] = self.__targetList__[
-                    targetIndex].getMeasurementSet()
+            self._pruneTargetIndex(targetIndex, self.N)
 
     def _pruneSimilarState(self, cluster, threshold):
         for targetIndex in cluster:
@@ -835,8 +821,9 @@ class Tracker():
         for target in self.__targetList__:
             target._checkScanNumberIntegrity()
             target._checkReferenceIntegrity()
-        assert len({node.scanNumber for node in self.__trackNodes__}) == 1, \
-            "there are inconsistency in trackNodes scanNumber"  # he
+        if len(self.__trackNodes__) > 0:
+            assert len({node.scanNumber for node in self.__trackNodes__}) == 1, \
+                "there are inconsistency in trackNodes scanNumber"  # he
 
     def plotValidationRegionFromRoot(self, stepsBack=1):
         def recPlotValidationRegionFromTarget(target, eta2, stepsBack):
@@ -964,13 +951,16 @@ class Tracker():
             nNodes = sum([target.getNumOfNodes() for target in self.__targetList__])
             nMeasurements = len(self.__scanHistory__[-1].measurements)
             cprint(('{:3.0f} '.format(len(self.__scanHistory__)) +
-                    'nTargets {:2.0f}'.format(len(self.__targetList__)) + "  " +
-                    'Total time {0:6.0f}ms'.format(totalTime) + "  " +
-                    'Process({0:3.0f}/{1:6.0f}) {2:6.1f}ms'.format(
+                    'nTrack {:2.0f}'.format(len(self.__targetList__)) + "  " +
+                    'Total {0:6.0f}'.format(totalTime) + "  " +
+                    'Process({0:3.0f}/{1:6.0f}) {2:6.1f}'.format(
                         nMeasurements, nNodes, self.toc[1]) + "  " +
-                    'Cluster {:5.1f}ms'.format(self.toc[2]) + "  " +
-                    'Optim({0:g}) {1:6.1f}ms'.format(self.nOptimSolved, self.toc[3]) + "  " +
-                    'Prune {:5.1f}ms'.format(self.toc[4])),
+                    'Cluster {:5.1f}'.format(self.toc[2]) + "  " +
+                    'Optim({0:g}) {1:6.1f}'.format(self.nOptimSolved, self.toc[3]) + "  " +
+                    'Prune {:5.1f}'.format(self.toc[4]) + " " +
+                    'Kill {:3.1f}'.format(self.toc[5]) + " " +
+                    'Init {:5.1f}'.format(self.toc[6]) + " " +
+                    'DynN {:3.1f}'.format(self.toc[7])),
                    'red' if tooLong else None,
                    attrs=(['bold'] if tooLong else [])
                    )
