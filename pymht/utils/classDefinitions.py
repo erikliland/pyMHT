@@ -3,25 +3,12 @@ import matplotlib.pyplot as plt
 
 
 class TempTarget:
-    def __init__(self, *args, **kwargs):
-        p = kwargs.get('position')
-        v = kwargs.get('velocity')
-        t = kwargs.get('time')
-        P_d = kwargs.get('P_d', 0.9)
-        if None not in [p, v, t, P_d]:
-            self.state = np.array([p.x, p.y, v.x, v.y], dtype=np.float32)
-            self.time = t
-            self.P_d = P_d
-        elif len(args) == 2:
-            self.state = args[0]
-            self.time = args[1]
-            self.P_d = P_d
-        elif len(args) == 3:
-            self.state = args[0]
-            self.time = args[1]
-            self.P_d = args[2]
-        else:
-            raise ValueError("Invalid arguments to SimTarget")
+    def __init__(self, state, time, P_d, **kwargs):
+        self.state = state
+        self.time = time
+        self.P_d = P_d
+        self.mmsi = kwargs.get('mmsi')
+
 
     def __str__(self):
         return ('Pos: ({0: 7.1f},{1: 7.1f})'.format(self.state[0], self.state[1]) + " " +
