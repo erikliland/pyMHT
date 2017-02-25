@@ -26,6 +26,7 @@ def z_tilde(z_list, z_hat_list, nNodes=1, measDim=2):
 
 def numpyFilter(x_bar, K, z_tilde):
     x_bar = x_bar.reshape(1, 4)
+    assert z_tilde.ndim == 2
     assert z_tilde.shape[1] == 2, str(z_tilde.shape)
     assert z_tilde.ndim == 2
     assert K.shape == (4, 2)

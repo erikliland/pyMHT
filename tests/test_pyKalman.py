@@ -28,9 +28,8 @@ def test_numpyPredict():
     x_bar_list, P_bar_list, z_hat_list, S_list, S_inv_list, K_list, P_hat_list = pyKalman.numpyPredict(
         A, C, Q, R, Gamma, x_0_list, P_0_list)
 
-
-def test_numpyFilter():
-    gated_x_hat_list = [kalman.numpyFilter(x_bar_list[i],
-                                           K_list[i],
-                                           gated_z_tilde_list[i])
-                        for i in range(nNodes)]
+    gated_z_tilde_list = np.random.random((n, 5, 2))
+    gated_x_hat_list = [pyKalman.numpyFilter(x_bar_list[i],
+                                             K_list[i],
+                                             gated_z_tilde_list[i])
+                        for i in range(n)]
