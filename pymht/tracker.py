@@ -351,13 +351,15 @@ class Tracker():
         if self.logTime:
             self.tic[7] = time.time()
 
-        # for targetIndex, targetProcessTime in enumerate(targetProcessTimes):
-        #     if targetProcessTime > 100e-3:
-        #         target = self.__targetList__[targetIndex]
-        #         targetDepth = target.depth()
-        #         self.log.info("\tProcessing of target {0:} took to long. Reducing window size from {1:} to {2:}".format(
-        #             targetIndex + 1, targetDepth, targetDepth - 1))
-        #         self._pruneTargetIndex(targetIndex, targetDepth - 1)
+        for targetIndex, targetProcessTime in enumerate(targetProcessTimes):
+            if targetProcessTime > 100e-3:
+                target = self.__targetList__[targetIndex]
+                targetDepth = target.depth()
+                assert targetDepth <= self.N + 1
+                self.log.info(
+                    "\tProcessing of target {0:} took to long. Reducing window size from {1:} to {2:}".format(
+                    targetIndex + 1, targetDepth, targetDepth - 1))
+                self._pruneTargetIndex(targetIndex, targetDepth - 1)
 
 
 
