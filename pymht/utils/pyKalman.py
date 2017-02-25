@@ -101,6 +101,7 @@ class KalmanFilter():
         self.S = None  # Residual covariance
         self.S_inv = None  # Inverse residual covariance
         self.K = None  # Kalman gain
+        self.predicted = False
         self.precalculated = False
 
     def predict(self, **kwargs):
@@ -116,9 +117,12 @@ class KalmanFilter():
         if not kwargs.get('local', False):
             self.x_bar = x_bar
             self.P_bar = P_bar
+            self.predicted = True
         return x_bar, P_bar
 
     def _precalculateMeasurementUpdate(self):
+        if not self.predicted:
+            self.predict()
         self.z_hat = self.C.dot(self.x_bar)
         self.S = self.C.dot(self.P_bar).dot(self.C.T) + self.R
         self.S_inv = np.linalg.inv(self.S)
@@ -158,7 +162,8 @@ class KalmanFilter():
             x_hat = self.x_bar
             P_hat = self.P_bar
         elif len(args) == 1:
-            x_hat = self.x_bar + self.K.dot(args[0])
+            y_tilde = args[0]
+            x_hat = self.x_bar + self.K.dot(y_tilde)
             P_hat = self.P_bar - self.K.dot(self.C).dot(self.P_bar)
         else:
             raise ValueError("Invalid number of arguments")

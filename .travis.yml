@@ -10,3 +10,5 @@ install:
 script: pytest tests
 notifications:
   email: false
+after_success:
+- coveralls
