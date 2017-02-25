@@ -4,12 +4,19 @@ from pymht.models import pv
 
 dT = 1.0
 x_0 = np.zeros(4)
-P_0 = pv.P0
-A = pv.Phi(dT)
-C = pv.C
-Gamma = pv.Gamma
-Q = pv.Q(dT)
-R = pv.R()
+p = np.power(1.0, 2)
+P_0 = np.diag([p, p, p, p])
+A = np.array([[1.0,  0.,   dT,  0.],
+              [0.,   1.0,  0.,  dT],
+              [0.,   0.,  1.0,  0.],
+              [0.,   0.,   0., 1.0]])
+C = np.array([[1.0,  0.,  0., 0.],
+              [0.,   1.0, 0., 0.]])
+Gamma = np.diag([1.0, 1.0], -2)[:, 0:2]
+sigmaQ = 1.0
+Q = np.eye(2) * np.power(sigmaQ, 2) * dT
+sigmaR = 1.0
+R = np.eye(2) * np.power(sigmaR, 2)
 
 
 def test_KalmanFilter_class():
