@@ -5,3 +5,4 @@ seaborn
 ipywidgets
 psutil
 pytest
+coveralls
