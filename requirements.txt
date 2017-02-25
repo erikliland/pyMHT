@@ -6,3 +6,4 @@ ipywidgets
 psutil
 pytest
 coveralls
+coverage
