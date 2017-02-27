@@ -4,7 +4,7 @@ python:
 install:
 - pip install .
 - pip install -r requirements.txt
-script: pytest tests coveralls
+script: pytest tests
 notifications:
   email: false
 after_success:
