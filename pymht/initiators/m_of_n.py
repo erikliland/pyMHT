@@ -4,6 +4,7 @@ import pymht.models.pv as pv
 from pymht.pyTarget import Target
 from munkres import Munkres
 from scipy.stats import chi2
+import copy
 
 tracking_parameters = {
     'gate_probability': 0.99,
@@ -102,6 +103,32 @@ def _initiator_distance(delta_vector, dt, v_max, R):
     D = np.dot(d.T, np.dot(np.linalg.inv(R + R), d))
     return D
 
+def _merge_targets(targets):
+    time = targets[0].time
+    scanNumber = None
+    x_0 = np.mean(np.array([t.x_0 for t in targets]), axis=0)
+    assert x_0.shape == targets[0].x_0.shape
+    P_0 = np.mean(np.array([t.P_0 for t in targets]), axis=0)
+    assert P_0.shape == targets[0].P_0.shape
+    return Target(time, scanNumber, x_0, P_0)
+
+def _merge_similar_targets(initial_targets, threshold):
+    if not initial_targets: return initial_targets
+    targets = []
+    used_targets = set()
+    for target_index, target in enumerate(initial_targets):
+        if target_index not in used_targets:
+            distance_to_targets = np.array([np.linalg.norm(target.x_0[0:2] - t.x_0[0:2]) for t in initial_targets])
+            close_targets = distance_to_targets < threshold
+            close_targets_indices = np.where(close_targets)[0]
+            selected_targets = [initial_targets[i] for i in close_targets_indices if i not in used_targets]
+            merged_target = _merge_targets(selected_targets)
+            for i in close_targets_indices:
+                used_targets.add(i)
+            assert type(merged_target) == type(target)
+            targets.append(merged_target)
+    return targets
+
 
 class PreliminaryTrack():
     def __init__(self, state, covariance):
@@ -157,6 +184,7 @@ class Initiator():
         self.DEBUG = kwargs.get('debug', False)
         self.gamma = tracking_parameters['gamma']
         self.last_timestamp = None
+        self.merge_threshold = 5 #meter
 
     def printPreliminaryTracks(self):
         print("preliminary tracks [{}]".format(len(self.preliminary_tracks)),
@@ -166,12 +194,11 @@ class Initiator():
         if self.DEBUG: print("processMeasurements", measurement_list.measurements.shape[0])
         if self.DEBUG: print(measurement_list)
         unused_indices, initial_targets = self._processPreliminaryTracks(measurement_list)
-
         unused_indices = self._processInitiators(unused_indices, measurement_list)
         self._processUnusedMeasurements(unused_indices, measurement_list)
         self.last_timestamp = measurement_list.time
+        initial_targets = _merge_similar_targets(initial_targets, self.merge_threshold)
         if self.DEBUG: print("initial targets", len(initial_targets))
-        # if self.DEBUG: print("-" * 50)
         return initial_targets
 
     def _processPreliminaryTracks(self, measurement_list):
@@ -324,7 +351,7 @@ class Initiator():
 
 if __name__ == "__main__":
     from pymht.utils.classDefinitions import Position
-    import pymht.utils.radarSimulator as sim
+    import pymht.utils.simulator as sim
     import pymht.models.pv as model
 
     deltaMatrix = np.array([[5., 2.], [np.Inf, np.Inf]])
