@@ -42,6 +42,7 @@ def plotVelocityArrowFromNode(nodes, **kwargs):
             plotVelocityArrow(node)
         if stepsLeft > 0 and (node.parent is not None):
             recPlotVelocityArrowFromNode(node.parent, stepsLeft - 1)
+
     for node in nodes:
         recPlotVelocityArrowFromNode(node, kwargs.get("stepsBack", 1))
 
@@ -51,8 +52,8 @@ def plotRadarOutline(centerPosition, radarRange, **kwargs):
     if kwargs.get("markCenter", True):
         plt.plot(centerPosition.x(), centerPosition.y(), "bo")
     ax = plt.subplot(111)
-    circle = Ellipse((centerPosition.x(),centerPosition.y()), radarRange * 2, radarRange * 2,
-                     edgecolor = "black", linestyle="dotted", facecolor="none")
+    circle = Ellipse((centerPosition.x(), centerPosition.y()), radarRange * 2, radarRange * 2,
+                     edgecolor="black", linestyle="dotted", facecolor="none")
     ax.add_artist(circle)
 
 
@@ -61,6 +62,7 @@ def plotTrueTrack(simList, **kwargs):
     newArgs = copy.copy(kwargs)
     if "colors" in newArgs:
         del newArgs["colors"]
+
     nScan = len(simList)
     nTargets = len(simList[0])
     posArray = np.zeros((nScan, nTargets, 2))
@@ -70,7 +72,8 @@ def plotTrueTrack(simList, **kwargs):
         plt.plot(posArray[:, col, 0], posArray[:, col, 1], '.', alpha=0.7,
                  markeredgewidth=0.6, color=next(colors) if colors is not None else None, **newArgs)
     for col in range(nTargets):
-        plt.plot(posArray[0,col,0], posArray[0,col,1], '.', color = 'black')
+        plt.plot(posArray[0, col, 0], posArray[0, col, 1], '.', color='black')
+
 
 def printScanList(scanList):
     for index, measurement in enumerate(scanList):
@@ -90,11 +93,12 @@ def printHypothesesScore(targetList):
         if target.trackHypotheses is not None:
             for hyp in target.trackHypotheses:
                 recPrint(hyp, targetIndex)
+
     for targetIndex, target in enumerate(targetList):
-        print(	"\tTarget: ", targetIndex,
-               "\tInit",	target.initial.position,
-               "\tPred",	target.predictedPosition(),
-               "\tMeas",	target.measurement, sep="")
+        print("\tTarget: ", targetIndex,
+              "\tInit", target.initial.position,
+              "\tPred", target.predictedPosition(),
+              "\tMeas", target.measurement, sep="")
 
 
 # def nllr(*args):
@@ -122,7 +126,7 @@ def printHypothesesScore(targetList):
 #         raise ValueError("nllr() takes either 1 or 5 arguments (", len(args), ") given")
 
 
-def backtrackMeasurementsIndices(selectedNodes, steps=None):
+def backtrackMeasurementNumbers(selectedNodes, steps=None):
     def recBacktrackNodeMeasurements(node, measurementBacktrack, stepsLeft=None):
         if node.parent is not None:
             if stepsLeft is None:
@@ -132,12 +136,13 @@ def backtrackMeasurementsIndices(selectedNodes, steps=None):
                 measurementBacktrack.append(node.measurementNumber)
                 recBacktrackNodeMeasurements(
                     node.parent, measurementBacktrack, stepsLeft - 1)
+
     measurementsBacktracks = []
     for node in selectedNodes:
-        measurementBacktrack = []
-        recBacktrackNodeMeasurements(node, measurementBacktrack, steps)
-        measurementBacktrack.reverse()
-        measurementsBacktracks.append(measurementBacktrack)
+        measurementNumberBacktrack = []
+        recBacktrackNodeMeasurements(node, measurementNumberBacktrack, steps)
+        measurementNumberBacktrack.reverse()
+        measurementsBacktracks.append(measurementNumberBacktrack)
     return measurementsBacktracks
 
 
@@ -151,6 +156,7 @@ def backtrackNodePositions(selectedNodes, **kwargs):
                 raise ValueError("Inconsistent scanNumber-ing:",
                                  node.parent.scanNumber, "->", node.scanNumber)
             recBacktrackNodePosition(node.parent, measurementList)
+
     try:
         trackList = []
         for leafNode in selectedNodes:
