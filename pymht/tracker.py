@@ -102,11 +102,13 @@ class Tracker():
 
         # Tracker storage
         self.__targetList__ = []
+        self.__targetWindowSize__ = []
         self.__scanHistory__ = []
         self.__associatedMeasurements__ = []
         self.__targetProcessList__ = []
         self.__trackNodes__ = np.empty(0, dtype=np.dtype(object))
         self.__terminatedTargets__ = []
+        self.__clusterList__ = []
 
         # Radar parameters
         self.position = p0
@@ -116,18 +118,19 @@ class Tracker():
         self.default_P_d = 0.8
 
         # Timing and logging
+        self.runtimeLog = {'Total': np.array([0.0, 0]),
+                           'Process': np.array([0.0, 0]),
+                           'Cluster': np.array([0.0, 0]),
+                           'Optim': np.array([0.0, 0]),
+                           'N Prune': np.array([0.0, 0]),
+                           'Term': np.array([0.0, 0]),
+                           'Init': np.array([0.0, 0]),
+                           'Window': np.array([0.0, 0]),
+                           'ILP Prune': np.array([0.0, 0]),
+                           }
         if self.logTime:
-            self.runtimeLog = {'Total': np.array([0.0, 0]),
-                               'Process': np.array([0.0, 0]),
-                               'Cluster': np.array([0.0, 0]),
-                               'Optim': np.array([0.0, 0]),
-                               'Prune': np.array([0.0, 0]),
-                               'Term': np.array([0.0, 0]),
-                               'Init': np.array([0.0, 0]),
-                               'Window': np.array([0.0, 0]),
-                               }
-            self.tic = np.zeros(8)
-            self.toc = np.zeros(8)
+            self.tic = np.zeros(9)
+            self.toc = np.zeros(9)
             self.nOptimSolved = 0
             self.leafNodeTimeList = []
             self.createComputationTime = None
@@ -137,6 +140,7 @@ class Tracker():
         self.lambda_nu = lambda_nu
         self.lambda_ex = lambda_phi + lambda_nu
         self.eta2 = eta2
+        self.N_max = copy.copy(N)
         self.N = copy.copy(N)
         self.NLLR_UPPER_LIMIT = -(np.log(1 - 0.7)) * 7
         self.pruneThreshold = kwargs.get("pruneThreshold")
@@ -168,9 +172,11 @@ class Tracker():
         target = copy.copy(newTarget)
         target.scanNumber = len(self.__scanHistory__)
         target.P_d = self.default_P_d
+        target.measurementNumber = None
         self.__targetList__.append(target)
         self.__associatedMeasurements__.append(set())
         self.__trackNodes__ = np.append(self.__trackNodes__, target)
+        self.__targetWindowSize__.append(self.N)
 
     def addMeasurementList(self, measurementList, **kwargs):
         # 0 --Iterative procedure for tracking --
@@ -234,22 +240,25 @@ class Tracker():
                 target._checkReferenceIntegrity()
             else:
                 if kwargs.get('R', False):
-                    print("Hei")
+                    usedMeasurementIndices = set()
                     target.processNewMeasurementRec(
                         measurementList,
-                        self.__associatedMeasurements__[targetIndex],
+                        usedMeasurementIndices,
                         scanNumber,
                         self.lambda_ex,
                         self.eta2,
                         (self.A, self.C, self.Q, self.R, self.Gamma)
                     )
+                    for i in usedMeasurementIndices:
+                        self.__associatedMeasurements__[targetIndex].update({(scanNumber, i + 1)})
+                        unused_measurement_indices[i] = False
+
                 else:
                     tic = time.time()
                     targetNodes = target.getLeafNodes()
                     nNodes = len(targetNodes)
                     newNodesData = self._processTargetNodes(targetNodes, measurementList)
                     x_bar_list, P_bar_list, gated_x_hat_list, P_hat_list, gatedIndicesList, nllrList = newNodesData
-
                     gatedMeasurementsList = [np.array(measurementList.measurements[gatedIndices])
                                              for gatedIndices in gatedIndicesList]
                     assert len(gatedMeasurementsList) == nNodes
@@ -282,20 +291,23 @@ class Tracker():
         if kwargs.get("printAssociation", False):
             print(*self.__associatedMeasurements__, sep="\n", end="\n\n")
 
+        if kwargs.get("checkIntegrity", False):
+            self._checkTrackerIntegrity()
+
         # 2 --Cluster targets --
         if self.logTime:
             self.tic[2] = time.time()
-        clusterList = self._findClustersFromSets()
+        self.__clusterList__ = self._findClustersFromSets()
         if self.logTime:
             self.toc[2] = time.time() - self.tic[2]
         if kwargs.get("printCluster", False):
-            hpf.printClusterList(clusterList)
+            hpf.printClusterList(self.__clusterList__)
 
         # 3 --Maximize global (cluster vise) likelihood--
         if self.logTime:
             self.tic[3] = time.time()
         self.nOptimSolved = 0
-        for cluster in clusterList:
+        for cluster in self.__clusterList__:
             if len(cluster) == 1:
                 if self.kwargs.get('pruneSimilar', False):
                     self._pruneSimilarState(cluster, self.pruneThreshold)
@@ -307,75 +319,87 @@ class Tracker():
         if self.logTime:
             self.toc[3] = time.time() - self.tic[3]
 
-        # 4 --Prune sliding window --
+        # 4 -- ILP Pruning
         if self.logTime:
             self.tic[4] = time.time()
-        self._nScanPruning()
+
         if self.logTime:
             self.toc[4] = time.time() - self.tic[4]
+
+        # 5 -- Dynamic window size
+        if self.logTime:
+            self.tic[5] = time.time()
+
+        for targetIndex, target in enumerate(self.__targetList__):
+            targetProcessTime = targetProcessTimes[targetIndex]
+            targetSize = target.getNumOfNodes()
+            tooSlow = targetProcessTime > 100e-3
+            tooLarge = targetSize > 3000
+            if tooSlow or tooLarge:
+                target = self.__targetList__[targetIndex]
+                targetDepth = target.depth()
+                assert targetDepth <= self.__targetWindowSize__[targetIndex] + 1
+                infoString = "\tTarget {:2} ".format(targetIndex + 1)
+                if tooSlow:
+                    infoString += "Too slow {:.1f}ms. ".format(targetProcessTime * 1000)
+                if tooLarge:
+                    infoString += "To large {:}. ".format(targetSize)
+                oldN = self.__targetWindowSize__[targetIndex]
+                self.__targetWindowSize__[targetIndex] -= 1
+                newN = self.__targetWindowSize__[targetIndex]
+                infoString += "Reducing window from {0:} to {1:}".format(oldN, newN)
+                self.log.debug(infoString)
+
+        tempTotalTime = time.time() - self.tic[0]
+        if tempTotalTime > (self.period * 0.8):
+            self.N = max(1, self.N - 1)
+            self.log.debug(
+                '\tIteration took to long time ({0:.1f}ms), reducing window size roof from {1:} to  {2:}'.format(
+                    tempTotalTime * 1000, self.N + 1, self.N))
+            self.__targetWindowSize__ = [min(e, self.N) for e in self.__targetWindowSize__]
+
+        if self.logTime:
+            self.toc[5] = time.time() - self.tic[5]
+
+        # 5 --Prune sliding window --
+        if self.logTime:
+            self.tic[6] = time.time()
+        self._nScanPruning()
+        if self.logTime:
+            self.toc[6] = time.time() - self.tic[6]
 
         if kwargs.get("checkIntegrity", False):
             self._checkTrackerIntegrity()
 
-        # 5 -- Pick out dead tracks (terminate)
+        # 6 -- Pick out dead tracks (terminate)
         if self.logTime:
-            self.tic[5] = time.time()
+            self.tic[7] = time.time()
         deadTracks = []
         for trackIndex, trackNode in enumerate(self.__trackNodes__):
             # Check outside range
             if trackNode.isOutsideRange(self.position.array, self.range):
                 deadTracks.append(trackIndex)
-                print("\tTerminating track {:} since it is out of range".format(trackIndex))
+                self.log.debug("\tTerminating track {:} since it is out of range".format(trackIndex))
 
             # Check if track is to insecure
             elif trackNode.cumulativeNLLR > self.NLLR_UPPER_LIMIT:
                 deadTracks.append(trackIndex)
-                print("\tTerminating track {:} since its cost is above the threshold".format(trackIndex))
+                self.log.debug("\tTerminating track {:} since its cost is above the threshold".format(trackIndex))
 
         self._terminateTracks(deadTracks)
         if self.logTime:
-            self.toc[5] = time.time() - self.tic[5]
+            self.toc[7] = time.time() - self.tic[7]
 
-        # 6 -- Initiate new tracks
+        # 7 -- Initiate new tracks
         if self.logTime:
-            self.tic[6] = time.time()
+            self.tic[8] = time.time()
         unused_measurements = measurementList.filter(unused_measurement_indices)
         new_initial_targets = self.initiator.processMeasurements(unused_measurements)
         for initial_target in new_initial_targets:
-            print("\tNew target({}): ".format(len(self.__targetList__) + 1), initial_target)
+            self.log.debug("\tNew target({}): ".format(len(self.__targetList__) + 1) + str(initial_target))
             self.initiateTarget(initial_target)
         if self.logTime:
-            self.toc[6] = time.time() - self.tic[6]
-
-        # 7 -- Dynamic window size
-        if self.logTime:
-            self.tic[7] = time.time()
-
-        for targetIndex, targetProcessTime in enumerate(targetProcessTimes):
-            if targetProcessTime > 100e-3:
-                target = self.__targetList__[targetIndex]
-                targetDepth = target.depth()
-                assert targetDepth <= self.N + 1
-                self.log.info(
-                    "\tProcessing of target {0:} took to long. Reducing window size from {1:} to {2:}".format(
-                    targetIndex + 1, targetDepth, targetDepth - 1))
-                self._pruneTargetIndex(targetIndex, targetDepth - 1)
-
-
-
-        # tempTotalTime = time.time() - self.tic[0]
-        # if tempTotalTime > self.period:
-        #     reduceN = int(round(tempTotalTime / self.period, 0))
-        #     oldN = self.N
-        #     self.N = max(1, self.N - reduceN)
-        #     # self.N -= 1
-        #     self.log.info(
-        #         '\tIteration took to long time ({0:.1f}ms), reducing window size from {1:} to  {2:}'.format(
-        #             tempTotalTime * 1000, oldN, self.N))
-        #     self._nScanPruning()
-
-        if self.logTime:
-            self.toc[7] = time.time() - self.tic[7]
+            self.toc[8] = time.time() - self.tic[8]
 
         self.toc[0] = time.time() - self.tic[0]
 
@@ -387,10 +411,11 @@ class Tracker():
             self.runtimeLog['Process'] += np.array([self.toc[1], 1])
             self.runtimeLog['Cluster'] += np.array([self.toc[2], 1])
             self.runtimeLog['Optim'] += np.array([self.toc[3], 1])
-            self.runtimeLog['Prune'] += np.array([self.toc[4], 1])
-            self.runtimeLog['Term'] += np.array([self.toc[5], 1])
-            self.runtimeLog['Init'] += np.array([self.toc[6], 1])
-            self.runtimeLog['Window'] += np.array([self.toc[7], 1])
+            self.runtimeLog['ILP Prune'] += np.array([self.toc[4], 1])
+            self.runtimeLog['Window'] += np.array([self.toc[5], 1])
+            self.runtimeLog['N Prune'] += np.array([self.toc[6], 1])
+            self.runtimeLog['Term'] += np.array([self.toc[7], 1])
+            self.runtimeLog['Init'] += np.array([self.toc[8], 1])
 
         if kwargs.get("printInfo", False):
             print("Added scan number:", len(self.__scanHistory__),
@@ -407,6 +432,7 @@ class Tracker():
             return self._compareTracksWithTruth(xTrue)
 
     def _terminateTracks(self, deadTracks):
+        deadTracks.sort(reverse=True)
         for trackIndex in deadTracks:
             nTargetPre = len(self.__targetList__)
             nTracksPre = self.__trackNodes__.shape[0]
@@ -416,6 +442,7 @@ class Tracker():
             associationTypePre = type(self.__associatedMeasurements__)
             self.__terminatedTargets__.append(copy.copy(self.__trackNodes__[trackIndex]))
             del self.__targetList__[trackIndex]
+            del self.__targetWindowSize__[trackIndex]
             self.__trackNodes__ = np.delete(self.__trackNodes__, trackIndex)
             del self.__associatedMeasurements__[trackIndex]
             self.__terminatedTargets__[-1]._pruneEverythingExceptHistory()
@@ -795,7 +822,7 @@ class Tracker():
             toc0 * 1000, toc1 * 1000, toc2 * 1000, toc3 * 1000, (toc0 + toc1 + toc2 + toc3) * 1000))
         return selectedHypotheses
 
-    def _pruneTargetIndex(self,targetIndex, N):
+    def _pruneTargetIndex(self, targetIndex, N):
         node = self.__trackNodes__[targetIndex]
         newRootNode = node.pruneDepth(N)
         if newRootNode != self.__targetList__[targetIndex]:
@@ -804,8 +831,8 @@ class Tracker():
                 targetIndex].getMeasurementSet()
 
     def _nScanPruning(self):
-        for targetIndex, node in enumerate(self.__trackNodes__):
-            self._pruneTargetIndex(targetIndex, self.N)
+        for targetIndex, target in enumerate(self.__trackNodes__):
+            self._pruneTargetIndex(targetIndex, self.__targetWindowSize__[targetIndex])
 
     def _pruneSimilarState(self, cluster, threshold):
         for targetIndex in cluster:
@@ -825,7 +852,12 @@ class Tracker():
             target._checkReferenceIntegrity()
         if len(self.__trackNodes__) > 0:
             assert len({node.scanNumber for node in self.__trackNodes__}) == 1, \
-                "there are inconsistency in trackNodes scanNumber"  # he
+                "there are inconsistency in trackNodes scanNumber"
+        scanNumber = len(self.__scanHistory__)
+        for targetIndex, target in enumerate(self.__targetList__):
+            leafNodes = target.getLeafNodes()
+            for leafNode in leafNodes:
+                assert leafNode.scanNumber == scanNumber, "Target " + str(targetIndex + 1)
 
     def plotValidationRegionFromRoot(self, stepsBack=1):
         def recPlotValidationRegionFromTarget(target, eta2, stepsBack):
@@ -937,37 +969,32 @@ class Tracker():
         print()
 
     def printTimeLog(self):
-        if self.logTime:
-            from termcolor import colored, cprint
-            self.toc *= 1000
-            totalTime = self.toc[0]
-            sumTime = sum(self.toc[1:4])
-            timeDelta = totalTime - sumTime
-            if timeDelta < 0.1:
-                deviation = False
-            elif (timeDelta / totalTime) < 0.05:
-                deviation = False
-            else:
-                deviation = True
-            tooLong = totalTime > (self.period * 1000)
-            nNodes = sum([target.getNumOfNodes() for target in self.__targetList__])
-            nMeasurements = len(self.__scanHistory__[-1].measurements)
-            cprint(('{:3.0f} '.format(len(self.__scanHistory__)) +
-                    'nTrack {:2.0f}'.format(len(self.__targetList__)) + "  " +
-                    'Total {0:6.0f}'.format(totalTime) + "  " +
-                    'Process({0:3.0f}/{1:6.0f}) {2:6.1f}'.format(
-                        nMeasurements, nNodes, self.toc[1]) + "  " +
-                    'Cluster {:5.1f}'.format(self.toc[2]) + "  " +
-                    'Optim({0:g}) {1:6.1f}'.format(self.nOptimSolved, self.toc[3]) + "  " +
-                    'Prune {:5.1f}'.format(self.toc[4]) + " " +
-                    'Kill {:3.1f}'.format(self.toc[5]) + " " +
-                    'Init {:5.1f}'.format(self.toc[6]) + " " +
-                    'DynN {:3.1f}'.format(self.toc[7])),
-                   'red' if tooLong else None,
-                   attrs=(['bold'] if tooLong else [])
-                   )
-        else:
-            print("Logging not activated")
+        from termcolor import cprint
+        self.toc *= 1000
+        totalTime = self.toc[0]
+        tooLong = totalTime > (self.period * 1000)
+        nNodes = sum([target.getNumOfNodes() for target in self.__targetList__])
+        nMeasurements = len(self.__scanHistory__[-1].measurements)
+        scanNumber = len(self.__scanHistory__)
+        nTargets = len(self.__targetList__)
+        nClusters = len(self.__clusterList__)
+        cprint(
+            ('{:3.0f} '.format(scanNumber) +
+             'nTrack {:2.0f}'.format(nTargets) + "  " +
+             'Total {0:6.0f}'.format(totalTime) + "  " +
+             'Process({0:3.0f}/{1:6.0f}) {2:6.1f}'.format(
+                 nMeasurements, nNodes, self.toc[1]) + "  " +
+             'Cluster({0:2.0f}) {1:5.1f}'.format(nClusters, self.toc[2]) + "  " +
+             'Optim({0:g}) {1:6.1f}'.format(self.nOptimSolved, self.toc[3]) + "  " +
+             # 'ILP-Prune {:5.0f}'.format(self.toc[4]) + "  " +
+             'DynN {:4.1f}'.format(self.toc[5]) + " " +
+             'N-Prune {:5.1f}'.format(self.toc[6]) + " " +
+             'Kill {:3.1f}'.format(self.toc[7]) + " " +
+             'Init {:5.1f}'.format(self.toc[8])
+             ),
+            'red' if tooLong else None,
+            attrs=(['bold'] if tooLong else [])
+        )
 
 
 if __name__ == '__main__':

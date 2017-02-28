@@ -66,7 +66,7 @@ class Target():
         else:
             predStateStr = ""
 
-        if self.measurementNumber is not None:
+        if (self.measurementNumber is not None) and (self.scanNumber is not None):
             measStr = (" \tMeasurement(" +
                        str(self.scanNumber) +
                        ":" +
@@ -157,60 +157,37 @@ class Target():
 
     def gateAndCreateNewHypotheses(self, measurementList, scanNumber, lambda_ex, eta2, kfVars):
         assert self.scanNumber == scanNumber - 1, "inconsistent scan numbering"
-        # nMeasurements = len(measurementList.measurements)
         x_bar, P_bar, z_hat, S, S_inv, K, P_hat = kalman.numpyPredict(
             *kfVars, self.x_0.reshape(1, 4), self.P_0.reshape(1, 4, 4))
-
         scanTime = measurementList.time
         z_list = measurementList.measurements
         z_tilde = z_list - z_hat
         nis = self._normalizedInnovationSquared(z_tilde, S_inv.reshape(2, 2))
         gatedMeasurements = nis <= eta2
-        # nMeasurementInsideGate = np.sum(gatedMeasurements)
-
-        # print(nMeasurements)
-        # print("x_0", self.x_0)
-        # print("x_bar", x_bar)
-        # print("z_hat", z_hat)
-        # print("S_inv", S_inv)
-        # print("Z_list", z_list)
-        # print("z_tilde", z_tilde)
-        # print("nis", nis)
-        # print("gatedMeasurements", gatedMeasurements)
-
-        self.trackHypotheses = [self.createZeroHypothesis(scanTime,
-                                                          scanNumber,
-                                                          x_bar[0],
-                                                          P_bar[0])]
-
+        self.trackHypotheses = [
+            self.createZeroHypothesis(scanTime, scanNumber, x_bar[0], P_bar[0])]
         newNodes = []
-        associatedMeasurements = set()
+        usedMeasurementIndices = set()
         for measurementIndex, insideGate in enumerate(gatedMeasurements):
-            if insideGate:
-                nllr = kalman.nllr(lambda_ex,
-                                   self.P_d,
-                                   z_tilde[measurementIndex],
-                                   S,
-                                   S_inv)[0]
-                x_hat = kalman.numpyFilter(
-                    x_bar, K.reshape(4, 2), z_tilde[measurementIndex].reshape(1, 2)).reshape(4, )
-                assert x_hat.shape == self.x_0.shape
-                newNodes.append(
-                    Target(scanTime,
-                           scanNumber,
-                           x_hat,
-                           P_hat[0],
-                           measurementNumber=measurementIndex + 1,
-                           measurement=z_list[measurementIndex],
-                           cumulativeNLLR=self.cumulativeNLLR + nllr,
-                           P_d=self.P_d,
-                           parent=self
-                           )
-                )
-                associatedMeasurements.add((scanNumber, measurementIndex + 1))
-
+            if not insideGate: continue
+            nllr = kalman.nllr(lambda_ex, self.P_d, S, nis[measurementIndex])[0]
+            x_hat = kalman.numpyFilter(
+                x_bar, K.reshape(4, 2), z_tilde[measurementIndex].reshape(1, 2)).reshape(4, )
+            assert x_hat.shape == self.x_0.shape
+            newNodes.append(Target(scanTime,
+                                   scanNumber,
+                                   x_hat,
+                                   P_hat[0],
+                                   measurementNumber=measurementIndex + 1,
+                                   measurement=z_list[measurementIndex],
+                                   cumulativeNLLR=self.cumulativeNLLR + nllr,
+                                   P_d=self.P_d,
+                                   parent=self
+                                   )
+                            )
+            usedMeasurementIndices.add(measurementIndex)
         self.trackHypotheses.extend(newNodes)
-        return associatedMeasurements
+        return usedMeasurementIndices
 
     def spawnNewNodes(self, scanTime, scanNumber, x_bar, P_bar, measurementsIndices,
                       measurements, states, covariance, nllrList):
@@ -311,18 +288,19 @@ class Target():
         else:
             return {(self.scanNumber, self.measurementNumber)} | subSet
 
-    def processNewMeasurementRec(self, measurementList, measurementSet,
+    def processNewMeasurementRec(self, measurementList, usedMeasurementSet,
                                  scanNumber, lambda_ex, eta2, kfVars):
         if self.trackHypotheses is None:
-            measurementSet.update(self.gateAndCreateNewHypotheses(measurementList,
-                                                                  scanNumber,
-                                                                  lambda_ex,
-                                                                  eta2, kfVars)
-                                  )
+            usedMeasurementIndices = self.gateAndCreateNewHypotheses(measurementList,
+                                                                     scanNumber,
+                                                                     lambda_ex,
+                                                                     eta2,
+                                                                     kfVars)
+            usedMeasurementSet.update(usedMeasurementIndices)
         else:
             for hyp in self.trackHypotheses:
                 hyp.processNewMeasurementRec(
-                    measurementList, measurementSet, scanNumber, lambda_ex, eta2, kfVars)
+                    measurementList, usedMeasurementSet, scanNumber, lambda_ex, eta2, kfVars)
 
     def _selectBestHypothesis(self):
         def recSearchBestHypothesis(target, bestScore, bestHypothesis):
