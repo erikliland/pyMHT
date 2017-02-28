@@ -5,10 +5,13 @@ import numpy as np
 
 
 def nllr(lambda_ex, P_d, S_list, nis):
+    # assert S_list.shape[0] ==  nis.size, str(S_list.shape) + str(nis.size) + str(nis.shape)
     if lambda_ex == 0:
         print("RuntimeError('lambda_ex' can not be zero.)")
         lambda_ex += 1e-20
-    return (0.5 * nis + np.log((lambda_ex * np.sqrt(np.linalg.det(2 * np.pi * S_list))) / P_d))
+    result = (0.5 * nis + np.log((lambda_ex * np.sqrt(np.linalg.det(2 * np.pi * S_list))) / P_d))
+    assert result.size == nis.size
+    return result
 
 
 def normalizedInnovationSquared(z_tilde_list, S_inv_list):
