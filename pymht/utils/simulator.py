@@ -13,7 +13,7 @@ def positionWithNoise(state, H, R):
 def calculateNextState(target, timeStep, Phi, Q, Gamma):
     w = np.random.multivariate_normal(np.zeros(2), Q)
     nextState = Phi.dot(target.state) + Gamma.dot(w.T)
-    return Target(nextState, target.time + timeStep, target.P_d)
+    return Target(nextState, target.time + timeStep, target.P_d, target.disappearAfter)
 
 
 def generateInitialTargets(randomSeed, numOfTargets, centerPosition,
@@ -26,21 +26,20 @@ def generateInitialTargets(randomSeed, numOfTargets, centerPosition,
         heading = np.random.uniform(0, 360)
         distance = np.random.uniform(0, radarRange * 0.8)
         px, py = _pol2cart(heading, distance)
-        P0 = centerPosition + Position(px, py)
         heading = np.random.uniform(0, 360)
         speed = np.random.choice(speeds)
         vx, vy = _pol2cart(heading, speed)
-        V0 = Velocity(vx, vy)
         target = Target(np.array([px, py, vx, vy], dtype=np.float32), initialTime, P_d)
         initialList.append(target)
     return initialList
 
 
-def simulateTargets(randomSeed, initialTargets, nTimeSteps, timeStep, Phi, Q, Gamma):
+def simulateTargets(randomSeed, initialTargets, simTime, timeStep, Phi, Q, Gamma):
     np.random.seed(randomSeed)
     simList = []
     simList.append(initialTargets)
-    for _ in range(nTimeSteps):
+    nTimeSteps = int(simTime / timeStep)
+    for i in range(nTimeSteps):
         targetList = [calculateNextState(target, timeStep, Phi, Q, Gamma)
                       for target in simList[-1]]
         simList.append(targetList)
@@ -48,7 +47,7 @@ def simulateTargets(randomSeed, initialTargets, nTimeSteps, timeStep, Phi, Q, Ga
     return simList
 
 
-def simulateScans(randomSeed, simList, H, R, lambda_phi=0,
+def simulateScans(randomSeed, simList, radarPeriod, H, R, lambda_phi=0,
                   rRange=None, p0=None, **kwargs):
     DEBUG = kwargs.get('debug', False)
     np.random.seed(randomSeed)
