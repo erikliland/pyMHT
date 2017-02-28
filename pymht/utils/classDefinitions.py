@@ -3,10 +3,11 @@ import matplotlib.pyplot as plt
 
 
 class TempTarget:
-    def __init__(self, state, time, P_d, **kwargs):
+    def __init__(self, state, time, P_d, disappearAfter = float('inf'), **kwargs):
         self.state = state
         self.time = time
         self.P_d = P_d
+        self.disappearAfter = disappearAfter
         self.mmsi = kwargs.get('mmsi')
 
 
