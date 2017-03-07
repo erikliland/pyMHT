@@ -186,9 +186,9 @@ class Tracker():
         self.__trackNodes__ = np.append(self.__trackNodes__, target)
         self.__targetWindowSize__.append(self.N)
 
-    def addMeasurementList(self, measurementList, AIS_predictions=None, **kwargs):
-        self.AIS_predictions = AIS_predictions
-        scanTime = measurementList.time
+    def addMeasurementList(self, scanList, aisList=None, **kwargs):
+        self.AIS_predictions = aisList
+        scanTime = scanList.time
 
         self.log.debug("addMeasurementList starting")
         if self.AIS_predictions is not None:
@@ -206,8 +206,8 @@ class Tracker():
         # 1 --Grow each track tree--
         if self.logTime:
             self.tic[1] = time.time()
-        self.__scanHistory__.append(measurementList)
-        nMeas = len(measurementList.measurements)
+        self.__scanHistory__.append(scanList)
+        nMeas = len(scanList.measurements)
         measDim = self.C.shape[0]
         scanNumber = len(self.__scanHistory__)
 
@@ -240,7 +240,7 @@ class Tracker():
                 for nodeIndex, trackHypotheses, newMeasurements in (
                         self.workers.imap_unordered(functools.partial(
                             addMeasurementToNode,
-                            measurementList,
+                            scanList,
                             scanNumber,
                             self.lambda_ex,
                             self.eta2),
@@ -260,7 +260,7 @@ class Tracker():
                 if kwargs.get('R', False):
                     usedMeasurementIndices = set()
                     target.processNewMeasurementRec(
-                        measurementList,
+                        scanList,
                         usedMeasurementIndices,
                         scanNumber,
                         self.lambda_ex,
@@ -275,9 +275,9 @@ class Tracker():
                     tic = time.time()
                     targetNodes = target.getLeafNodes()
                     nNodes = len(targetNodes)
-                    newNodesData = self._processTargetNodes(targetNodes, measurementList)
+                    newNodesData = self._processTargetNodes(targetNodes, scanList, aisList)
                     x_bar_list, P_bar_list, gated_x_hat_list, P_hat_list, gatedIndicesList, nllrList = newNodesData
-                    gatedMeasurementsList = [np.array(measurementList.measurements[gatedIndices])
+                    gatedMeasurementsList = [np.array(scanList.measurements[gatedIndices])
                                              for gatedIndices in gatedIndicesList]
                     assert len(gatedMeasurementsList) == nNodes
                     assert all([m.shape[1] == measDim for m in gatedMeasurementsList])
@@ -411,7 +411,7 @@ class Tracker():
         # 7 -- Initiate new tracks
         if self.logTime:
             self.tic[8] = time.time()
-        unused_measurements = measurementList.filter(unused_measurement_indices)
+        unused_measurements = scanList.filter(unused_measurement_indices)
         new_initial_targets = self.initiator.processMeasurements(unused_measurements)
         for initial_target in new_initial_targets:
             self.log.debug("\tNew target({}): ".format(len(self.__targetList__) + 1) + str(initial_target))
@@ -479,49 +479,50 @@ class Tracker():
             assert trackListTypePost == trackListTypePre
             assert associationTypePost == associationTypePre
 
-    def _processTargetNodes(self, targetNodes, measurementList):
-        nMeas = len(measurementList.measurements)
+    def _processTargetNodes(self, targetNodes, scanList, aisList):
+        nRadarMeas = len(scanList.measurements)
+        nAisMeas = len(aisList.measurements)
         measDim = self.C.shape[0]
         nNodes = len(targetNodes)
 
         x_bar_list, P_bar_list, z_hat_list, S_list, S_inv_list, K_list, P_hat_list = self._predictPrecalcBulk(
             targetNodes)
 
-        z_list = measurementList.measurements
-        assert z_list.shape[1] == measDim
+        z_radar_list = scanList.measurements
+        assert z_radar_list.shape[1] == measDim
 
-        z_tilde_list = kalman.z_tilde(z_list, z_hat_list, nNodes, measDim)
-        assert z_tilde_list.shape == (nNodes, nMeas, measDim)
+        z_radar_tilde_list = kalman.z_tilde(z_radar_list, z_hat_list, nNodes, measDim)
+        assert z_radar_tilde_list.shape == (nNodes, nRadarMeas, measDim)
 
-        nis = kalman.normalizedInnovationSquared(z_tilde_list, S_inv_list)
-        assert nis.shape == (nNodes, nMeas,)
+        radar_nis = kalman.normalizedInnovationSquared(z_radar_tilde_list, S_inv_list)
+        assert radar_nis.shape == (nNodes, nRadarMeas,)
 
-        gatedFilter = nis <= self.eta2
-        assert gatedFilter.shape == (nNodes, nMeas)
+        gated_radar_filter = radar_nis <= self.eta2
+        assert gated_radar_filter.shape == (nNodes, nRadarMeas)
 
-        gatedIndicesList = [np.nonzero(gatedFilter[row])[0]
+        gated_radar_indices_list = [np.nonzero(gated_radar_filter[row])[0]
                             for row in range(nNodes)]
 
-        assert len(gatedIndicesList) == nNodes
+        assert len(gated_radar_indices_list) == nNodes
 
-        gated_z_tilde_list = [z_tilde_list[i, gatedIndicesList[i]]
+        gated_z_radar_tilde_list = [z_radar_tilde_list[i, gated_radar_indices_list[i]]
                               for i in range(nNodes)]
-        assert len(gated_z_tilde_list) == nNodes
+        assert len(gated_z_radar_tilde_list) == nNodes
 
         gated_x_hat_list = [kalman.numpyFilter(
-            x_bar_list[i], K_list[i], gated_z_tilde_list[i])
+            x_bar_list[i], K_list[i], gated_z_radar_tilde_list[i])
                             for i in range(nNodes)]
         assert len(gated_x_hat_list) == nNodes
 
         nllrList = [kalman.nllr(self.lambda_ex,
                                 targetNodes[i].P_d,
                                 S_list[i],
-                                nis[i, gatedFilter[i]])
+                                radar_nis[i, gated_radar_filter[i]])
                     for i in range(nNodes)]
         assert len(nllrList) == nNodes
 
         # Return (x_bar, P_bar, x_hat_list, P_hat_list, measurementIndices, NLLR_list)
-        newNodesData = (x_bar_list, P_bar_list, gated_x_hat_list, P_hat_list, gatedIndicesList, nllrList)
+        newNodesData = (x_bar_list, P_bar_list, gated_x_hat_list, P_hat_list, gated_radar_indices_list, nllrList)
         return newNodesData
 
     def _predictPrecalcBulk(self, targetNodes):
