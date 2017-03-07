@@ -14,7 +14,7 @@ sigmaR_true = 1.0
 sigmaQ_tracker = 1.0  # Target standard deviation used in kalman filter
 sigmaQ_true = 0.5  # Tardet standard deviation used in kalman filter
 # 95% conficence = +- 2.5*sigma
-
+GPS_COVARIANCE_PRECISE = np.copy(P0*0.5)
 
 def Q(T, sigmaQ=sigmaQ_tracker):
     # Transition/system covariance (process noise)
