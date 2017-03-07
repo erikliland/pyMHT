@@ -155,7 +155,7 @@ class AIS_message:
 class AIS_prediction:
     def __init__(self, state, covariance, mmsi):
         assert state.shape == (4,)
-        assert covariance.shape == (4,4)
+        assert covariance.shape == (4, 4)
         assert type(mmsi) is int
         self.state = state
         self.covariance = covariance
@@ -173,9 +173,9 @@ class AIS_prediction:
 
 
 class MeasurementList:
-    def __init__(self, time, measurements=[]):
+    def __init__(self, time, measurements=None):
         self.time = time
-        self.measurements = measurements
+        self.measurements = measurements if measurements is not None else []
 
     def __str__(self):
         from time import gmtime, strftime
