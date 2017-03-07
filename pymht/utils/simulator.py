@@ -1,8 +1,12 @@
 import numpy as np
 from pymht.utils.classDefinitions import TempTarget as Target
-from pymht.utils.classDefinitions import MeasurementList as MeasurementList
+from pymht.utils.classDefinitions import MeasurementList, AIS_message
+import pymht.models.pv as model
 import time
 import copy
+
+
+# import autopy.local_state as ls
 
 
 def positionWithNoise(state, H, R):
@@ -13,7 +17,7 @@ def positionWithNoise(state, H, R):
 def calculateNextState(target, timeStep, Phi, Q, Gamma):
     w = np.random.multivariate_normal(np.zeros(2), Q)
     nextState = Phi.dot(target.state) + Gamma.dot(w.T)
-    return Target(nextState, target.time + timeStep, target.P_d, target.disappearAfter)
+    return Target(nextState, target.time + timeStep, target.P_d, target.disappearAfter, mmsi=target.mmsi)
 
 
 def generateInitialTargets(randomSeed, numOfTargets, centerPosition,
@@ -55,10 +59,21 @@ def simulateScans(randomSeed, simList, radarPeriod, H, R, lambda_phi=0,
     gClutter = lambda_phi * area
     lClutter = 3e-2 * np.power(3 * R[0, 0], 2) * np.pi
     scanList = []
-    for scan in simList:
-        measurementList = MeasurementList(scan[0].time)
+    lastScan = None
+    for sim in simList:
+        simTime = sim[0].time
+        if lastScan is None:
+            lastScan = simTime
+        else:
+            timeSinceLastScan = simTime - lastScan
+            if timeSinceLastScan >= radarPeriod:
+                lastScan = simTime
+            else:
+                continue
+
+        measurementList = MeasurementList(simTime)
         measurementList.measurements = []  # BUG: Why is this necessary
-        for target in scan:
+        for target in sim:
             visible = np.random.uniform() <= target.P_d
             if (rRange is not None) and (p0 is not None):
                 distance = np.linalg.norm(target.state[0:2] - p0.array)
@@ -88,8 +103,19 @@ def simulateScans(randomSeed, simList, radarPeriod, H, R, lambda_phi=0,
     return scanList
 
 
-def simulateAIS(randomSeed, simList, **kwargs):
-    pass
+def simulateAIS(random_seed, sim_list, **kwargs):
+    np.random.seed(random_seed)
+    ais_measurements = []
+    for sim in sim_list[1::2]:
+        tempList = []
+        for target in (t for t in sim if t.mmsi is not None):
+            prediction = AIS_message(time=target.time,
+                                     state=target.state,
+                                     covariance=model.GPS_COVARIANCE_PRECISE,
+                                     mmsi=target.mmsi)
+            tempList.append(prediction)
+        ais_measurements.append(tempList)
+    return ais_measurements
 
 
 def writeSimList(initialTargets, simList, filename):
