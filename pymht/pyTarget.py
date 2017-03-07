@@ -60,7 +60,7 @@ class Target():
         self.trackHypotheses = None
 
     def __repr__(self):
-        if False:  # self.x_bar is not None:
+        if hasattr(self, 'kalmanFilter'):
             np.set_printoptions(precision=4, suppress=True)
             predStateStr = " \tPredState: " + str(self.kalmanFilter.x_bar)
         else:
@@ -77,7 +77,7 @@ class Target():
         else:
             measStr = ""
 
-        if False:  # self.kalmanFilter.S is not None:
+        if hasattr(self, 'kalmanFilter'):
             lambda_, _ = np.linalg.eig(self.kalmanFilter.S)
             gateStr = (" \tGate size: (" +
                        '{:5.2f}'.format(np.sqrt(lambda_[0]) * 2) +
@@ -227,7 +227,6 @@ class Target():
         nis = measurementResidual.T.dot(S_inv).dot(measurementResidual)
         nllr = (0.5 * nis +
                 np.log((lambda_ex * np.sqrt(np.linalg.det(2. * np.pi * S))) / P_d))
-        print("nllr", nllr)
         return self.cumulativeNLLR + nllr
 
     def measurementIsInsideErrorEllipse(self, measurement, eta2):
@@ -373,8 +372,8 @@ class Target():
         recCheckReferenceIntegrety(self.getRoot())
 
     def plotValidationRegion(self, eta2, stepsBack=0):
-        print("plotValidationRegion is not functional in this version")
-        return
+        if not hasattr(self, 'kalmanFilter'):
+            raise NotImplementedError("plotValidationRegion is not functional in this version")
         if self.kalmanFilter.S is not None:
             self._plotCovarianceEllipse(eta2)
         if (self.parent is not None) and (stepsBack > 0):
