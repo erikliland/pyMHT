@@ -226,4 +226,5 @@ def predictAisMeasurements(scanTime, aisMeasurements):
         res = kalman.numpyPredict(A, model.C, Q, R, model.Gamma, np.array(state, ndmin=2), np.array(measurement.covariance, ndmin=3))
         x_bar, P_bar, _, _, _, _, _ = res
         aisPredictions.measurements.append(AIS_prediction(x_bar[0], P_bar[0], measurement.mmsi))
+    assert len(aisPredictions.measurements) == len(aisMeasurements)
     return aisPredictions
