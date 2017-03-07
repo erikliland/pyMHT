@@ -1,10 +1,10 @@
 from __future__ import print_function
-
 import matplotlib.pyplot as plt
 import numpy as np
-
-# import itertools
 import copy
+from pymht.utils.classDefinitions import MeasurementList, AIS_prediction
+import pymht.utils.pyKalman as kalman
+import pymht.models.pv as model
 
 
 def _getBestTextPosition(normVelocity, **kwargs):
@@ -211,3 +211,19 @@ def solverIsAvailable(solverString):
     if s == "gurobi":
         return pulp.GUROBI_CMD().available() != False
     return False
+
+
+def predictAisMeasurements(scanTime, aisMeasurements):
+    assert len(aisMeasurements) > 0
+    aisPredictions = MeasurementList(scanTime)
+    R = model.R()
+    for measurement in aisMeasurements:
+        dT = scanTime - measurement.time
+        assert dT > 0
+        state = measurement.state
+        A = model.Phi(dT)
+        Q = model.Q(dT)
+        res = kalman.numpyPredict(A, model.C, Q, R, model.Gamma, np.array(state, ndmin=2), np.array(measurement.covariance, ndmin=3))
+        x_bar, P_bar, _, _, _, _, _ = res
+        aisPredictions.measurements.append(AIS_prediction(x_bar[0], P_bar[0], measurement.mmsi))
+    return aisPredictions
