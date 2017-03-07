@@ -13,8 +13,8 @@ import time
 import signal
 import os
 import logging
+import datetime
 import copy
-import sys
 import itertools
 import functools
 import matplotlib.pyplot as plt
@@ -68,19 +68,24 @@ class Tracker():
         # ----------------------------------------------------------------------------
         # Instantiate logging object
         # ----------------------------------------------------------------------------
+        cwd = os.getcwd()
+        logDir = os.path.join(cwd, 'logs')
+        if not os.path.exists(logDir):
+            os.makedirs(logDir)
+        logging.basicConfig(level=logging.DEBUG,
+                            format='%(asctime)s %(name)-25s %(levelname)-8s %(message)s',
+                            datefmt='%Y-%m-%d %H:%M:%S',
+                            filename=os.path.join(logDir, 'myapp.log'),
+                            filemode='w')
+        console = logging.StreamHandler()
+        console.setLevel(logging.INFO)
+        formatter = logging.Formatter('%(name)-12s: %(levelname)-8s %(message)s')
+        console.setFormatter(formatter)
         self.log = logging.getLogger(__name__)
-        log_handler = logging.StreamHandler(sys.stdout)
-        log_handler.setLevel(kwargs.get('logLevel', 'INFO'))
-        self.log.setLevel(kwargs.get('logLevel', 'INFO'))
-        log_format = '%(message)s'
-        log_formatter = logging.Formatter(log_format)
-        log_handler.setFormatter(log_formatter)
-        self.log.handlers = []
-        self.log.addHandler(log_handler)
-        self.log.info('Running base main')
+        self.log.addHandler(console)
+        self.log.debug('Running base main')
 
         self.logTime = kwargs.get("logTime", False)
-        self.debug = kwargs.get("debug", False)
         self.parallelize = kwargs.get("w", 1) > 1
         self.kwargs = kwargs
 
@@ -90,15 +95,17 @@ class Tracker():
         else:
             self.nWorkers = 0
 
-        if self.debug:
-            print("Using ", self.nWorkers + 1, " proceess(es) with ",
-                  os.cpu_count(), " cores", sep="")
+        self.log.debug("Using " +
+                       str(self.nWorkers + 1) +
+                       " process(es) with " +
+                       str(os.cpu_count()) +
+                       " cores")
 
         # Target initiator
         maxSpeed = kwargs.get('maxSpeed', 20)
-        M_required = kwargs.get('M', 2)
-        N_checks = kwargs.get('N', 3)
-        self.initiator = m_of_n.Initiator(M_required, N_checks, maxSpeed)
+        M_required = kwargs.get('M_required', 2)
+        N_checks = kwargs.get('N_checks', 3)
+        self.initiator = m_of_n.Initiator(M_required, N_checks, maxSpeed, logLevel='DEBUG')
 
         # Tracker storage
         self.__targetList__ = []
@@ -109,6 +116,7 @@ class Tracker():
         self.__trackNodes__ = np.empty(0, dtype=np.dtype(object))
         self.__terminatedTargets__ = []
         self.__clusterList__ = []
+        self.AIS_predictions = None
 
         # Radar parameters
         self.position = p0
@@ -178,7 +186,17 @@ class Tracker():
         self.__trackNodes__ = np.append(self.__trackNodes__, target)
         self.__targetWindowSize__.append(self.N)
 
-    def addMeasurementList(self, measurementList, **kwargs):
+    def addMeasurementList(self, measurementList, AIS_predictions=None, **kwargs):
+        self.AIS_predictions = AIS_predictions
+        scanTime = measurementList.time
+
+        self.log.debug("addMeasurementList starting")
+        if self.AIS_predictions is not None:
+            aisTime = self.AIS_predictions.time
+            assert aisTime == scanTime
+        # self.log.debug('AIS time \t' + datetime.datetime.fromtimestamp(aisTime).strftime("%H:%M:%S.%f"))
+        # self.log.debug('Radar time \t' + datetime.datetime.fromtimestamp(scanTime).strftime("%H:%M:%S.%f"))
+
         # 0 --Iterative procedure for tracking --
         self.tic[0] = time.time()
 
@@ -192,7 +210,7 @@ class Tracker():
         nMeas = len(measurementList.measurements)
         measDim = self.C.shape[0]
         scanNumber = len(self.__scanHistory__)
-        scanTime = measurementList.time
+
         nTargets = len(self.__targetList__)
         timeSinceLastScan = scanTime - self.__scanHistory__[-1].time
         if not self.fixedPeriod:
@@ -286,8 +304,8 @@ class Tracker():
 
         if self.logTime:
             self.toc[1] = time.time() - self.tic[1]
-        if self.parallelize and self.debug:
-            print(*[round(e) for e in self.leafNodeTimeList], sep="ms\n", end="ms\n")
+        if self.parallelize:
+            self.log.debug(str([round(e) for e in self.leafNodeTimeList]))
         if kwargs.get("printAssociation", False):
             print(*self.__associatedMeasurements__, sep="\n", end="\n\n")
 
@@ -354,7 +372,7 @@ class Tracker():
         if tempTotalTime > (self.period * 0.8):
             self.N = max(1, self.N - 1)
             self.log.debug(
-                '\tIteration took to long time ({0:.1f}ms), reducing window size roof from {1:} to  {2:}'.format(
+                'Iteration took to long time ({0:.1f}ms), reducing window size roof from {1:} to  {2:}'.format(
                     tempTotalTime * 1000, self.N + 1, self.N))
             self.__targetWindowSize__ = [min(e, self.N) for e in self.__targetWindowSize__]
 
@@ -379,12 +397,12 @@ class Tracker():
             # Check outside range
             if trackNode.isOutsideRange(self.position.array, self.range):
                 deadTracks.append(trackIndex)
-                self.log.debug("\tTerminating track {:} since it is out of range".format(trackIndex))
+                self.log.debug("Terminating track {:} since it is out of range".format(trackIndex))
 
             # Check if track is to insecure
             elif trackNode.cumulativeNLLR > self.NLLR_UPPER_LIMIT:
                 deadTracks.append(trackIndex)
-                self.log.debug("\tTerminating track {:} since its cost is above the threshold".format(trackIndex))
+                self.log.debug("Terminating track {:} since its cost is above the threshold".format(trackIndex))
 
         self._terminateTracks(deadTracks)
         if self.logTime:
@@ -430,6 +448,8 @@ class Tracker():
         if "trueState" in kwargs:
             xTrue = kwargs.get("trueState")
             return self._compareTracksWithTruth(xTrue)
+
+        self.log.debug("addMeasurement completed \n" + self.getTimeLogString())
 
     def _terminateTracks(self, deadTracks):
         deadTracks.sort(reverse=True)
@@ -569,29 +589,29 @@ class Tracker():
         A2 = self._createA2(len(cluster), nHypInClusterArray)
         C = self._createC(cluster)
         # t1 = time.time() - t0
-        # print("matricesTime\t", round(t1,3))
+        # self.log.debug("matricesTime\t" + str(round(t1,3)))
 
         selectedHypotheses = self._solveBLP_OR_TOOLS(A1, A2, C, len(cluster))
         # selectedHypotheses = self._solveBLP_PULP(A1, A2, C, len(cluster))
         # assert selectedHypotheses0 == selectedHypotheses
         selectedNodes = self._hypotheses2Nodes(selectedHypotheses, cluster)
         selectedNodesArray = np.array(selectedNodes)
-        self.log.debug("Solving optimal association in cluster with targets" + str(cluster) + ",   \t" +
-                       str(sum(nHypInClusterArray)) + " hypotheses and " +
-                       str(nRealMeasurementsInCluster) + " real measurements.")
-        # print("nHypothesesInCluster",sum(nHypInClusterArray))
-        # print("nRealMeasurementsInCluster", nRealMeasurementsInCluster)
-        # print("nTargetsInCluster", len(cluster))
-        # print("nHypInClusterArray",nHypInClusterArray)
-        # print("c =", c)
-        # print("A1", A1, sep = "\n")
-        # print("size(A1)", A1.shape, "\t=>\t",
-        #       nRealMeasurementsInCluster * sum(nHypInClusterArray))
-        # print("A2", A2, sep = "\n")
-        # print("measurementList",measurementList)
-        # print("selectedHypotheses",selectedHypotheses)
-        # print("selectedNodes",*selectedNodes, sep = "\n")
-        # print("selectedNodesArray",*selectedNodesArray, sep = "\n")
+        # self.log.debug("Solving optimal association in cluster with targets" +
+        #                str(cluster) + ",   \t" +
+        #                str(sum(nHypInClusterArray)) + " hypotheses and " +
+        #                str(nRealMeasurementsInCluster) + " real measurements.")
+        # self.log.debug("nHypothesesInCluster {:}".format(sum(nHypInClusterArray)))
+        # self.log.debug("nRealMeasurementsInCluster {:}".format(nRealMeasurementsInCluster))
+        # self.log.debug("nTargetsInCluster {:}".format(len(cluster)))
+        # self.log.debug("nHypInClusterArray {:}".format(HypInClusterArray))
+        # self.log.debug("c =" + str(c))
+        # self.log.debug("A1 \n" + str(A1))
+        # self.log.debug("size(A1) " + str(A1.shape) + "\t=>\t" + str(nRealMeasurementsInCluster * sum(nHypInClusterArray)))
+        # self.log.debug("A2 \n" + str(A2))
+        # self.log.debug("measurementList" + str(measurementList))
+        # self.log.debug("selectedHypotheses" + str(selectedHypotheses))
+        # self.log.debug("selectedNodes" +  str(*selectedNodes))
+        # self.log.debug("selectedNodesArray" + str(*selectedNodesArray))
 
         assert len(selectedHypotheses) == len(cluster), \
             "__solveOptimumAssociation did not find the correct number of hypotheses"
@@ -632,10 +652,6 @@ class Tracker():
                         measurementList.append(measurement)
                         measurementIndex = len(measurementList) - 1
                     activeMeasurements[measurementIndex] = True
-                    # print("Measurement list", measurementList)
-                    # print("Measurement index", measurementIndex)
-                    # print("HypInd = ", hypothesisIndex[0])
-                    # print("Active measurement", activeMeasurements)
                 A1[activeMeasurements, hypothesisIndex[0]] = True
                 hypothesisIndex[0] += 1
 
@@ -654,7 +670,7 @@ class Tracker():
                     recActiveMeasurement(hyp, A1, measurementList,
                                          activeMeasurementsCpy, hypothesisIndex)
 
-        A1 = np.zeros((nRow, nCol), dtype=bool)  # Numpy Array
+        A1 = np.zeros((nRow, nCol), dtype=bool)
         activeMeasurements = np.zeros(nRow, dtype=bool)
         measurementList = []
         hypothesisIndex = [0]
@@ -736,10 +752,6 @@ class Tracker():
         toc0 = time.time() - tic0
 
         def setConstaints(solver, nMeas, nTargets, nHyp, tempMatrix, A2):
-            # print("nMeas", nMeas)  # ~21
-            # print("nTargets", nTargets)  # ~2
-            # print("nHyp", nHyp)  # ~2788
-            import numbers
             for row in range(nMeas):
                 constraint = (solver.Sum(tempMatrix[row]) <= 1)
                 solver.Add(constraint)
@@ -749,10 +761,6 @@ class Tracker():
                                        for col in range(nHyp) if A2[row, col]]) == 1)
 
         tic1 = time.time()
-        # Set constaints
-        # import cProfile
-        # cProfile.runctx("setConstaints(solver, nMeas, nTargets, nHyp, tempMatrix, A2)",
-        #                 globals(), locals(), 'blpProfile.prof')
         setConstaints(solver, nMeas, nTargets, nHyp, tempMatrix, A2)
         toc1 = time.time() - tic1
 
@@ -760,7 +768,7 @@ class Tracker():
         # Solving optimization problem
         result_status = solver.Solve()
         assert result_status == pywraplp.Solver.OPTIMAL
-        # print("Optim Time = ", solver.WallTime(), " milliseconds")
+        self.log.debug("Optim Time = " + str(solver.WallTime()) + " milliseconds")
         toc2 = time.time() - tic2
 
         tic3 = time.time()
@@ -769,16 +777,11 @@ class Tracker():
         assert len(selectedHypotheses) == nTargets
         toc3 = time.time() - tic3
 
-        # print('_solveBLP_OR_TOOLS ({0:4.0f}|{1:4.0f}|{2:4.0f}|{3:4.0f}) ms = {4:4.0f}'.format(
-        #     toc0 * 1000, toc1 * 1000, toc2 * 1000, toc3 * 1000, (toc0 + toc1 + toc2 + toc3) * 1000))
-        # import pstats
-        # p = pstats.Stats('blpProfile.prof')
-        # p.strip_dirs().sort_stats('time').print_stats(20)
-        # p.strip_dirs().sort_stats('cumulative').print_stats(20)
+        self.log.debug('_solveBLP_OR_TOOLS ({0:4.0f}|{1:4.0f}|{2:4.0f}|{3:4.0f}) ms = {4:4.0f}'.format(
+            toc0 * 1000, toc1 * 1000, toc2 * 1000, toc3 * 1000, (toc0 + toc1 + toc2 + toc3) * 1000))
         return selectedHypotheses
 
     def _solveBLP_PULP(self, A1, A2, f, nHyp):
-
         tic0 = time.time()
         nScores = len(f)
         (nMeas, nHyp) = A1.shape
@@ -818,7 +821,7 @@ class Tracker():
                 break
         toc3 = time.time() - tic3
 
-        print('_solveBLP_PULP     ({0:4.0f}|{1:4.0f}|{2:4.0f}|{3:4.0f})ms = {4:4.0f}'.format(
+        self.log.debug('_solveBLP_PULP     ({0:4.0f}|{1:4.0f}|{2:4.0f}|{3:4.0f})ms = {4:4.0f}'.format(
             toc0 * 1000, toc1 * 1000, toc2 * 1000, toc3 * 1000, (toc0 + toc1 + toc2 + toc3) * 1000))
         return selectedHypotheses
 
@@ -968,33 +971,36 @@ class Tracker():
                 print(target.__str__(targetIndex=targetIndex))
         print()
 
-    def printTimeLog(self):
-        from termcolor import cprint
-        self.toc *= 1000
-        totalTime = self.toc[0]
-        tooLong = totalTime > (self.period * 1000)
+    def getTimeLogString(self):
+        tocMS = self.toc * 1000
+        totalTime = tocMS[0]
         nNodes = sum([target.getNumOfNodes() for target in self.__targetList__])
         nMeasurements = len(self.__scanHistory__[-1].measurements)
+        nAisUpdates = len(self.AIS_predictions.measurements) if self.AIS_predictions is not None else 0
         scanNumber = len(self.__scanHistory__)
         nTargets = len(self.__targetList__)
         nClusters = len(self.__clusterList__)
-        cprint(
-            ('{:3.0f} '.format(scanNumber) +
-             'nTrack {:2.0f}'.format(nTargets) + "  " +
-             'Total {0:6.0f}'.format(totalTime) + "  " +
-             'Process({0:3.0f}/{1:6.0f}) {2:6.1f}'.format(
-                 nMeasurements, nNodes, self.toc[1]) + "  " +
-             'Cluster({0:2.0f}) {1:5.1f}'.format(nClusters, self.toc[2]) + "  " +
-             'Optim({0:g}) {1:6.1f}'.format(self.nOptimSolved, self.toc[3]) + "  " +
-             # 'ILP-Prune {:5.0f}'.format(self.toc[4]) + "  " +
-             'DynN {:4.1f}'.format(self.toc[5]) + " " +
-             'N-Prune {:5.1f}'.format(self.toc[6]) + " " +
-             'Kill {:3.1f}'.format(self.toc[7]) + " " +
-             'Init {:5.1f}'.format(self.toc[8])
-             ),
-            'red' if tooLong else None,
-            attrs=(['bold'] if tooLong else [])
-        )
+        timeLogString = ('{:3.0f} '.format(scanNumber) +
+                         'nTrack {:2.0f}'.format(nTargets) + "  " +
+                         'Total {0:6.0f}'.format(totalTime) + "  " +
+                         'Process({0:3.0f}+{1:3.0f}/{2:6.0f}) {3:6.1f}'.format(
+                             nMeasurements, nAisUpdates, nNodes, tocMS[1]) + "  " +
+                         'Cluster({0:2.0f}) {1:5.1f}'.format(nClusters, tocMS[2]) + "  " +
+                         'Optim({0:g}) {1:6.1f}'.format(self.nOptimSolved, tocMS[3]) + "  " +
+                         # 'ILP-Prune {:5.0f}'.format(self.toc[4]) + "  " +
+                         'DynN {:4.1f}'.format(tocMS[5]) + " " +
+                         'N-Prune {:5.1f}'.format(tocMS[6]) + " " +
+                         'Kill {:3.1f}'.format(tocMS[7]) + " " +
+                         'Init {:5.1f}'.format(tocMS[8]))
+        return timeLogString
+
+    def printTimeLog(self):
+        from termcolor import cprint
+        tooLong = self.toc[0] > self.period
+        cprint(self.getTimeLogString(),
+               'red' if tooLong else None,
+               attrs=(['bold'] if tooLong else [])
+               )
 
 
 if __name__ == '__main__':
