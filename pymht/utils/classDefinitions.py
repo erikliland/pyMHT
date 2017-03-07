@@ -1,21 +1,26 @@
 import numpy as np
+import time
 import matplotlib.pyplot as plt
 
 
 class TempTarget:
-    def __init__(self, state, time, P_d, disappearAfter = float('inf'), **kwargs):
+    def __init__(self, state, time, P_d, disappearAfter=float('inf'), **kwargs):
         self.state = state
         self.time = time
         self.P_d = P_d
         self.disappearAfter = disappearAfter
         self.mmsi = kwargs.get('mmsi')
 
-
     def __str__(self):
-        return ('Pos: ({0: 7.1f},{1: 7.1f})'.format(self.state[0], self.state[1]) + " " +
+        from time import gmtime, strftime
+        timeString = strftime("%H:%M:%S", gmtime(self.time))
+        mmsiString = 'MMSI: ' + str(self.mmsi) if self.mmsi is not None else ""
+        return ('Time: ' + timeString + " " +
+                'Pos: ({0: 7.1f},{1: 7.1f})'.format(self.state[0], self.state[1]) + " " +
                 'Vel: ({0: 5.1f},{1: 5.1f})'.format(self.state[2], self.state[3]) + " " +
                 'Speed: {0:4.1f}m/s ({1:4.1f}knt)'.format(self.speed('m/s'), self.speed('knots')) + " " +
-                'Pd: {:5.1f}%'.format(self.P_d*100.))
+                'Pd: {:3.0f}%'.format(self.P_d * 100.) + " " +
+                mmsiString)
 
     def storeString(self):
         return ',{0:.2f},{1:.2f}'.format(*self.state[0:2])
@@ -125,9 +130,51 @@ class Velocity:
         return self.velocity[1]
 
 
+class AIS_message:
+    def __init__(self, time, state, covariance, mmsi):
+        self.time = time
+        self.state = state
+        self.covariance = covariance
+        self.mmsi = mmsi
+
+    def __str__(self):
+        from time import gmtime, strftime
+        timeString = strftime("%H:%M:%S", gmtime(self.time))
+        mmsiString = 'MMSI: ' + str(self.mmsi) if self.mmsi is not None else ""
+        return ('Time: ' + timeString + " " +
+                'State: ({0: 7.1f},{1: 7.1f},{2: 7.1f},{3: 7.1f})'.format(
+                    self.state[0], self.state[1], self.state[2], self.state[3]) + " " +
+                'Covariance: ' + np.array_str(np.diagonal(self.covariance),
+                                              precision=1,
+                                              suppress_small=True) + " " +
+                mmsiString)
+
+    __repr__ = __str__
+
+
+class AIS_prediction:
+    def __init__(self, state, covariance, mmsi):
+        assert state.shape == (4,)
+        assert covariance.shape == (4,4)
+        assert type(mmsi) is int
+        self.state = state
+        self.covariance = covariance
+        self.mmsi = mmsi
+
+    def __str__(self):
+        mmsiString = 'MMSI: ' + str(self.mmsi) if self.mmsi is not None else ""
+        stateString = 'State: ({0: 7.1f},{1: 7.1f},{2: 7.1f},{3: 7.1f})'.format(
+            self.state[0], self.state[1], self.state[2], self.state[3])
+        covarianceString = 'Covariance: ' + np.array_str(np.diagonal(self.covariance),
+                                                         precision=1, suppress_small=True)
+        return (stateString + " " + covarianceString + " " + mmsiString)
+
+    __repr__ = __str__
+
+
 class MeasurementList:
-    def __init__(self, Time, measurements=[]):
-        self.time = Time
+    def __init__(self, time, measurements=[]):
+        self.time = time
         self.measurements = measurements
 
     def __str__(self):
@@ -136,7 +183,7 @@ class MeasurementList:
 
         timeString = strftime("%H:%M:%S", gmtime(self.time))
         return ("Time: " + timeString +
-                "\tMeasurements:\t" + "".join(
+                "\tMeasurements:\t" + ", ".join(
             [str(measurement) for measurement in self.measurements]))
 
     __repr__ = __str__
@@ -155,3 +202,20 @@ class MeasurementList:
         # measurements = np.ma.array(self.measurements, mask=np.logical_not(mask))
         measurements = self.measurements[np.where(unused_measurement_indices)]
         return MeasurementList(self.time, measurements)
+
+    def getTimeString(self, timeFormat="%H:%M:%S"):
+        return time.strftime(timeFormat, time.gmtime(self.time))
+
+
+class PredictionList(MeasurementList):
+    def __init__(self, time, predictions):
+        super(MeasurementList, self).__init__(time, predictions)
+
+    def __str__(self):
+        from time import gmtime, strftime
+        np.set_printoptions(precision=1, suppress=True)
+
+        timeString = strftime("%H:%M:%S", gmtime(self.time))
+        return ("Time: " + timeString +
+                "\tPredictions:\t" + "".join(
+            [str(measurement) for measurement in self.measurements]))
