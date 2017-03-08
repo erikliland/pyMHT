@@ -74,7 +74,7 @@ class KalmanFilter():
     """
     A Kalman filter class, does filtering for systems of the type:
     x_{k+1} = A*x_k + v_k
-    y_k = C*z_k + e_k
+    y_k = C_RADAR*z_k + e_k
     v_k ~ N(0,Q)
     e_k ~ N(0,R)
     x_0 - Initial state
