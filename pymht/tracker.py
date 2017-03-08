@@ -116,7 +116,7 @@ class Tracker():
         self.__trackNodes__ = np.empty(0, dtype=np.dtype(object))
         self.__terminatedTargets__ = []
         self.__clusterList__ = []
-        self.AIS_predictions = None
+        self.__aisHistory__ = []
 
         # Radar parameters
         self.position = p0
@@ -130,15 +130,15 @@ class Tracker():
                            'Process': np.array([0.0, 0]),
                            'Cluster': np.array([0.0, 0]),
                            'Optim': np.array([0.0, 0]),
-                           'N Prune': np.array([0.0, 0]),
-                           'Term': np.array([0.0, 0]),
+                           'ILP-Prune': np.array([0.0, 0]),
+                           'DynN': np.array([0.0, 0]),
+                           'N-Prune': np.array([0.0, 0]),
+                           'Terminate': np.array([0.0, 0]),
                            'Init': np.array([0.0, 0]),
-                           'Window': np.array([0.0, 0]),
-                           'ILP Prune': np.array([0.0, 0]),
                            }
         if self.logTime:
-            self.tic = np.zeros(9)
-            self.toc = np.zeros(9)
+            self.tic = {}
+            self.toc = {}
             self.nOptimSolved = 0
             self.leafNodeTimeList = []
             self.createComputationTime = None
@@ -187,26 +187,30 @@ class Tracker():
         self.__targetWindowSize__.append(self.N)
 
     def addMeasurementList(self, scanList, aisList=None, **kwargs):
-        self.AIS_predictions = aisList
-        scanTime = scanList.time
-
         self.log.debug("addMeasurementList starting")
-        if self.AIS_predictions is not None:
-            aisTime = self.AIS_predictions.time
+
+        # Adding new data to history
+        self.__scanHistory__.append(scanList)
+        self.__aisHistory__.append(aisList)
+
+        # Verifying time stamps
+        scanTime = scanList.time
+        self.log.debug('Radar time \t' + datetime.datetime.fromtimestamp(scanTime).strftime("%H:%M:%S.%f"))
+
+        if aisList is not None:
+            aisTime = aisList.time
             assert aisTime == scanTime
-        # self.log.debug('AIS time \t' + datetime.datetime.fromtimestamp(aisTime).strftime("%H:%M:%S.%f"))
-        # self.log.debug('Radar time \t' + datetime.datetime.fromtimestamp(scanTime).strftime("%H:%M:%S.%f"))
+            self.log.debug('AIS time \t' + datetime.datetime.fromtimestamp(aisTime).strftime("%H:%M:%S.%f"))
 
         # 0 --Iterative procedure for tracking --
-        self.tic[0] = time.time()
+        self.tic['Total'] = time.time()
 
         if kwargs.get("checkIntegrity", False):
             self._checkTrackerIntegrity()
 
         # 1 --Grow each track tree--
         if self.logTime:
-            self.tic[1] = time.time()
-        self.__scanHistory__.append(scanList)
+            self.tic['Process'] = time.time()
         nMeas = len(scanList.measurements)
         measDim = self.C.shape[0]
         scanNumber = len(self.__scanHistory__)
@@ -303,7 +307,7 @@ class Tracker():
                     targetProcessTimes[targetIndex] = time.time() - tic
 
         if self.logTime:
-            self.toc[1] = time.time() - self.tic[1]
+            self.toc['Process'] = time.time() - self.tic['Process']
         if self.parallelize:
             self.log.debug(str([round(e) for e in self.leafNodeTimeList]))
         if kwargs.get("printAssociation", False):
@@ -314,16 +318,16 @@ class Tracker():
 
         # 2 --Cluster targets --
         if self.logTime:
-            self.tic[2] = time.time()
+            self.tic['Cluster'] = time.time()
         self.__clusterList__ = self._findClustersFromSets()
         if self.logTime:
-            self.toc[2] = time.time() - self.tic[2]
+            self.toc['Cluster'] = time.time() - self.tic['Cluster']
         if kwargs.get("printCluster", False):
             hpf.printClusterList(self.__clusterList__)
 
         # 3 --Maximize global (cluster vise) likelihood--
         if self.logTime:
-            self.tic[3] = time.time()
+            self.tic['Optim'] = time.time()
         self.nOptimSolved = 0
         for cluster in self.__clusterList__:
             if len(cluster) == 1:
@@ -335,18 +339,18 @@ class Tracker():
                 self.__trackNodes__[cluster] = self._solveOptimumAssociation(cluster)
                 self.nOptimSolved += 1
         if self.logTime:
-            self.toc[3] = time.time() - self.tic[3]
+            self.toc['Optim'] = time.time() - self.tic['Optim']
 
         # 4 -- ILP Pruning
         if self.logTime:
-            self.tic[4] = time.time()
+            self.tic['ILP-Prune'] = time.time()
 
         if self.logTime:
-            self.toc[4] = time.time() - self.tic[4]
+            self.toc['ILP-Prune'] = time.time() - self.tic['ILP-Prune']
 
         # 5 -- Dynamic window size
         if self.logTime:
-            self.tic[5] = time.time()
+            self.tic['DynN'] = time.time()
 
         for targetIndex, target in enumerate(self.__targetList__):
             targetProcessTime = targetProcessTimes[targetIndex]
@@ -368,7 +372,7 @@ class Tracker():
                 infoString += "Reducing window from {0:} to {1:}".format(oldN, newN)
                 self.log.debug(infoString)
 
-        tempTotalTime = time.time() - self.tic[0]
+        tempTotalTime = time.time() - self.tic['Total']
         if tempTotalTime > (self.period * 0.8):
             self.N = max(1, self.N - 1)
             self.log.debug(
@@ -377,21 +381,21 @@ class Tracker():
             self.__targetWindowSize__ = [min(e, self.N) for e in self.__targetWindowSize__]
 
         if self.logTime:
-            self.toc[5] = time.time() - self.tic[5]
+            self.toc['DynN'] = time.time() - self.tic['DynN']
 
         # 5 --Prune sliding window --
         if self.logTime:
-            self.tic[6] = time.time()
+            self.tic['N-Prune'] = time.time()
         self._nScanPruning()
         if self.logTime:
-            self.toc[6] = time.time() - self.tic[6]
+            self.toc['N-Prune'] = time.time() - self.tic['N-Prune']
 
         if kwargs.get("checkIntegrity", False):
             self._checkTrackerIntegrity()
 
         # 6 -- Pick out dead tracks (terminate)
         if self.logTime:
-            self.tic[7] = time.time()
+            self.tic['Terminate'] = time.time()
         deadTracks = []
         for trackIndex, trackNode in enumerate(self.__trackNodes__):
             # Check outside range
@@ -406,34 +410,28 @@ class Tracker():
 
         self._terminateTracks(deadTracks)
         if self.logTime:
-            self.toc[7] = time.time() - self.tic[7]
+            self.toc['Terminate'] = time.time() - self.tic['Terminate']
 
         # 7 -- Initiate new tracks
         if self.logTime:
-            self.tic[8] = time.time()
+            self.tic['Init'] = time.time()
         unused_measurements = scanList.filter(unused_measurement_indices)
         new_initial_targets = self.initiator.processMeasurements(unused_measurements)
         for initial_target in new_initial_targets:
             self.log.debug("\tNew target({}): ".format(len(self.__targetList__) + 1) + str(initial_target))
             self.initiateTarget(initial_target)
         if self.logTime:
-            self.toc[8] = time.time() - self.tic[8]
+            self.toc['Init'] = time.time() - self.tic['Init']
 
-        self.toc[0] = time.time() - self.tic[0]
+        self.toc['Total'] = time.time() - self.tic['Total']
 
         if kwargs.get("checkIntegrity", False):
             self._checkTrackerIntegrity()
 
         if self.logTime:
-            self.runtimeLog['Total'] += np.array([self.toc[0], 1])
-            self.runtimeLog['Process'] += np.array([self.toc[1], 1])
-            self.runtimeLog['Cluster'] += np.array([self.toc[2], 1])
-            self.runtimeLog['Optim'] += np.array([self.toc[3], 1])
-            self.runtimeLog['ILP Prune'] += np.array([self.toc[4], 1])
-            self.runtimeLog['Window'] += np.array([self.toc[5], 1])
-            self.runtimeLog['N Prune'] += np.array([self.toc[6], 1])
-            self.runtimeLog['Term'] += np.array([self.toc[7], 1])
-            self.runtimeLog['Init'] += np.array([self.toc[8], 1])
+            for k, v in self.runtimeLog.items():
+                if k in self.toc:
+                    v += np.array([self.toc[k], 1])
 
         if kwargs.get("printInfo", False):
             print("Added scan number:", len(self.__scanHistory__),
@@ -480,50 +478,119 @@ class Tracker():
             assert associationTypePost == associationTypePre
 
     def _processTargetNodes(self, targetNodes, scanList, aisList):
-        nRadarMeas = len(scanList.measurements)
-        nAisMeas = len(aisList.measurements)
-        measDim = self.C.shape[0]
+        ## TODO: Need a separate model for AIS that have all states observable
+        nNodes = len(targetNodes)
+        gatedAisData = None
+
+        gatedRadarData = self.__processRadarMeasurements(scanList, targetNodes)
+
+        # gatedAisData = self.__processAisMeasurements(aisList, targetNodes)
+
+        newNodesData = self.__fuseRadarAndAis(targetNodes, gatedRadarData, gatedAisData)
+
+        return newNodesData
+
+    def __createPureRadarNodes(self, gatedRadarData, targetNodes):
         nNodes = len(targetNodes)
 
-        x_bar_list, P_bar_list, z_hat_list, S_list, S_inv_list, K_list, P_hat_list = self._predictPrecalcBulk(
+        (gated_radar_indices_list,
+         x_radar_bar_list,
+         P_radar_bar_list,
+         gated_z_radar_tilde_list,
+         gated_x_radar_hat_list,
+         P_radar_hat_list,
+         S_radar_list,
+         radar_nis,
+         gated_radar_filter) = gatedRadarData
+
+        nllrList = [kalman.nllr(self.lambda_ex,
+                                targetNodes[i].P_d,
+                                S_radar_list[i],
+                                radar_nis[i, gated_radar_filter[i]])
+                    for i in range(nNodes)]
+        assert len(nllrList) == nNodes
+
+        # Return (x_bar, P_bar, x_hat_list, P_hat_list, measurementIndices, NLLR_list)
+        newNodesData = (x_radar_bar_list,
+                        P_radar_bar_list,
+                        gated_x_radar_hat_list,
+                        P_radar_hat_list,
+                        gated_radar_indices_list,
+                        nllrList)
+        assert all(d is not None for d in newNodesData)
+        return newNodesData
+
+    def __fuseRadarAndAis(self, targetNodes, gatedRadarData, gatedAisData=None):
+        if gatedAisData is None:
+            return self.__createPureRadarNodes(gatedRadarData, targetNodes)
+        raise NotImplementedError("FUSION not implemented yet")
+
+    def __processAisMeasurements(self, aisList, targetNodes):
+        nAisMeas = len(aisList.measurements)
+        ais_meas_dim = 4
+
+        z_ais_list = aisList.measurements
+        assert z_ais_list.shape[1] == ais_meas_dim
+
+        z_ais_tilde_list = kalman.z_tilde(z_ais_list, z_ais_hat_list, nNodes, ais_meas_dim)
+        assert z_ais_tilde_list.shape == (nNodes, nAisMeas, ais_meas_dim)
+
+        ais_nis = kalman.normalizedInnovationSquared(z_ais_tilde_list, S_ais_inv_list)
+        assert ais_nis.shape == (nNodes, nAisMeas,)
+
+        gated_ais_filter = ais_nis <= self.eta2
+        assert gated_ais_filter.shape == (nNodes, nAisMeas)
+
+        gated_ais_indices_list = [np.nonzero(gated_ais_filter[row])[0]
+                                  for row in range(nNodes)]
+        assert len(gated_ais_indices_list) == nNodes
+
+        gated_z_ais_tilde_list = [z_ais_tilde_list[i, gated_ais_indices_list[i]]
+                                  for i in range(nNodes)]
+        assert len(gated_z_ais_tilde_list) == nNodes
+
+    def __processRadarMeasurements(self, scanList, targetNodes):
+        nRadarMeas = len(scanList.measurements)
+        radar_meas_dim = self.C.shape[0]
+        nNodes = len(targetNodes)
+
+        x_radar_bar_list, P_radar_bar_list, z_radar_hat_list, S_radar_list, S_radar_inv_list, K_radar_list, P_radar_hat_list = self._predictPrecalcBulk(
             targetNodes)
 
         z_radar_list = scanList.measurements
-        assert z_radar_list.shape[1] == measDim
+        assert z_radar_list.shape[1] == radar_meas_dim
 
-        z_radar_tilde_list = kalman.z_tilde(z_radar_list, z_hat_list, nNodes, measDim)
-        assert z_radar_tilde_list.shape == (nNodes, nRadarMeas, measDim)
+        z_radar_tilde_list = kalman.z_tilde(z_radar_list, z_radar_hat_list, nNodes, radar_meas_dim)
+        assert z_radar_tilde_list.shape == (nNodes, nRadarMeas, radar_meas_dim)
 
-        radar_nis = kalman.normalizedInnovationSquared(z_radar_tilde_list, S_inv_list)
+        radar_nis = kalman.normalizedInnovationSquared(z_radar_tilde_list, S_radar_inv_list)
         assert radar_nis.shape == (nNodes, nRadarMeas,)
 
         gated_radar_filter = radar_nis <= self.eta2
         assert gated_radar_filter.shape == (nNodes, nRadarMeas)
 
         gated_radar_indices_list = [np.nonzero(gated_radar_filter[row])[0]
-                            for row in range(nNodes)]
-
+                                    for row in range(nNodes)]
         assert len(gated_radar_indices_list) == nNodes
 
         gated_z_radar_tilde_list = [z_radar_tilde_list[i, gated_radar_indices_list[i]]
-                              for i in range(nNodes)]
+                                    for i in range(nNodes)]
         assert len(gated_z_radar_tilde_list) == nNodes
 
-        gated_x_hat_list = [kalman.numpyFilter(
-            x_bar_list[i], K_list[i], gated_z_radar_tilde_list[i])
-                            for i in range(nNodes)]
-        assert len(gated_x_hat_list) == nNodes
+        gated_x_radar_hat_list = [kalman.numpyFilter(
+            x_radar_bar_list[i], K_radar_list[i], gated_z_radar_tilde_list[i])
+                                  for i in range(nNodes)]
+        assert len(gated_x_radar_hat_list) == nNodes
 
-        nllrList = [kalman.nllr(self.lambda_ex,
-                                targetNodes[i].P_d,
-                                S_list[i],
-                                radar_nis[i, gated_radar_filter[i]])
-                    for i in range(nNodes)]
-        assert len(nllrList) == nNodes
-
-        # Return (x_bar, P_bar, x_hat_list, P_hat_list, measurementIndices, NLLR_list)
-        newNodesData = (x_bar_list, P_bar_list, gated_x_hat_list, P_hat_list, gated_radar_indices_list, nllrList)
-        return newNodesData
+        return (gated_radar_indices_list,
+                x_radar_bar_list,
+                P_radar_bar_list,
+                gated_z_radar_tilde_list,
+                gated_x_radar_hat_list,
+                P_radar_hat_list,
+                S_radar_list,
+                radar_nis,
+                gated_radar_filter)
 
     def _predictPrecalcBulk(self, targetNodes):
         nNodes = len(targetNodes)
@@ -593,7 +660,7 @@ class Tracker():
         # self.log.debug("matricesTime\t" + str(round(t1,3)))
 
         selectedHypotheses = self._solveBLP_OR_TOOLS(A1, A2, C, len(cluster))
-        # selectedHypotheses = self._solveBLP_PULP(A1, A2, C, len(cluster))
+        # selectedHypotheses = self._solveBLP_PULP(A1, A2, C_RADAR, len(cluster))
         # assert selectedHypotheses0 == selectedHypotheses
         selectedNodes = self._hypotheses2Nodes(selectedHypotheses, cluster)
         selectedNodesArray = np.array(selectedNodes)
@@ -973,11 +1040,11 @@ class Tracker():
         print()
 
     def getTimeLogString(self):
-        tocMS = self.toc * 1000
-        totalTime = tocMS[0]
+        tocMS = {k: v * 1000 for k, v in self.toc.items()}
+        totalTime = tocMS['Total']
         nNodes = sum([target.getNumOfNodes() for target in self.__targetList__])
         nMeasurements = len(self.__scanHistory__[-1].measurements)
-        nAisUpdates = len(self.AIS_predictions.measurements) if self.AIS_predictions is not None else 0
+        nAisUpdates = len(self.__aisHistory__[0].measurements) if self.__aisHistory__[0] is not None else 0
         scanNumber = len(self.__scanHistory__)
         nTargets = len(self.__targetList__)
         nClusters = len(self.__clusterList__)
@@ -985,19 +1052,19 @@ class Tracker():
                          'nTrack {:2.0f}'.format(nTargets) + "  " +
                          'Total {0:6.0f}'.format(totalTime) + "  " +
                          'Process({0:3.0f}+{1:3.0f}/{2:6.0f}) {3:6.1f}'.format(
-                             nMeasurements, nAisUpdates, nNodes, tocMS[1]) + "  " +
-                         'Cluster({0:2.0f}) {1:5.1f}'.format(nClusters, tocMS[2]) + "  " +
-                         'Optim({0:g}) {1:6.1f}'.format(self.nOptimSolved, tocMS[3]) + "  " +
-                         # 'ILP-Prune {:5.0f}'.format(self.toc[4]) + "  " +
-                         'DynN {:4.1f}'.format(tocMS[5]) + " " +
-                         'N-Prune {:5.1f}'.format(tocMS[6]) + " " +
-                         'Kill {:3.1f}'.format(tocMS[7]) + " " +
-                         'Init {:5.1f}'.format(tocMS[8]))
+                             nMeasurements, nAisUpdates, nNodes, tocMS['Process']) + "  " +
+                         'Cluster({0:2.0f}) {1:5.1f}'.format(nClusters, tocMS['Cluster']) + "  " +
+                         'Optim({0:g}) {1:6.1f}'.format(self.nOptimSolved, tocMS['Optim']) + "  " +
+                         # 'ILP-Prune {:5.0f}'.format(self.toc['ILP-Prune']) + "  " +
+                         'DynN {:4.1f}'.format(tocMS['DynN']) + " " +
+                         'N-Prune {:5.1f}'.format(tocMS['N-Prune']) + " " +
+                         'Kill {:3.1f}'.format(tocMS['Terminate']) + " " +
+                         'Init {:5.1f}'.format(tocMS['Init']))
         return timeLogString
 
     def printTimeLog(self):
         from termcolor import cprint
-        tooLong = self.toc[0] > self.period
+        tooLong = self.toc['Total'] > self.period
         cprint(self.getTimeLogString(),
                'red' if tooLong else None,
                attrs=(['bold'] if tooLong else [])
