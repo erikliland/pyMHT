@@ -152,7 +152,7 @@ class Target():
         self.kalmanFilter._precalculateMeasurementUpdate()
 
     def isOutsideRange(self, position, range):
-        distance = np.linalg.norm(model.C.dot(self.x_0) - position)
+        distance = np.linalg.norm(model.C_RADAR.dot(self.x_0) - position)
         return distance > range
 
     def gateAndCreateNewHypotheses(self, measurementList, scanNumber, lambda_ex, eta2, kfVars):
