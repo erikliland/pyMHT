@@ -1,9 +1,13 @@
 import numpy as np
 defaultType = np.float32
 
-C = np.array([[1.0,   0, 0, 0],  # Also known as "H"
+C_RADAR = np.array([[1.0, 0, 0, 0],  # Also known as "H"
               [0, 1.0, 0, 0]], dtype=defaultType)
-H = C
+H = C_RADAR
+
+
+C_AIS = np.eye(4, dtype=defaultType)
+
 # Disturbance matrix (only velocity)
 Gamma = np.array(np.diag([1.0, 1.0], -2)[:, 0:2], dtype=defaultType)
 p = np.power(1.0, 2)  # Initial systen state variance
