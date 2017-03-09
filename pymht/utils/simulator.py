@@ -1,13 +1,17 @@
 import numpy as np
 from pymht.utils.classDefinitions import TempTarget as Target
-from pymht.utils.classDefinitions import MeasurementList, AIS_message
+from pymht.utils.classDefinitions import MeasurementList, AIS_message, Position
 import pymht.models.pv as model
 import time
 import copy
+import math
+import logging
 
 
-# import autopy.local_state as ls
-
+# ----------------------------------------------------------------------------
+# Instantiate logging object
+# ----------------------------------------------------------------------------
+log = logging.getLogger(__name__)
 
 def positionWithNoise(state, H, R):
     v = np.random.multivariate_normal(np.zeros(2), R)
@@ -106,10 +110,12 @@ def simulateScans(randomSeed, simList, radarPeriod, H, R, lambda_phi=0,
 def simulateAIS(random_seed, sim_list, **kwargs):
     np.random.seed(random_seed)
     ais_measurements = []
+    integerTime = kwargs.get('integerTime', False)
     for sim in sim_list[1::2]:
         tempList = []
         for target in (t for t in sim if t.mmsi is not None):
-            prediction = AIS_message(time=target.time,
+            time = math.floor(target.time) if integerTime else target.time
+            prediction = AIS_message(time=time,
                                      state=target.state,
                                      covariance=model.GPS_COVARIANCE_PRECISE,
                                      mmsi=target.mmsi)
