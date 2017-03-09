@@ -2,9 +2,16 @@ from __future__ import print_function
 import matplotlib.pyplot as plt
 import numpy as np
 import copy
-from pymht.utils.classDefinitions import MeasurementList, AIS_prediction
+from pymht.utils.classDefinitions import MeasurementList, AIS_prediction, PredictionList
 import pymht.utils.pyKalman as kalman
 import pymht.models.pv as model
+import logging
+import datetime
+
+# ----------------------------------------------------------------------------
+# Instantiate logging object
+# ----------------------------------------------------------------------------
+log = logging.getLogger(__name__)
 
 
 def _getBestTextPosition(normVelocity, **kwargs):
@@ -215,16 +222,18 @@ def solverIsAvailable(solverString):
 
 def predictAisMeasurements(scanTime, aisMeasurements):
     assert len(aisMeasurements) > 0
-    aisPredictions = MeasurementList(scanTime)
-    R = model.R()
+    aisPredictions = PredictionList(scanTime)
+    scanTimeString = datetime.datetime.fromtimestamp(scanTime).strftime("%H:%M:%S.%f")
     for measurement in aisMeasurements:
+        aisTimeString = datetime.datetime.fromtimestamp(measurement.time).strftime("%H:%M:%S.%f")
+        log.debug("Predicting AIS from " + aisTimeString + " to " + scanTimeString)
         dT = scanTime - measurement.time
         assert dT > 0
         state = measurement.state
         A = model.Phi(dT)
         Q = model.Q(dT)
-        res = kalman.numpyPredict(A, model.C_RADAR, Q, R, model.Gamma, np.array(state, ndmin=2), np.array(measurement.covariance, ndmin=3))
-        x_bar, P_bar, _, _, _, _, _ = res
+        x_bar, P_bar = kalman.predict(A, Q, model.Gamma, np.array(state, ndmin=2),
+                                      np.array(measurement.covariance, ndmin=3))
         aisPredictions.measurements.append(AIS_prediction(x_bar[0], P_bar[0], measurement.mmsi))
     assert len(aisPredictions.measurements) == len(aisMeasurements)
     return aisPredictions
