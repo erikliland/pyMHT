@@ -157,7 +157,7 @@ class Target():
 
     def gateAndCreateNewHypotheses(self, measurementList, scanNumber, lambda_ex, eta2, kfVars):
         assert self.scanNumber == scanNumber - 1, "inconsistent scan numbering"
-        x_bar, P_bar, z_hat, S, S_inv, K, P_hat = kalman.numpyPredict(
+        x_bar, P_bar, z_hat, S, S_inv, K, P_hat = kalman.precalc(
             *kfVars, self.x_0.reshape(1, 4), self.P_0.reshape(1, 4, 4))
         scanTime = measurementList.time
         z_list = measurementList.measurements
