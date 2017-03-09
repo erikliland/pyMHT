@@ -12,8 +12,8 @@ class TempTarget:
         self.mmsi = kwargs.get('mmsi')
 
     def __str__(self):
-        from time import gmtime, strftime
-        timeString = strftime("%H:%M:%S", gmtime(self.time))
+        import datetime
+        timeString = datetime.datetime.fromtimestamp(self.time).strftime("%H:%M:%S.%f")
         mmsiString = 'MMSI: ' + str(self.mmsi) if self.mmsi is not None else ""
         return ('Time: ' + timeString + " " +
                 'Pos: ({0: 7.1f},{1: 7.1f})'.format(self.state[0], self.state[1]) + " " +
@@ -79,11 +79,17 @@ class Position:
         return self.array[1]
 
     def plot(self, measurementNumber, scanNumber=None, **kwargs):
-        if measurementNumber == 0:
+        if measurementNumber > 1e8:  # MMSI number
+            defaults = {'marker': 'D', 'markerfacecolor': 'None'}
+            plt.plot(self.array[0], self.array[1], **{**defaults, **kwargs})
+        elif measurementNumber > 0:
+            plt.plot(self.array[0], self.array[1], 'kx')
+        elif measurementNumber == 0:
             plt.plot(self.array[0], self.array[1],
                      color="black", fillstyle="none", marker="o")
         else:
-            plt.plot(self.array[0], self.array[1], 'kx')
+            raise ValueError("Not a valid measurement number")
+
         if ((scanNumber is not None) and
                 (measurementNumber is not None) and
                 kwargs.get("labels", False)):
@@ -138,8 +144,10 @@ class AIS_message:
         self.mmsi = mmsi
 
     def __str__(self):
-        from time import gmtime, strftime
-        timeString = strftime("%H:%M:%S", gmtime(self.time))
+        # from time import gmtime, strftime
+        # timeString = strftime("%H:%M:%S", gmtime(self.time))
+        import datetime
+        timeString = datetime.datetime.fromtimestamp(self.time).strftime("%H:%M:%S.%f")
         mmsiString = 'MMSI: ' + str(self.mmsi) if self.mmsi is not None else ""
         return ('Time: ' + timeString + " " +
                 'State: ({0: 7.1f},{1: 7.1f},{2: 7.1f},{3: 7.1f})'.format(
@@ -178,44 +186,38 @@ class MeasurementList:
         self.measurements = measurements if measurements is not None else []
 
     def __str__(self):
-        from time import gmtime, strftime
+        import datetime
         np.set_printoptions(precision=1, suppress=True)
-
-        timeString = strftime("%H:%M:%S", gmtime(self.time))
+        timeString = datetime.datetime.fromtimestamp(self.time).strftime("%H:%M:%S.%f")
         return ("Time: " + timeString +
                 "\tMeasurements:\t" + ", ".join(
             [str(measurement) for measurement in self.measurements]))
 
     __repr__ = __str__
 
-    def add(self, measurement):
-        self.measurements.append(measurement)
+    # def add(self, measurement):
+    #     self.measurements.append(measurement)
 
     def plot(self, **kwargs):
         for measurementIndex, measurement in enumerate(self.measurements):
             Position(measurement).plot(measurementIndex + 1, **kwargs)
 
-    def filter(self, unused_measurement_indices):
-        # nMeas = unused_measurement_indices.shape[0]
-        # mask = np.hstack((unused_measurement_indices.reshape(nMeas, 1),
-        #                   unused_measurement_indices.reshape(nMeas, 1)))
-        # measurements = np.ma.array(self.measurements, mask=np.logical_not(mask))
+    def filterUnused(self, unused_measurement_indices):
         measurements = self.measurements[np.where(unused_measurement_indices)]
         return MeasurementList(self.time, measurements)
 
     def getTimeString(self, timeFormat="%H:%M:%S"):
         return time.strftime(timeFormat, time.gmtime(self.time))
 
+    def getMeasurements(self):
+        return self.measurements
 
 class PredictionList(MeasurementList):
-    def __init__(self, time, predictions):
-        super(MeasurementList, self).__init__(time, predictions)
+    def __init__(self, time, predictions=None):
+        MeasurementList.__init__(self, time, predictions)
 
-    def __str__(self):
-        from time import gmtime, strftime
-        np.set_printoptions(precision=1, suppress=True)
-
-        timeString = strftime("%H:%M:%S", gmtime(self.time))
-        return ("Time: " + timeString +
-                "\tPredictions:\t" + "".join(
-            [str(measurement) for measurement in self.measurements]))
+    def plot(self, **kwargs):
+        for measurement in self.measurements:
+            Position(measurement.state[0:2]).plot(measurement.mmsi)
+    def getMeasurements(self):
+        return np.array([m.state for m in self.measurements])
