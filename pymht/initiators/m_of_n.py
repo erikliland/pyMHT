@@ -275,11 +275,12 @@ class Initiator():
             elif track_status == CONFIRMED:
                 self.log.debug("Removing CONFIRMED track " + str(track_index))
                 assert len(track.estimates) == self.N + 1
-                new_target = Target(self.last_timestamp,
+                new_target = Target(time,
                                     None,
                                     np.array(track.estimates[-1]),
                                     track.covariance,
                                     measurementNumber=None)
+                self.log.debug("Spawning new (initial) Target: " + str(new_target))
                 newInitialTargets.append(new_target)
                 removeIndices.append(track_index)
         for i in reversed(removeIndices):
