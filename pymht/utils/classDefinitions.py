@@ -1,5 +1,5 @@
 import numpy as np
-import time
+import datetime
 import matplotlib.pyplot as plt
 
 
@@ -12,7 +12,6 @@ class TempTarget:
         self.mmsi = kwargs.get('mmsi')
 
     def __str__(self):
-        import datetime
         timeString = datetime.datetime.fromtimestamp(self.time).strftime("%H:%M:%S.%f")
         mmsiString = 'MMSI: ' + str(self.mmsi) if self.mmsi is not None else ""
         return ('Time: ' + timeString + " " +
@@ -144,15 +143,16 @@ class AIS_message:
         self.mmsi = mmsi
 
     def __str__(self):
-        # from time import gmtime, strftime
-        # timeString = strftime("%H:%M:%S", gmtime(self.time))
-        import datetime
-        timeString = datetime.datetime.fromtimestamp(self.time).strftime("%H:%M:%S.%f")
+        if self.time == int(self.time):
+            timeFormat = "%H:%M:%S"
+        else:
+            timeFormat = "%H:%M:%S.%f"
+        timeString = datetime.datetime.fromtimestamp(self.time).strftime(timeFormat)
         mmsiString = 'MMSI: ' + str(self.mmsi) if self.mmsi is not None else ""
         return ('Time: ' + timeString + " " +
                 'State: ({0: 7.1f},{1: 7.1f},{2: 7.1f},{3: 7.1f})'.format(
                     self.state[0], self.state[1], self.state[2], self.state[3]) + " " +
-                'Covariance: ' + np.array_str(np.diagonal(self.covariance),
+                'Covariance diagonal: ' + np.array_str(np.diagonal(self.covariance),
                                               precision=1,
                                               suppress_small=True) + " " +
                 mmsiString)
@@ -173,7 +173,7 @@ class AIS_prediction:
         mmsiString = 'MMSI: ' + str(self.mmsi) if self.mmsi is not None else ""
         stateString = 'State: ({0: 7.1f},{1: 7.1f},{2: 7.1f},{3: 7.1f})'.format(
             self.state[0], self.state[1], self.state[2], self.state[3])
-        covarianceString = 'Covariance: ' + np.array_str(np.diagonal(self.covariance),
+        covarianceString = 'Covariance diagonal: ' + np.array_str(np.diagonal(self.covariance),
                                                          precision=1, suppress_small=True)
         return (stateString + " " + covarianceString + " " + mmsiString)
 
@@ -186,7 +186,6 @@ class MeasurementList:
         self.measurements = measurements if measurements is not None else []
 
     def __str__(self):
-        import datetime
         np.set_printoptions(precision=1, suppress=True)
         timeString = datetime.datetime.fromtimestamp(self.time).strftime("%H:%M:%S.%f")
         return ("Time: " + timeString +
@@ -194,9 +193,6 @@ class MeasurementList:
             [str(measurement) for measurement in self.measurements]))
 
     __repr__ = __str__
-
-    # def add(self, measurement):
-    #     self.measurements.append(measurement)
 
     def plot(self, **kwargs):
         for measurementIndex, measurement in enumerate(self.measurements):
@@ -207,7 +203,7 @@ class MeasurementList:
         return MeasurementList(self.time, measurements)
 
     def getTimeString(self, timeFormat="%H:%M:%S"):
-        return time.strftime(timeFormat, time.gmtime(self.time))
+        return datetime.datetime.fromtimestamp(self.time).strftime(timeFormat)
 
     def getMeasurements(self):
         return self.measurements
@@ -215,6 +211,16 @@ class MeasurementList:
 class PredictionList(MeasurementList):
     def __init__(self, time, predictions=None):
         MeasurementList.__init__(self, time, predictions)
+
+    def __str__(self):
+        if self.time == int(self.time):
+            timeFormat = "%H:%M:%S"
+        else:
+            timeFormat = "%H:%M:%S.%f"
+        timeString = datetime.datetime.fromtimestamp(self.time).strftime(timeFormat)
+        return ("Time: " + timeString +
+                "\tMeasurements:\t" + ", ".join(
+            [str(measurement) for measurement in self.measurements]))
 
     def plot(self, **kwargs):
         for measurement in self.measurements:
