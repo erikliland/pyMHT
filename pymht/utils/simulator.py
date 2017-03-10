@@ -7,14 +7,19 @@ import copy
 import math
 import logging
 
-
 # ----------------------------------------------------------------------------
 # Instantiate logging object
 # ----------------------------------------------------------------------------
 log = logging.getLogger(__name__)
 
+
 def positionWithNoise(state, H, R):
-    v = np.random.multivariate_normal(np.zeros(2), R)
+    assert R.ndim == 2
+    assert R.shape[0] == R.shape[1]
+    assert H.shape[1] == state.shape[0]
+    v = np.random.multivariate_normal(np.zeros(R.shape[0]), R)
+    assert H.shape[0] == v.shape[0], str(state.shape) + str(v.shape)
+    assert v.ndim == 1
     return H.dot(state) + v
 
 
@@ -76,7 +81,6 @@ def simulateScans(randomSeed, simList, radarPeriod, H, R, lambda_phi=0,
                 continue
 
         measurementList = MeasurementList(simTime)
-        measurementList.measurements = []  # BUG: Why is this necessary
         for target in sim:
             visible = np.random.uniform() <= target.P_d
             if (rRange is not None) and (p0 is not None):
@@ -110,17 +114,29 @@ def simulateScans(randomSeed, simList, radarPeriod, H, R, lambda_phi=0,
 def simulateAIS(random_seed, sim_list, **kwargs):
     np.random.seed(random_seed)
     ais_measurements = []
-    integerTime = kwargs.get('integerTime', False)
-    for sim in sim_list[1::2]:
+    integerTime = kwargs.get('integerTime', True)
+    aisPeriod = kwargs.get('period', 5.0)
+    prevTime = sim_list[0][0].time
+    for sim in sim_list[1:]:
+        if not (sim[0].time - prevTime > aisPeriod): continue
         tempList = []
         for target in (t for t in sim if t.mmsi is not None):
-            time = math.floor(target.time) if integerTime else target.time
+            if integerTime:
+                time = math.floor(target.time)
+                dT = time - target.time
+                state = model.Phi(dT).dot(target.state)
+            else:
+                time = target.time
+                state = target.state
+            if kwargs.get('noise', True):
+                state = positionWithNoise(state, model.C_AIS,model.R_AIS())
             prediction = AIS_message(time=time,
-                                     state=target.state,
+                                     state=state,
                                      covariance=model.GPS_COVARIANCE_PRECISE,
                                      mmsi=target.mmsi)
             tempList.append(prediction)
         ais_measurements.append(tempList)
+        prevTime = sim[0].time
     return ais_measurements
 
 
