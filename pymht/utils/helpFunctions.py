@@ -78,8 +78,9 @@ def plotTrueTrack(simList, **kwargs):
     for col in range(nTargets):
         plt.plot(posArray[:, col, 0], posArray[:, col, 1], '.', alpha=0.7,
                  markeredgewidth=0.6, color=next(colors) if colors is not None else None, **newArgs)
-    for col in range(nTargets):
-        plt.plot(posArray[0, col, 0], posArray[0, col, 1], '.', color='black')
+    if kwargs.get('markStart', True):
+       for col in range(nTargets):
+            plt.plot(posArray[0, col, 0], posArray[0, col, 1], '.', color='black')
 
 
 def printScanList(scanList):
