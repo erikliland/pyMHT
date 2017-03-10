@@ -183,7 +183,6 @@ class Tracker():
         target = copy.copy(newTarget)
         target.scanNumber = len(self.__scanHistory__)
         target.P_d = self.default_P_d
-        target.measurementNumber = None
         self.__targetList__.append(target)
         self.__associatedMeasurements__.append(set())
         self.__trackNodes__ = np.append(self.__trackNodes__, target)
@@ -230,7 +229,6 @@ class Tracker():
 
         targetProcessTimes = np.zeros(nTargets)
         for targetIndex, target in enumerate(self.__targetList__):
-            print("Processing target index", targetIndex)
             if self.parallelize:
                 targetStartDepth = target.depth()
                 searchTic = time.time()
@@ -283,9 +281,16 @@ class Tracker():
                     tic = time.time()
                     targetNodes = target.getLeafNodes()
                     nNodes = len(targetNodes)
-                    dummyNodesData, newNodesData = self._processLeafNodes(targetNodes, scanList, aisList)
+                    dummyNodesData, radarNodesData, fusedNodesData = self._processLeafNodes(targetNodes,
+                                                                                            scanList,
+                                                                                            aisList)
                     x_bar_list, P_bar_list = dummyNodesData
-                    gated_x_hat_list, P_hat_list, gatedIndicesList, nllrList = newNodesData
+                    gated_x_hat_list, P_hat_list, gatedIndicesList, nllrList = radarNodesData
+                    (fused_x_hat_list,
+                     fused_P_hat_list,
+                     fused_radar_indices_list,
+                     fused_nllr_list,
+                     fused_mmsi_list) = fusedNodesData
                     gatedMeasurementsList = [np.array(scanList.measurements[gatedIndices])
                                              for gatedIndices in gatedIndicesList]
                     assert len(gatedMeasurementsList) == nNodes
@@ -300,10 +305,15 @@ class Tracker():
                                            x_bar_list[i],
                                            P_bar_list[i],
                                            gatedIndicesList[i],
-                                           gatedMeasurementsList[i],
+                                           scanList.measurements,
                                            gated_x_hat_list[i],
                                            P_hat_list[i],
-                                           nllrList[i])
+                                           nllrList[i],
+                                           (fused_x_hat_list[i],
+                                            fused_P_hat_list[i],
+                                            fused_radar_indices_list[i],
+                                            fused_nllr_list[i],
+                                            fused_mmsi_list[i]))
 
                     for i in range(nNodes):
                         for measurementIndex in gatedIndicesList[i]:
@@ -452,7 +462,7 @@ class Tracker():
             xTrue = kwargs.get("trueState")
             return self._compareTracksWithTruth(xTrue)
 
-        log.debug("addMeasurement completed \n" + self.getTimeLogString())
+        log.debug("addMeasurement completed \n" + self.getTimeLogString() + "\n")
 
     def _terminateTracks(self, deadTracks):
         deadTracks.sort(reverse=True)
@@ -491,40 +501,47 @@ class Tracker():
                                                     model.C_RADAR,
                                                     self.R_RADAR)
 
+        newNodesData = self.__createPureRadarNodes(gatedRadarData)
+
         gatedAisData = self.__processMeasurements(targetNodes,
                                                   aisList,
                                                   dummyNodesData,
                                                   model.C_AIS,
-                                                  self.R_AIS) if aisList is not None else None
-        gatedAisData = None
+                                                  self.R_AIS)
 
-        newNodesData = self.__fuseRadarAndAis(targetNodes,
-                                              gatedRadarData,
-                                              gatedAisData)
+        fusedNodesData = self.__fuseRadarAndAis(targetNodes,
+                                                gatedRadarData,
+                                                gatedAisData)
 
-        return dummyNodesData, newNodesData
+        return dummyNodesData, newNodesData, fusedNodesData
 
     def __createPureRadarNodes(self, gatedRadarData):
         (gated_radar_indices_list,
-         gated_z_radar_tilde_list,
+         _,
          gated_x_radar_hat_list,
          P_radar_hat_list,
-         S_radar_list,
-         radar_nis,
-         nllr_list) = gatedRadarData
+         _,
+         _,
+         radar_nllr_list) = gatedRadarData
 
         # (gated_x_hat_list, P_hat_list, gatedIndicesList, nllrList)
         newNodesData = (gated_x_radar_hat_list,
                         P_radar_hat_list,
                         gated_radar_indices_list,
-                        nllr_list)
+                        radar_nllr_list)
         assert all(d is not None for d in newNodesData)
         return newNodesData
 
-    def __fuseRadarAndAis(self, targetNodes, gatedRadarData, gatedAisData=None):
+    def __fuseRadarAndAis(self, targetNodes, gatedRadarData, gatedAisData):
+        nNodes = len(targetNodes)
         if gatedAisData is None:
-            newNodesData = self.__createPureRadarNodes(gatedRadarData)
-            return newNodesData
+            return ([np.array([]) for _ in range(nNodes)],
+                    [np.array([]) for _ in range(nNodes)],
+                    [np.array([]) for _ in range(nNodes)],
+                    [np.array([]) for _ in range(nNodes)],
+                    [np.array([]) for _ in range(nNodes)])
+
+        print("Processing nodes:", *targetNodes, sep="\n")
 
         (gated_radar_indices_list,
          gated_z_radar_tilde_list,
@@ -534,6 +551,8 @@ class Tracker():
          radar_nis,
          radar_nllr_list) = gatedRadarData
 
+        print("gated_radar_indices_list", gated_radar_indices_list)
+
         (gated_ais_indices_list,
          gated_z_ais_tilde_list,
          gated_x_ais_hat_list,
@@ -542,13 +561,67 @@ class Tracker():
          ais_nis,
          ais_nllr_list) = gatedAisData
 
+        print("Fusing AIS and radar")
+        print("gated_ais_indices_list", gated_ais_indices_list)
+        print("gated_z_ais_tilde_list", gated_z_ais_tilde_list)
+        print("gated_x_ais_hat_list", gated_x_ais_hat_list)
+        print("P_ais_hat_list\n", P_ais_hat_list)
+        print("S_ais_list\n", S_ais_list)
+        print("ais_nis", ais_nis)
+        print("ais_nllr_list", ais_nllr_list)
 
+        fused_x_hat_list = []
+        fused_P_hat_list = []
+        fused_radar_indices_list = []
+        fused_nllr_list = []
+        fused_mmsi_list = []
 
-        raise NotImplementedError("FUSION not implemented yet")
-        # newNodesData = (gated_x_hat_list, P_hat_list, gatedIndicesList, nllrList)
-        # return newNodesData
+        for i in range(nNodes):
+            x_hat_list = []
+            # P_hat_list = []
+            radar_indices_list = []
+            nllr_list = []
+            mmsi_list = []
+            for j, radarMeasurementIndex in enumerate(gated_radar_indices_list[i]):
+                for aisMeasurementIndex in gated_ais_indices_list[i]:
+                    print("i", i)
+                    print("j", j)
+                    print("radarMeasurementIndex", radarMeasurementIndex)
+                    print("aisMeasurementIndex", aisMeasurementIndex)
+                    fusedState = gated_x_ais_hat_list[i][j]
+                    # fusedCovariance = P_ais_hat_list[i]
+                    fusedNLLR = ais_nllr_list[i][j]
+                    mmsi = self.__aisHistory__[-1].measurements[aisMeasurementIndex].mmsi
+                    x_hat_list.append(fusedState)
+                    # P_hat_list.append(fusedCovariance)
+                    radar_indices_list.append(radarMeasurementIndex)
+                    nllr_list.append(fusedNLLR)
+                    mmsi_list.append(mmsi)
+            fused_x_hat_list.append(np.array(x_hat_list))
+            fused_P_hat_list.append(P_ais_hat_list[i])
+            fused_radar_indices_list.append(np.array(radar_indices_list))
+            fused_nllr_list.append(np.array(nllr_list))
+            fused_mmsi_list.append(np.array(mmsi_list))
+
+        assert len(fused_x_hat_list) == nNodes
+        assert len(fused_P_hat_list) == nNodes
+        assert len(fused_radar_indices_list) == nNodes
+        assert len(fused_nllr_list) == nNodes
+        assert len(fused_mmsi_list) == nNodes
+        for i in range(nNodes):
+            nFusedNodes, nStates = fused_x_hat_list[i].shape
+            assert fused_P_hat_list[i].shape == (nStates, nStates), str(fused_P_hat_list[i].shape)
+
+        fusedNodesData = (fused_x_hat_list,
+                          fused_P_hat_list,
+                          fused_radar_indices_list,
+                          fused_nllr_list,
+                          fused_mmsi_list)
+
+        return fusedNodesData
 
     def __processMeasurements(self, targetNodes, measurementList, dummyNodesData, C, R):
+        if measurementList is None: return None
         nNodes = len(targetNodes)
         nMeas = len(measurementList.measurements)
         meas_dim = C.shape[0]
@@ -589,10 +662,10 @@ class Tracker():
         assert len(gated_x_hat_list) == nNodes
 
         nllr_list = [kalman.nllr(self.lambda_ex,
-                                targetNodes[i].P_d,
-                                S_list[i],
-                                nis[i, gated_filter[i]])
-                    for i in range(nNodes)]
+                                 targetNodes[i].P_d,
+                                 S_list[i],
+                                 nis[i, gated_filter[i]])
+                     for i in range(nNodes)]
         assert len(nllr_list) == nNodes
 
         return (gated_indices_list,
@@ -989,32 +1062,28 @@ class Tracker():
         for node in self.__trackNodes__:
             node.plotMeasurement(stepsBack, **kwargs)
 
-    def plotMeasurementsFromRoot(self, **kwargs):
-        def recPlotMeasurements(target, plottedMeasurements, plotReal, plotDummy):
-            if target.parent is not None:
-                if target.measurementNumber == 0:
-                    if plotDummy:
-                        target.plotMeasurement(**kwargs)
-                else:
-                    if plotReal:
-                        measurementID = (target.scanNumber, target.measurementNumber)
-                        if measurementID not in plottedMeasurements:
-                            target.plotMeasurement(**kwargs)
-                            plottedMeasurements.add(measurementID)
-            if target.trackHypotheses is not None:
-                for hyp in target.trackHypotheses:
-                    recPlotMeasurements(hyp, plottedMeasurements, plotReal, plotDummy)
+    def plotStatesFromTracks(self, stepsBack=float('inf'), **kwargs):
+        for node in self.__trackNodes__:
+            node.plotStates(stepsBack, **kwargs)
 
+    def plotMeasurementsFromRoot(self, **kwargs):
         if not (("real" in kwargs) or ("dummy" in kwargs)):
             return
         plottedMeasurements = set()
         for target in self.__targetList__:
             if kwargs.get("includeHistory", False):
-                recPlotMeasurements(target.getRoot(), plottedMeasurements, kwargs.get(
-                    "real", True), kwargs.get("dummy", True))
+                target.getRoot().recPlotMeasurements(plottedMeasurements, **kwargs)
             else:
-                recPlotMeasurements(target, plottedMeasurements, kwargs.get(
-                    "real", True), kwargs.get("dummy", True))
+                target.recPlotMeasurements(plottedMeasurements, **kwargs)
+
+    def plotStatesFromRoot(self, **kwargs):
+        if not (("real" in kwargs) or ("dummy" in kwargs)):
+            return
+        for target in self.__targetList__:
+            if kwargs.get("includeHistory", False):
+                target.getRoot().recPlotStates(**kwargs)
+            else:
+                target.recPlotStates(**kwargs)
 
     def plotScanIndex(self, index, **kwargs):
         self.__scanHistory__[index].plot(**kwargs)
