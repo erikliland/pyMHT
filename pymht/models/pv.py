@@ -1,10 +1,10 @@
 import numpy as np
+
 defaultType = np.float32
 
 C_RADAR = np.array([[1.0, 0, 0, 0],  # Also known as "H"
-              [0, 1.0, 0, 0]], dtype=defaultType)
+                    [0, 1.0, 0, 0]], dtype=defaultType)
 H = C_RADAR
-
 
 C_AIS = np.eye(4, dtype=defaultType)
 
@@ -15,11 +15,12 @@ P0 = np.array(np.diag([p, p, p, p]), dtype=defaultType)  # Initial state covaria
 sigmaR_RADAR_tracker = 1.0  # Measurement standard deviation used in kalman filterUnused
 # Measurement standard deviation used in radar simulator (+- 1.25m)
 sigmaR_true = 1.0
-sigmaR_AIS_tracker = 0.1
+sigmaR_AIS_tracker = 0.5
 sigmaQ_tracker = 1.0  # Target standard deviation used in kalman filterUnused
 sigmaQ_true = 0.5  # Tardet standard deviation used in kalman filterUnused
 # 95% conficence = +- 2.5*sigma
-GPS_COVARIANCE_PRECISE = np.copy(P0*0.5)
+GPS_COVARIANCE_PRECISE = np.copy(P0 * 0.5)
+
 
 def Q(T, sigmaQ=sigmaQ_tracker):
     # Transition/system covariance (process noise)
@@ -29,12 +30,14 @@ def Q(T, sigmaQ=sigmaQ_tracker):
 def R_RADAR(sigmaR=sigmaR_RADAR_tracker):
     return np.array(np.eye(2) * np.power(sigmaR, 2), dtype=defaultType)
 
-def R_AIS(sigmaR = sigmaR_AIS_tracker):
+
+def R_AIS(sigmaR=sigmaR_AIS_tracker):
     return np.array(np.eye(4) * np.power(sigmaR, 2), dtype=defaultType)
 
+
 def Phi(T):
-    return np.array([[1.0, 0,    T,  0],
-                     [0,   1.0,  0,  T],
-                     [0,   0,  1.0,  0],
-                     [0,   0,    0,  1.0]],
+    return np.array([[1.0, 0, T, 0],
+                     [0, 1.0, 0, T],
+                     [0, 0, 1.0, 0],
+                     [0, 0, 0, 1.0]],
                     dtype=defaultType)
