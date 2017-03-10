@@ -7,6 +7,7 @@ import time
 import copy
 import itertools
 import queue
+import datetime
 import matplotlib.pyplot as plt
 import multiprocessing as mp
 
@@ -48,6 +49,10 @@ class TargetManager(mp.Process):
 
 class Target():
     def __init__(self, time, scanNumber, x_0, P_0, **kwargs):
+        assert (scanNumber is None) or (scanNumber == int(scanNumber))
+        assert x_0.ndim == 1
+        assert P_0.ndim == 2, str(P_0.shape)
+        assert x_0.shape[0] == P_0.shape[0] == P_0.shape[1]
         self.time = time
         self.scanNumber = scanNumber
         self.x_0 = x_0
@@ -58,6 +63,11 @@ class Target():
         self.measurement = kwargs.get("measurement")
         self.cumulativeNLLR = copy.copy(kwargs.get("cumulativeNLLR", 0))
         self.trackHypotheses = None
+        self.mmsi = kwargs.get('mmsi')
+        assert self.P_d >= 0
+        assert self.P_d <= 1
+        assert (type(self.parent) == type(self) or self.parent is None)
+        assert (self.mmsi is None) or (self.mmsi > 1e8)
 
     def __repr__(self):
         if hasattr(self, 'kalmanFilter'):
@@ -92,13 +102,21 @@ class Target():
         else:
             nllrStr = " \tcNLLR:" + '{: 06.4f}'.format(self.cumulativeNLLR)
 
-        return ("Time: " + time.strftime("%H:%M:%S", time.gmtime(self.time)) +
+        if self.mmsi is not None:
+            mmsiString = " \tMMSI: " + str(self.mmsi)
+        else:
+            mmsiString = ""
+
+        timeString = datetime.datetime.fromtimestamp(self.time).strftime("%H:%M:%S.%f")
+
+        return ("Time: " + timeString +
                 "\t" + str(self.getPosition()) +
                 " \t" + str(self.getVelocity()) +
                 nllrStr +
                 measStr +
                 predStateStr +
-                gateStr
+                gateStr +
+                mmsiString
                 )
 
     def __str__(self, **kwargs):
@@ -190,18 +208,17 @@ class Target():
         return usedMeasurementIndices
 
     def spawnNewNodes(self, scanTime, scanNumber, x_bar, P_bar, measurementsIndices,
-                      measurements, states, covariance, nllrList):
+                      measurements, states, covariance, nllrList, fusedAisData=None):
         assert scanTime > self.time
         assert self.scanNumber == scanNumber - 1, str(self.scanNumber) + "->" + str(scanNumber)
         assert x_bar.shape == (4,)
         assert P_bar.shape == (4, 4)
         assert all([state.shape == (4,) for state in states])
         assert covariance.shape == (4, 4)
-        nNewMeasurementsIndices = len(measurementsIndices)
-        nNewMeasurements = len(measurements)
+        nNewRadarMeasurementsIndices = len(measurementsIndices)
         nNewStates = len(states)
         nNewScores = len(nllrList)
-        assert nNewMeasurementsIndices == nNewMeasurements == nNewStates == nNewScores
+        assert nNewRadarMeasurementsIndices == nNewStates == nNewScores
         self.trackHypotheses = [self.createZeroHypothesis(
             scanTime, scanNumber, x_bar, P_bar)]
 
@@ -211,12 +228,31 @@ class Target():
                     x_0=states[i],
                     P_0=covariance,
                     measurementNumber=measurementsIndices[i] + 1,
-                    measurement=measurements[i],
+                    measurement=measurements[measurementsIndices[i]],
                     cumulativeNLLR=self.cumulativeNLLR + nllrList[i],
                     P_d=self.P_d,
                     parent=self
-                    ) for i in range(nNewMeasurements)]
+                    ) for i in range(nNewStates)]
         )
+
+        if fusedAisData is None: return
+        (fusedStates,
+         fusedCovariance,
+         fusedMeasurementIndices,
+         fusedNllr,
+         fusedMMSI) = fusedAisData
+        self.trackHypotheses.extend(
+            [Target(scanTime,
+                    scanNumber,
+                    x_0=fusedStates[i],
+                    P_0=fusedCovariance,
+                    measurementNumber=fusedMeasurementIndices[i] + 1,
+                    measurement=measurements[fusedMeasurementIndices[i]],
+                    cumulativeNLLR=self.cumulativeNLLR + fusedNllr[i],
+                    mmsi=fusedMMSI[i],
+                    P_d=self.P_d,
+                    parent=self)
+             for i in range(len(fusedStates))])
 
     def _normalizedInnovationSquared(self, measurementsResidual, S_inv):
         return np.sum(measurementsResidual.dot(S_inv) *
@@ -419,6 +455,18 @@ class Target():
         if (self.parent is not None) and (stepsBack > 0):
             self.parent.plotMeasurement(stepsBack - 1, **kwargs)
 
+    def plotStates(self, stepsBack=0, **kwargs):
+        if (self.measurementNumber == 0) and kwargs.get("dummy", False):
+            Position(self.x_0).plot(self.measurementNumber,
+                                    self.scanNumber,
+                                    **kwargs)
+        if (self.measurementNumber > 0) and kwargs.get('real', True):
+            Position(self.x_0).plot(self.measurementNumber,
+                                    self.scanNumber,
+                                    **kwargs)
+        if (self.parent is not None) and (stepsBack > 0):
+            self.parent.plotMeasurement(stepsBack - 1, **kwargs)
+
     def plotVelocityArrow(self, stepsBack=1):
         if self.kalmanFilter.x_bar is not None:
             ax = plt.subplot(111)
@@ -464,6 +512,27 @@ class Target():
                  "h",
                  markerfacecolor=(1, 1, 0, 0.),
                  markeredgecolor='black')
+
+    def recPlotMeasurements(self, plottedMeasurements, **kwargs):
+        if self.parent is not None:
+            if self.measurementNumber == 0:
+                self.plotMeasurement(**kwargs)
+            else:
+                if kwargs.get('real', True):
+                    measurementID = (self.scanNumber, self.measurementNumber)
+                    if measurementID not in plottedMeasurements:
+                        self.plotMeasurement(**kwargs)
+                        plottedMeasurements.add(measurementID)
+        if self.trackHypotheses is not None:
+            for hyp in self.trackHypotheses:
+                hyp.recPlotMeasurements(plottedMeasurements, **kwargs)
+
+    def recPlotStates(self, **kwargs):
+        if self.parent is not None:
+            self.plotStates(**kwargs)
+        if self.trackHypotheses is not None:
+            for hyp in self.trackHypotheses:
+                hyp.recPlotStates(**kwargs)
 
 
 if __name__ == '__main__':
