@@ -137,6 +137,7 @@ class PreliminaryTrack():
         self.n = 0
         self.m = 0
         self.predicted_state = None
+        self.measurement_index = None
 
     def __repr__(self):
         return "({0:}|{1:})".format(self.m, self.n)
@@ -251,6 +252,7 @@ class Initiator():
             self.preliminary_tracks[track_index].estimates.append(filtered_state)
             self.preliminary_tracks[track_index].covariance = P_hat
             self.preliminary_tracks[track_index].m += 1
+            self.preliminary_tracks[track_index].measurement_index = meas_index
 
         # Add dummy measurement to un-assigned tracks, and increase covariance
         assigned_track_indices = [assignment[0] for assignment in assignments]
