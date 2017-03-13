@@ -153,7 +153,7 @@ class Target():
             return self
         return self.parent.stepBack(stepsBack - 1)
 
-    def getRoot(self):
+    def getInitial(self):
         return self.stepBack(float('inf'))
 
     def getNumOfNodes(self):
@@ -252,7 +252,7 @@ class Target():
                     mmsi=fusedMMSI[i],
                     P_d=self.P_d,
                     parent=self)
-             for i in range(len(fusedStates))])
+             for i in range(len(fusedMeasurementIndices))])
 
     def _normalizedInnovationSquared(self, measurementsResidual, S_inv):
         return np.sum(measurementsResidual.dot(S_inv) *
@@ -405,7 +405,7 @@ class Target():
                          str(hyp.measurementNumber) + ")")
                     recCheckReferenceIntegrety(hyp)
 
-        recCheckReferenceIntegrety(self.getRoot())
+        recCheckReferenceIntegrety(self.getInitial())
 
     def plotValidationRegion(self, eta2, stepsBack=0):
         if not hasattr(self, 'kalmanFilter'):
@@ -436,12 +436,14 @@ class Target():
         else:
             return self.parent.backtrackPosition(stepsBack) + [self.getPosition()]
 
-    def plotTrack(self, stepsBack=float('inf'), **kwargs):
+    def plotTrack(self,root = None, stepsBack=float('inf'), **kwargs):
         if kwargs.get('markInitial', False) and stepsBack == float('inf'):
-            self.getRoot().plotInitial()
+            self.getInitial().markInitial()
+        if kwargs.get('markRoot', False) and root is not None:
+            root.markRoot()
         if kwargs.get('markEnd'):
-            self.plotEnd()
-        colors = itertools.cycle(["r", "b", "g"])
+            self.markEnd()
+        # colors = itertools.cycle(["r", "b", "g"])
         track = self.backtrackPosition(stepsBack)
         plt.plot([p.x() for p in track], [p.y() for p in track], c=kwargs.get('c'))
 
@@ -460,12 +462,13 @@ class Target():
             Position(self.x_0).plot(self.measurementNumber,
                                     self.scanNumber,
                                     **kwargs)
-        if (self.measurementNumber > 0) and kwargs.get('real', True):
+        elif (self.measurementNumber > 0) and kwargs.get('real', True):
             Position(self.x_0).plot(self.measurementNumber,
                                     self.scanNumber,
+                                    self.mmsi,
                                     **kwargs)
         if (self.parent is not None) and (stepsBack > 0):
-            self.parent.plotMeasurement(stepsBack - 1, **kwargs)
+            self.parent.plotStates(stepsBack - 1, **kwargs)
 
     def plotVelocityArrow(self, stepsBack=1):
         if self.kalmanFilter.x_bar is not None:
@@ -485,11 +488,11 @@ class Target():
         if (self.parent is not None) and (stepsBack > 0):
             self.parent.plotVelocityArrow(stepsBack - 1)
 
-    def plotInitial(self, **kwargs):
+    def markInitial(self, **kwargs):
         plt.plot(self.x_0[0],
                  self.x_0[1],
-                 "s",
-                 markerfacecolor=(1, 1, 0, 0.),
+                 "*",
+                 markerfacecolor='None',
                  markeredgecolor='black')
         index = kwargs.get("index")
         if index is not None:
@@ -506,11 +509,18 @@ class Target():
                     horizontalalignment=horizontalalignment,
                     verticalalignment=verticalalignment)
 
-    def plotEnd(self):
+    def markRoot(self):
+        plt.plot(self.x_0[0],
+                 self.x_0[1],
+                 's',
+                 markerfacecolor='None',
+                 markeredgecolor = 'black')
+
+    def markEnd(self):
         plt.plot(self.x_0[0],
                  self.x_0[1],
                  "h",
-                 markerfacecolor=(1, 1, 0, 0.),
+                 markerfacecolor='None',
                  markeredgecolor='black')
 
     def recPlotMeasurements(self, plottedMeasurements, **kwargs):
