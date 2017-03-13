@@ -135,7 +135,8 @@ def simulateAIS(random_seed, sim_list, **kwargs):
                                      covariance=model.GPS_COVARIANCE_PRECISE,
                                      mmsi=target.mmsi)
             tempList.append(prediction)
-        ais_measurements.append(tempList)
+        if tempList:
+            ais_measurements.append(tempList)
         prevTime = sim[0].time
     return ais_measurements
 
