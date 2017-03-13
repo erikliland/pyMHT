@@ -183,6 +183,7 @@ class Tracker():
         target = copy.copy(newTarget)
         target.scanNumber = len(self.__scanHistory__)
         target.P_d = self.default_P_d
+        assert target.measurementNumber is not None
         self.__targetList__.append(target)
         self.__associatedMeasurements__.append(set())
         self.__trackNodes__ = np.append(self.__trackNodes__, target)
@@ -230,6 +231,7 @@ class Tracker():
         targetProcessTimes = np.zeros(nTargets)
         for targetIndex, target in enumerate(self.__targetList__):
             if self.parallelize:
+                # try openMP
                 targetStartDepth = target.depth()
                 searchTic = time.time()
                 leafNodes = target.getLeafNodes()
@@ -541,8 +543,6 @@ class Tracker():
                     [np.array([]) for _ in range(nNodes)],
                     [np.array([]) for _ in range(nNodes)])
 
-        print("Processing nodes:", *targetNodes, sep="\n")
-
         (gated_radar_indices_list,
          gated_z_radar_tilde_list,
          gated_x_radar_hat_list,
@@ -550,8 +550,6 @@ class Tracker():
          S_radar_list,
          radar_nis,
          radar_nllr_list) = gatedRadarData
-
-        print("gated_radar_indices_list", gated_radar_indices_list)
 
         (gated_ais_indices_list,
          gated_z_ais_tilde_list,
@@ -561,14 +559,16 @@ class Tracker():
          ais_nis,
          ais_nllr_list) = gatedAisData
 
-        print("Fusing AIS and radar")
-        print("gated_ais_indices_list", gated_ais_indices_list)
-        print("gated_z_ais_tilde_list", gated_z_ais_tilde_list)
-        print("gated_x_ais_hat_list", gated_x_ais_hat_list)
-        print("P_ais_hat_list\n", P_ais_hat_list)
-        print("S_ais_list\n", S_ais_list)
-        print("ais_nis", ais_nis)
-        print("ais_nllr_list", ais_nllr_list)
+        # print("Processing nodes:", *targetNodes, sep="\n")
+        # print("gated_radar_indices_list", gated_radar_indices_list)
+        # print("Fusing AIS and radar")
+        # print("gated_ais_indices_list", gated_ais_indices_list)
+        # print("gated_z_ais_tilde_list", gated_z_ais_tilde_list)
+        # print("gated_x_ais_hat_list", gated_x_ais_hat_list)
+        # print("P_ais_hat_list\n", P_ais_hat_list)
+        # print("S_ais_list\n", S_ais_list)
+        # print("ais_nis", ais_nis)
+        # print("ais_nllr_list", ais_nllr_list)
 
         fused_x_hat_list = []
         fused_P_hat_list = []
@@ -578,27 +578,26 @@ class Tracker():
 
         for i in range(nNodes):
             x_hat_list = []
-            # P_hat_list = []
             radar_indices_list = []
             nllr_list = []
             mmsi_list = []
+            fusedCovariance = P_ais_hat_list[i]
             for j, radarMeasurementIndex in enumerate(gated_radar_indices_list[i]):
                 for aisMeasurementIndex in gated_ais_indices_list[i]:
-                    print("i", i)
-                    print("j", j)
-                    print("radarMeasurementIndex", radarMeasurementIndex)
-                    print("aisMeasurementIndex", aisMeasurementIndex)
+                    # print("i", i)
+                    # print("j", j)
+                    # print("radarMeasurementIndex", radarMeasurementIndex)
+                    # print("aisMeasurementIndex", aisMeasurementIndex)
                     fusedState = gated_x_ais_hat_list[i][j]
-                    # fusedCovariance = P_ais_hat_list[i]
-                    fusedNLLR = ais_nllr_list[i][j]
+                    # print("fusedState", fusedState)
+                    fusedNLLR = ais_nllr_list[i][j] + radar_nllr_list[i][j]
                     mmsi = self.__aisHistory__[-1].measurements[aisMeasurementIndex].mmsi
                     x_hat_list.append(fusedState)
-                    # P_hat_list.append(fusedCovariance)
                     radar_indices_list.append(radarMeasurementIndex)
                     nllr_list.append(fusedNLLR)
                     mmsi_list.append(mmsi)
-            fused_x_hat_list.append(np.array(x_hat_list))
-            fused_P_hat_list.append(P_ais_hat_list[i])
+            fused_x_hat_list.append(np.array(x_hat_list, ndmin=2))
+            fused_P_hat_list.append(fusedCovariance)
             fused_radar_indices_list.append(np.array(radar_indices_list))
             fused_nllr_list.append(np.array(nllr_list))
             fused_mmsi_list.append(np.array(mmsi_list))
@@ -608,8 +607,15 @@ class Tracker():
         assert len(fused_radar_indices_list) == nNodes
         assert len(fused_nllr_list) == nNodes
         assert len(fused_mmsi_list) == nNodes
+        # print("nNodes", nNodes)
         for i in range(nNodes):
+            # print("Hei")
+            # print(type(fused_x_hat_list[i]))
+            assert fused_x_hat_list[i].ndim == 2, str(fused_x_hat_list[i].ndim)
             nFusedNodes, nStates = fused_x_hat_list[i].shape
+            # print(fused_x_hat_list[i])
+            # print("nFusedNodes, nStates", nFusedNodes, nStates)
+            if nStates == 0: continue
             assert fused_P_hat_list[i].shape == (nStates, nStates), str(fused_P_hat_list[i].shape)
 
         fusedNodesData = (fused_x_hat_list,
@@ -1038,8 +1044,10 @@ class Tracker():
         def recPlotHypothesesTrack(target, track=[], **kwargs):
             newTrack = track[:] + [target.getPosition()]
             if target.trackHypotheses is None:
-                plt.plot([p.x() for p in newTrack], [p.y()
-                                                     for p in newTrack], "--", **kwargs)
+                plt.plot([p.x() for p in newTrack],
+                         [p.y() for p in newTrack],
+                         "--",
+                         **kwargs)
             else:
                 for hyp in target.trackHypotheses:
                     recPlotHypothesesTrack(hyp, newTrack, **kwargs)
@@ -1047,11 +1055,16 @@ class Tracker():
         colors = kwargs.get("colors", self._getColorCycle())
         for target in self.__targetList__:
             recPlotHypothesesTrack(target, c=next(colors))
+        if kwargs.get('markStates', False):
+            self.plotStatesFromRoot(dummy=True, real=True, includeHistory=False)
+        # tracker.plotValidationRegionFromRoot() # TODO: Does not work
 
     def plotActiveTracks(self, **kwargs):
         colors = kwargs.get("colors", self._getColorCycle())
-        for track in self.__trackNodes__:
-            track.plotTrack(c=next(colors), **kwargs)
+        for i, track in enumerate(self.__trackNodes__):
+            track.plotTrack(root=self.__targetList__[i], c=next(colors), **kwargs)
+        if kwargs.get('markStates', True):
+            self.plotStatesFromTracks(labels=False, dummy=True, real=True)
 
     def plotTerminatedTracks(self, **kwargs):
         colors = kwargs.get("colors", self._getColorCycle())
@@ -1072,18 +1085,20 @@ class Tracker():
         plottedMeasurements = set()
         for target in self.__targetList__:
             if kwargs.get("includeHistory", False):
-                target.getRoot().recPlotMeasurements(plottedMeasurements, **kwargs)
+                target.getInitial().recPlotMeasurements(plottedMeasurements, **kwargs)
             else:
-                target.recPlotMeasurements(plottedMeasurements, **kwargs)
+                for hyp in target.trackHypotheses:
+                    hyp.recPlotMeasurements(plottedMeasurements, **kwargs)
 
     def plotStatesFromRoot(self, **kwargs):
         if not (("real" in kwargs) or ("dummy" in kwargs)):
             return
         for target in self.__targetList__:
             if kwargs.get("includeHistory", False):
-                target.getRoot().recPlotStates(**kwargs)
+                target.getInitial().recPlotStates(**kwargs)
             else:
-                target.recPlotStates(**kwargs)
+                for hyp in target.trackHypotheses:
+                    hyp.recPlotStates(**kwargs)
 
     def plotScanIndex(self, index, **kwargs):
         self.__scanHistory__[index].plot(**kwargs)
@@ -1109,7 +1124,7 @@ class Tracker():
             track.plotVelocityArrow(stepsBack)
 
     def plotInitialTargets(self, **kwargs):
-        initialTargets = [target.getRoot() for target in self.__targetList__]
+        initialTargets = [target.getInitial() for target in self.__targetList__]
         fig = plt.gcf()
         size = fig.get_size_inches() * fig.dpi
         for i, initialTarget in enumerate(initialTargets):
@@ -1118,7 +1133,7 @@ class Tracker():
             if len(index) != len(initialTargets):
                 raise ValueError(
                     "plotInitialTargets: Need equal number of targets and indices")
-            initialTarget.plotInitial(index=index[i], offset=offset)
+            initialTarget.markInitial(index=index[i], offset=offset)
 
     def _getColorCycle(self):
         return itertools.cycle(self.colors)
