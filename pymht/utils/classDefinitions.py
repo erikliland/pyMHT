@@ -77,10 +77,10 @@ class Position:
     def y(self):
         return self.array[1]
 
-    def plot(self, measurementNumber, scanNumber=None, **kwargs):
-        if measurementNumber > 1e8:  # MMSI number
-            defaults = {'marker': 'D', 'markerfacecolor': 'None'}
-            plt.plot(self.array[0], self.array[1], **{**defaults, **kwargs})
+    def plot(self, measurementNumber=-1, scanNumber=None, mmsi=None, **kwargs):
+        if mmsi is not None:
+            plt.plot(self.array[0], self.array[1],
+                     marker='D', markerfacecolor='None')
         elif measurementNumber > 0:
             plt.plot(self.array[0], self.array[1], 'kx')
         elif measurementNumber == 0:
@@ -153,8 +153,8 @@ class AIS_message:
                 'State: ({0: 7.1f},{1: 7.1f},{2: 7.1f},{3: 7.1f})'.format(
                     self.state[0], self.state[1], self.state[2], self.state[3]) + " " +
                 'Covariance diagonal: ' + np.array_str(np.diagonal(self.covariance),
-                                              precision=1,
-                                              suppress_small=True) + " " +
+                                                       precision=1,
+                                                       suppress_small=True) + " " +
                 mmsiString)
 
     __repr__ = __str__
@@ -174,7 +174,7 @@ class AIS_prediction:
         stateString = 'State: ({0: 7.1f},{1: 7.1f},{2: 7.1f},{3: 7.1f})'.format(
             self.state[0], self.state[1], self.state[2], self.state[3])
         covarianceString = 'Covariance diagonal: ' + np.array_str(np.diagonal(self.covariance),
-                                                         precision=1, suppress_small=True)
+                                                                  precision=1, suppress_small=True)
         return (stateString + " " + covarianceString + " " + mmsiString)
 
     __repr__ = __str__
@@ -208,6 +208,7 @@ class MeasurementList:
     def getMeasurements(self):
         return self.measurements
 
+
 class PredictionList(MeasurementList):
     def __init__(self, time, predictions=None):
         MeasurementList.__init__(self, time, predictions)
@@ -224,6 +225,7 @@ class PredictionList(MeasurementList):
 
     def plot(self, **kwargs):
         for measurement in self.measurements:
-            Position(measurement.state[0:2]).plot(measurement.mmsi)
+            Position(measurement.state[0:2]).plot(mmsi=measurement.mmsi)
+
     def getMeasurements(self):
         return np.array([m.state for m in self.measurements])
