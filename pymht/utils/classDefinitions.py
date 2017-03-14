@@ -4,12 +4,12 @@ import matplotlib.pyplot as plt
 
 
 class TempTarget:
-    def __init__(self, state, time, P_d, disappearAfter=float('inf'), **kwargs):
+    def __init__(self, state, time, P_d, **kwargs):
         self.state = state
         self.time = time
         self.P_d = P_d
-        self.disappearAfter = disappearAfter
         self.mmsi = kwargs.get('mmsi')
+        self.Q = kwargs.get('Q')
 
     def __str__(self):
         timeString = datetime.datetime.fromtimestamp(self.time).strftime("%H:%M:%S.%f")
