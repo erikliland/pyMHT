@@ -7,7 +7,7 @@ Spring 2017
 ========================================================================================
 """
 import pymht.utils.helpFunctions as hpf
-import pymht.utils.pyKalman as kalman
+import pymht.utils.kalman as kalman
 import pymht.initiators.m_of_n as m_of_n
 import pymht.models.pv as model
 import time
@@ -104,10 +104,15 @@ class Tracker():
                   " cores")
 
         # Target initiator
-        maxSpeed = kwargs.get('maxSpeed', 20)
-        M_required = kwargs.get('M_required', 2)
-        N_checks = kwargs.get('N_checks', 3)
-        self.initiator = m_of_n.Initiator(M_required, N_checks, maxSpeed, logLevel='DEBUG')
+        self.maxSpeed = kwargs.get('maxSpeed', 20)
+        self.M_required = kwargs.get('M_required', 2)
+        self.N_checks = kwargs.get('N_checks', 3)
+        self.mergeThreshold = 2*(model.sigmaR_RADAR_tracker**2)
+        self.initiator = m_of_n.Initiator(self.M_required,
+                                          self.N_checks,
+                                          self.maxSpeed,
+                                          self.mergeThreshold,
+                                          logLevel='DEBUG')
 
         # Tracker storage
         self.__targetList__ = []
@@ -154,6 +159,7 @@ class Tracker():
         self.N = copy.copy(N)
         self.NLLR_UPPER_LIMIT = -(np.log(1 - 0.7)) * 7
         self.pruneThreshold = kwargs.get("pruneThreshold")
+        self.targetSizeLimit = 3000
 
         # State space model
         self.A = Phi
@@ -180,14 +186,18 @@ class Tracker():
             self.workers.join()
 
     def initiateTarget(self, newTarget):
-        target = copy.copy(newTarget)
-        target.scanNumber = len(self.__scanHistory__)
-        target.P_d = self.default_P_d
-        assert target.measurementNumber is not None
-        self.__targetList__.append(target)
-        self.__associatedMeasurements__.append(set())
-        self.__trackNodes__ = np.append(self.__trackNodes__, target)
-        self.__targetWindowSize__.append(self.N)
+        if newTarget.haveNoNeightbours(self.__targetList__, self.mergeThreshold):
+            target = copy.copy(newTarget)
+            target.scanNumber = len(self.__scanHistory__)
+            target.P_d = self.default_P_d
+            # assert target.measurementNumber is not None
+            assert target.measurement is not None
+            self.__targetList__.append(target)
+            self.__associatedMeasurements__.append(set())
+            self.__trackNodes__ = np.append(self.__trackNodes__, target)
+            self.__targetWindowSize__.append(self.N)
+        else:
+            log.debug("Discarded an initial target: " + str(newTarget))
 
     def addMeasurementList(self, scanList, aisList=None, **kwargs):
         log.debug("addMeasurementList starting " + str(len(self.__scanHistory__) + 1))
@@ -229,6 +239,7 @@ class Tracker():
             self.leafNodeTimeList = []
 
         targetProcessTimes = np.zeros(nTargets)
+        nTargetNodes = np.zeros(nTargets)
         for targetIndex, target in enumerate(self.__targetList__):
             if self.parallelize:
                 # try openMP
@@ -265,7 +276,7 @@ class Tracker():
                     "'processNewMeasurements' did not increase the target depth"
                 target._checkReferenceIntegrity()
             else:
-                if kwargs.get('R_RADAR', False):
+                if kwargs.get('R', False):
                     usedMeasurementIndices = set()
                     target.processNewMeasurementRec(
                         scanList,
@@ -283,6 +294,7 @@ class Tracker():
                     tic = time.time()
                     targetNodes = target.getLeafNodes()
                     nNodes = len(targetNodes)
+                    nTargetNodes[targetIndex] = nNodes
                     dummyNodesData, radarNodesData, fusedNodesData = self._processLeafNodes(targetNodes,
                                                                                             scanList,
                                                                                             aisList)
@@ -369,11 +381,15 @@ class Tracker():
         if self.logTime:
             self.tic['DynN'] = time.time()
 
+        totalGrowTime = sum(targetProcessTimes)
+        growTimeLimit = self.period * 0.5
+        tooSlowTotal = totalGrowTime > growTimeLimit
+        targetProcessTimeLimit = growTimeLimit / len(self.__targetList__) if tooSlowTotal else 200e-3
         for targetIndex, target in enumerate(self.__targetList__):
             targetProcessTime = targetProcessTimes[targetIndex]
             targetSize = target.getNumOfNodes()
-            tooSlow = targetProcessTime > 100e-3
-            tooLarge = targetSize > 3000
+            tooSlow = targetProcessTime > targetProcessTimeLimit
+            tooLarge = targetSize > self.targetSizeLimit
             if tooSlow or tooLarge:
                 target = self.__targetList__[targetIndex]
                 targetDepth = target.depth()
@@ -433,7 +449,15 @@ class Tracker():
         if self.logTime:
             self.tic['Init'] = time.time()
         unused_measurements = scanList.filterUnused(unused_measurement_indices)
+        # import cProfile, pstats
+        # new_initial_targets = []
+        # cProfile.runctx("new_initial_targets = self.initiator.processMeasurements(unused_measurements)",
+        #                 globals(), locals(), 'profile/initiatorProfile.prof')
+        # p = pstats.Stats('profile/initiatorProfile.prof')
+        # p.strip_dirs().sort_stats('time').print_stats(20)
+        # p.strip_dirs().sort_stats('cumulative').print_stats(20)
         new_initial_targets = self.initiator.processMeasurements(unused_measurements)
+
         for initial_target in new_initial_targets:
             log.debug("\tNew target({}): ".format(len(self.__targetList__) + 1) + str(initial_target))
             self.initiateTarget(initial_target)
@@ -464,6 +488,9 @@ class Tracker():
             xTrue = kwargs.get("trueState")
             return self._compareTracksWithTruth(xTrue)
 
+        if nTargetNodes.size > 0:
+            avgTimePerNode = self.toc['Process']*1e6 / np.sum(nTargetNodes)
+            log.debug("Process time per (old) leaf node = {:.0f}us".format(avgTimePerNode))
         log.debug("addMeasurement completed \n" + self.getTimeLogString() + "\n")
 
     def _terminateTracks(self, deadTracks):
@@ -583,14 +610,17 @@ class Tracker():
             mmsi_list = []
             fusedCovariance = P_ais_hat_list[i]
             for j, radarMeasurementIndex in enumerate(gated_radar_indices_list[i]):
-                for aisMeasurementIndex in gated_ais_indices_list[i]:
+                # assert gated_x_ais_hat_list[i].shape[0] == gated_radar_indices_list[i].shape[0], \
+                #     str(gated_x_ais_hat_list[i].shape) + str(gated_radar_indices_list[i].shape)
+                for k, aisMeasurementIndex in enumerate(gated_ais_indices_list[i]):
                     # print("i", i)
                     # print("j", j)
+                    # print("k", k)
                     # print("radarMeasurementIndex", radarMeasurementIndex)
                     # print("aisMeasurementIndex", aisMeasurementIndex)
-                    fusedState = gated_x_ais_hat_list[i][j]
+                    fusedState = gated_x_ais_hat_list[i][k]
                     # print("fusedState", fusedState)
-                    fusedNLLR = ais_nllr_list[i][j] + radar_nllr_list[i][j]
+                    fusedNLLR = ais_nllr_list[i][k] + radar_nllr_list[i][k]
                     mmsi = self.__aisHistory__[-1].measurements[aisMeasurementIndex].mmsi
                     x_hat_list.append(fusedState)
                     radar_indices_list.append(radarMeasurementIndex)
@@ -1025,6 +1055,9 @@ class Tracker():
             for leafNode in leafNodes:
                 assert leafNode.scanNumber == scanNumber, "Target " + str(targetIndex + 1)
 
+    def getSmoothTracks(self):
+        return [track.getSmoothTrack() for track in self.__trackNodes__]
+
     def plotValidationRegionFromRoot(self, stepsBack=1):
         def recPlotValidationRegionFromTarget(target, eta2, stepsBack):
             if target.trackHypotheses is None:
@@ -1057,14 +1090,15 @@ class Tracker():
             recPlotHypothesesTrack(target, c=next(colors))
         if kwargs.get('markStates', False):
             self.plotStatesFromRoot(dummy=True, real=True, includeHistory=False)
-        # tracker.plotValidationRegionFromRoot() # TODO: Does not work
+            # tracker.plotValidationRegionFromRoot() # TODO: Does not work
 
     def plotActiveTracks(self, **kwargs):
         colors = kwargs.get("colors", self._getColorCycle())
         for i, track in enumerate(self.__trackNodes__):
-            track.plotTrack(root=self.__targetList__[i], c=next(colors), **kwargs)
+            track.plotTrack(root=self.__targetList__[i], c=next(colors), period = self.period, **kwargs)
         if kwargs.get('markStates', True):
-            self.plotStatesFromTracks(labels=False, dummy=True, real=True)
+            defaults = {'labels': False, 'dummy': True, 'real': True, 'ais':True}
+            self.plotStatesFromTracks(**{**defaults, **kwargs})
 
     def plotTerminatedTracks(self, **kwargs):
         colors = kwargs.get("colors", self._getColorCycle())
@@ -1157,10 +1191,10 @@ class Tracker():
         scanNumber = len(self.__scanHistory__)
         nTargets = len(self.__targetList__)
         nClusters = len(self.__clusterList__)
-        timeLogString = ('{:3.0f} '.format(scanNumber) +
+        timeLogString = ('{:<3.0f} '.format(scanNumber) +
                          'nTrack {:2.0f}'.format(nTargets) + "  " +
                          'Total {0:6.0f}'.format(totalTime) + "  " +
-                         'Process({0:3.0f}+{1:3.0f}/{2:6.0f}) {3:6.1f}'.format(
+                         'Process({0:3.0f}+{1:<3.0f}/{2:6.0f}) {3:6.1f}'.format(
                              nMeasurements, nAisUpdates, nNodes, tocMS['Process']) + "  " +
                          'Cluster({0:2.0f}) {1:5.1f}'.format(nClusters, tocMS['Cluster']) + "  " +
                          'Optim({0:g}) {1:6.1f}'.format(self.nOptimSolved, tocMS['Optim']) + "  " +
