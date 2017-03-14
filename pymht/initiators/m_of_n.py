@@ -1,10 +1,11 @@
 import numpy as np
 import pymht.models.pv as pv
 from pymht.pyTarget import Target
-from munkres import Munkres
+from munkres import munkres  # https://github.com/jfrelinger/cython-munkres-wrapper
+import pymunkres  # https://github.com/erikliland/munkres
 from scipy.stats import chi2
 import logging
-import sys
+import time
 
 tracking_parameters = {
     'gate_probability': 0.99,
@@ -56,9 +57,14 @@ def _solve_global_nearest_neighbour(delta_matrix, gate_distance=np.Inf, **kwargs
         if DEBUG: print("dMat\n", dMat)
 
         # Assignment
-        m = Munkres()
-        preliminary_assignments = m.compute(dMat.tolist())
-        if DEBUG: print("preliminary assignments", preliminary_assignments)
+        # m = pymunkres.Munkres()
+        # preliminary_assignments = m.compute(dMat.tolist()) #SLOW!
+        preliminary_assignment_matrix = munkres(dMat.astype(np.double))
+        preliminary_assignments = [(rowI, np.where(row)[0][0]) for rowI, row in
+                                   enumerate(preliminary_assignment_matrix)]
+        if DEBUG: print("preliminary assignments ", preliminary_assignments)
+        # if DEBUG: print("preliminary assignments2", preliminary_assignments2)
+        if DEBUG: print("preliminary assignments\n", preliminary_assignment_matrix)
 
         # Post-processing
         rowIdx = np.where(validRow)[0]
@@ -103,13 +109,18 @@ def _initiator_distance(delta_vector, dt, v_max, R):
 
 
 def _merge_targets(targets):
+    if len(targets) == 1: return targets[0]
+
     time = targets[0].time
     scanNumber = None
     x_0 = np.mean(np.array([t.x_0 for t in targets]), axis=0)
     assert x_0.shape == targets[0].x_0.shape
     P_0 = np.mean(np.array([t.P_0 for t in targets]), axis=0)
     assert P_0.shape == targets[0].P_0.shape
-    return Target(time, scanNumber, x_0, P_0)
+    return Target(time, scanNumber, x_0, P_0,
+                  measurement=targets[0].measurement, #TODO: Make a less crude solution
+                  # measurementNumber=targets[0].measurementNumber
+                  )
 
 
 def _merge_similar_targets(initial_targets, threshold):
@@ -147,9 +158,9 @@ class PreliminaryTrack():
         self.covariance = F.dot(self.covariance).dot(F.T) + pv.Gamma.dot(Q).dot(pv.Gamma.T)
 
     def mn_analysis(self, M, N):
-        n = self.n
         m = self.m
-        if n >= N and m >= M:
+        n = self.n
+        if m >= M:  # n >= N and m >= M:
             return CONFIRMED
         elif n >= N and m < M:
             return DEAD
@@ -176,15 +187,15 @@ class Measurement():
 
 
 class Initiator():
-    def __init__(self, M, N, v_max, **kwargs):
+    def __init__(self, M, N, v_max, mergeThreshold=5, **kwargs):
         self.N = N
         self.M = M
         self.initiators = []
         self.preliminary_tracks = []
-        self.v_max = v_max
+        self.v_max = v_max  # m/s
         self.gamma = tracking_parameters['gamma']
         self.last_timestamp = None
-        self.merge_threshold = 5  # meter
+        self.merge_threshold = mergeThreshold  # meter
         self.log = logging.getLogger(__name__)
         self.log.info("Initiator ready")
 
@@ -192,6 +203,7 @@ class Initiator():
         return " ".join([str(e) for e in self.preliminary_tracks])
 
     def processMeasurements(self, measurement_list):
+        tic = time.time()
         self.log.debug("processMeasurements " + str(measurement_list.measurements.shape[0]))
         unused_indices, initial_targets = self._processPreliminaryTracks(measurement_list)
         unused_indices = self._processInitiators(unused_indices, measurement_list)
@@ -199,6 +211,8 @@ class Initiator():
         self.last_timestamp = measurement_list.time
         initial_targets = _merge_similar_targets(initial_targets, self.merge_threshold)
         self.log.debug("new initial targets " + str(len(initial_targets)))
+        toc = time.time() - tic
+        self.log.debug("processMeasurements runtime: {:.1f}ms".format(toc * 1000))
         return initial_targets
 
     def _processPreliminaryTracks(self, measurement_list):
@@ -276,12 +290,13 @@ class Initiator():
                 removeIndices.append(track_index)
             elif track_status == CONFIRMED:
                 self.log.debug("Removing CONFIRMED track " + str(track_index))
-                assert len(track.estimates) == self.N + 1
+                # assert len(track.estimates) == self.N + 1
                 new_target = Target(time,
                                     None,
                                     np.array(track.estimates[-1]),
                                     track.covariance,
-                                    measurementNumber=track.measurement_index+1)
+                                    measurementNumber=track.measurement_index + 1,
+                                    measurement=measurement_array[track.measurement_index])
                 self.log.debug("Spawning new (initial) Target: " + str(new_target))
                 newInitialTargets.append(new_target)
                 removeIndices.append(track_index)
