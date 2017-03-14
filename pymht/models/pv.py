@@ -12,12 +12,12 @@ C_AIS = np.eye(4, dtype=defaultType)
 Gamma = np.array(np.diag([1.0, 1.0], -2)[:, 0:2], dtype=defaultType)
 p = np.power(1.0, 2)  # Initial systen state variance
 P0 = np.array(np.diag([p, p, p, p]), dtype=defaultType)  # Initial state covariance
-sigmaR_RADAR_tracker = 1.0  # Measurement standard deviation used in kalman filterUnused
+sigmaR_RADAR_tracker = 2.0  # Measurement standard deviation used in kalman filterUnused
 # Measurement standard deviation used in radar simulator (+- 1.25m)
-sigmaR_true = 1.0
+sigmaR_true = 2.0
 sigmaR_AIS_tracker = 0.5
 sigmaQ_tracker = 1.0  # Target standard deviation used in kalman filterUnused
-sigmaQ_true = 0.5  # Tardet standard deviation used in kalman filterUnused
+sigmaQ_true = 1.0  # Tardet standard deviation used in kalman filterUnused
 # 95% conficence = +- 2.5*sigma
 GPS_COVARIANCE_PRECISE = np.copy(P0 * 0.5)
 
