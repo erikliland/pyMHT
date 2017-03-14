@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import copy
 from pymht.utils.classDefinitions import MeasurementList, AIS_prediction, PredictionList
-import pymht.utils.pyKalman as kalman
+import pymht.utils.kalman as kalman
 import pymht.models.pv as model
 import logging
 import datetime
