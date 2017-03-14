@@ -32,7 +32,7 @@ def test_numpyPredict():
     n = 10
     x_0_list = np.array([x_0, ] * n)
     P_0_list = np.array([P_0, ] * n)
-    x_bar_list, P_bar_list, z_hat_list, S_list, S_inv_list, K_list, P_hat_list = pyKalman.numpyPredict(
+    x_bar_list, P_bar_list, z_hat_list, S_list, S_inv_list, K_list, P_hat_list = pyKalman.precalc(
         A, C, Q, R, Gamma, x_0_list, P_0_list)
 
     gated_z_tilde_list = np.random.random((n, 5, 2))
