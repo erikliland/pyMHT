@@ -1,50 +1,48 @@
-from pymht.utils.classDefinitions import Position, Velocity, MeasurementList
+from pymht.utils.classDefinitions import Position, Velocity
 import pymht.models.pv as model
-import pymht.utils.pyKalman as kalman
+import pymht.utils.kalman as kalman
 import pymht.utils.helpFunctions as hpf
 import numpy as np
-import time
 import copy
-import itertools
-import queue
 import datetime
 import matplotlib.pyplot as plt
-import multiprocessing as mp
 
 
-class TargetManager(mp.Process):
-    def __init__(self, q, idx):
-        super(TargetManager, self).__init__()
-        self.exit_flag = False
-        self.queue = q
-        self.idx = idx
-        self.rootNode = None
-
-    def exit_request(self):
-        print(self.idx, "got exit flag")
-        self.exit_flag = True
-        print(self.idx, self.exit_flag)
-
-    def parseInput(self, data):
-        dataType = type(data)
-        if dataType is MeasurementList:
-            return self.processMeasurements
-
-    def processMeasurements(self, measurementList):
-        print("Processing measurements")
-        pass
-
-    def run(self):
-        print("Starting run")
-        while not self.exit_flag:
-            try:
-                data = self.queue.get()
-                print(data)
-                functionToCall = self.parseInput(data)
-                functionToCall(*data)
-            except queue.Empty:
-                pass
-        print("Exiting run and terminating")
+# import queue
+# import multiprocessing as mp
+# class TargetManager(mp.Process):
+#     def __init__(self, q, idx):
+#         super(TargetManager, self).__init__()
+#         self.exit_flag = False
+#         self.queue = q
+#         self.idx = idx
+#         self.rootNode = None
+#
+#     def exit_request(self):
+#         print(self.idx, "got exit flag")
+#         self.exit_flag = True
+#         print(self.idx, self.exit_flag)
+#
+#     def parseInput(self, data):
+#         dataType = type(data)
+#         if dataType is MeasurementList:
+#             return self.processMeasurements
+#
+#     def processMeasurements(self, measurementList):
+#         print("Processing measurements")
+#         pass
+#
+#     def run(self):
+#         print("Starting run")
+#         while not self.exit_flag:
+#             try:
+#                 data = self.queue.get()
+#                 print(data)
+#                 functionToCall = self.parseInput(data)
+#                 functionToCall(*data)
+#             except queue.Empty:
+#                 pass
+#         print("Exiting run and terminating")
 
 
 class Target():
@@ -172,6 +170,16 @@ class Target():
     def isOutsideRange(self, position, range):
         distance = np.linalg.norm(model.C_RADAR.dot(self.x_0) - position)
         return distance > range
+
+    def haveNoNeightbours(self, targetList, thresholdDistance):
+        for target in targetList:
+            leafNodes = target.getLeafNodes()
+            for node in leafNodes:
+                delta = node.x_0[0:2] - self.x_0[0:2]
+                distance = np.linalg.norm(delta)
+                if distance < thresholdDistance:
+                    return False
+        return True
 
     def gateAndCreateNewHypotheses(self, measurementList, scanNumber, lambda_ex, eta2, kfVars):
         assert self.scanNumber == scanNumber - 1, "inconsistent scan numbering"
@@ -432,11 +440,39 @@ class Target():
 
     def backtrackPosition(self, stepsBack=float('inf')):
         if self.parent is None:
-            return [self.getPosition()]
+            return [self.x_0[0:2]]
         else:
-            return self.parent.backtrackPosition(stepsBack) + [self.getPosition()]
+            return self.parent.backtrackPosition(stepsBack) + [self.x_0[0:2]]
 
-    def plotTrack(self,root = None, stepsBack=float('inf'), **kwargs):
+    def backtrackMeasurement(self):
+        if self.parent is None:
+            return [self.measurement]
+        else:
+            return self.parent.backtrackMeasurement() + [self.measurement]
+
+    def getSmoothTrack(self, radarPeriod):
+        from pykalman import KalmanFilter
+        roughTrackArray = self.backtrackMeasurement()
+        initialState = self.getInitial().x_0
+        for i, m in enumerate(roughTrackArray):
+            if m is None:
+                roughTrackArray[i] = [np.NaN, np.NaN]
+        measurements = np.ma.asarray(roughTrackArray)
+        for i, m in enumerate(measurements):
+            if np.isnan(np.sum(m)):
+                measurements[i] = np.ma.masked
+        assert measurements.shape[1] == 2, str(measurements.shape)
+        kf = KalmanFilter(transition_matrices=model.Phi(radarPeriod),
+                          observation_matrices=model.C_RADAR,
+                          initial_state_mean=initialState)
+        kf = kf.em(measurements, n_iter=5)
+        (smoothed_state_means, _) = kf.smooth(measurements)
+        smoothedPositions = smoothed_state_means[:, 0:2]
+        assert smoothedPositions.shape == measurements.shape, \
+            str(smoothedPositions.shape) + str(measurements.shape)
+        return smoothedPositions
+
+    def plotTrack(self, root=None, stepsBack=float('inf'), **kwargs):
         if kwargs.get('markInitial', False) and stepsBack == float('inf'):
             self.getInitial().markInitial()
         if kwargs.get('markRoot', False) and root is not None:
@@ -444,8 +480,11 @@ class Target():
         if kwargs.get('markEnd'):
             self.markEnd()
         # colors = itertools.cycle(["r", "b", "g"])
-        track = self.backtrackPosition(stepsBack)
-        plt.plot([p.x() for p in track], [p.y() for p in track], c=kwargs.get('c'))
+        if kwargs.get('smooth', False) and kwargs.get('radarPeriod', False):
+            track = self.getSmoothTrack(kwargs.get('radarPeriod'))
+        else:
+            track = self.backtrackPosition(stepsBack)
+        plt.plot([p[0] for p in track], [p[1] for p in track], c=kwargs.get('c'))
 
     def plotMeasurement(self, stepsBack=0, **kwargs):
         if (self.measurement is not None) and kwargs.get('real', True):
@@ -458,14 +497,18 @@ class Target():
             self.parent.plotMeasurement(stepsBack - 1, **kwargs)
 
     def plotStates(self, stepsBack=0, **kwargs):
-        if (self.measurementNumber == 0) and kwargs.get("dummy", False):
+        if (self.mmsi is not None) and kwargs.get('ais', True):
+            Position(self.x_0).plot(self.measurementNumber,
+                                    self.scanNumber,
+                                    self.mmsi,
+                                    **kwargs)
+        elif (self.measurementNumber == 0) and kwargs.get("dummy", True):
             Position(self.x_0).plot(self.measurementNumber,
                                     self.scanNumber,
                                     **kwargs)
         elif (self.measurementNumber > 0) and kwargs.get('real', True):
             Position(self.x_0).plot(self.measurementNumber,
                                     self.scanNumber,
-                                    self.mmsi,
                                     **kwargs)
         if (self.parent is not None) and (stepsBack > 0):
             self.parent.plotStates(stepsBack - 1, **kwargs)
@@ -492,7 +535,7 @@ class Target():
         plt.plot(self.x_0[0],
                  self.x_0[1],
                  "*",
-                 markerfacecolor='None',
+                 markerfacecolor='black',
                  markeredgecolor='black')
         index = kwargs.get("index")
         if index is not None:
@@ -514,7 +557,7 @@ class Target():
                  self.x_0[1],
                  's',
                  markerfacecolor='None',
-                 markeredgecolor = 'black')
+                 markeredgecolor='black')
 
     def markEnd(self):
         plt.plot(self.x_0[0],
