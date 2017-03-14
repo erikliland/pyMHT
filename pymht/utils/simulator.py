@@ -24,9 +24,10 @@ def positionWithNoise(state, H, R):
 
 
 def calculateNextState(target, timeStep, Phi, Q, Gamma):
-    w = np.random.multivariate_normal(np.zeros(2), Q)
+    Q_matrix = Q if target.Q is None else target.Q
+    w = np.random.multivariate_normal(np.zeros(2), Q_matrix)
     nextState = Phi.dot(target.state) + Gamma.dot(w.T)
-    return Target(nextState, target.time + timeStep, target.P_d, target.disappearAfter, mmsi=target.mmsi)
+    return Target(nextState, target.time + timeStep, target.P_d, mmsi=target.mmsi)
 
 
 def generateInitialTargets(randomSeed, numOfTargets, centerPosition,
@@ -62,11 +63,10 @@ def simulateTargets(randomSeed, initialTargets, simTime, timeStep, Phi, Q, Gamma
 
 def simulateScans(randomSeed, simList, radarPeriod, H, R, lambda_phi=0,
                   rRange=None, p0=None, **kwargs):
-    DEBUG = kwargs.get('debug', False)
     np.random.seed(randomSeed)
     area = np.pi * np.power(rRange, 2)
     gClutter = lambda_phi * area
-    lClutter = 3e-2 * np.power(3 * R[0, 0], 2) * np.pi
+    lClutter = kwargs.get('lClutter',2)
     scanList = []
     lastScan = None
     for sim in simList:
@@ -93,11 +93,12 @@ def simulateScans(randomSeed, simList, radarPeriod, H, R, lambda_phi=0,
                 measurementList.measurements.append(positionWithNoise(target.state, H, R))
                 if kwargs.get('localClutter'):
                     nClutter = np.random.poisson(lClutter)
-                    if DEBUG: print(nClutter)
+                    log.debug("nLocalClutter {:}".format(nClutter))
                     measurementList.measurements.extend([positionWithNoise(target.state, H, R * 5)
                                                          for _ in range(nClutter)])
         if all(e is not None for e in [rRange, p0]) and kwargs.get('globalClutter', True):
             nClutter = np.random.poisson(gClutter)
+            log.debug("nGlobalClutter {:}".format(nClutter))
             for i in range(nClutter):
                 clutter = _generateCartesianClutter(p0, rRange)
                 measurementList.measurements.append(clutter)
