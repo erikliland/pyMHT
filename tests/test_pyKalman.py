@@ -32,7 +32,7 @@ def test_KalmanFilter_class():
     kf3 = kf.filterAndCopy(y_tilde)
 
 
-def test_predict()
+def test_predict():
     x_bar_list, P_bar_list = pyKalman.predict(A,Q,Gamma,x_0_list,P_0_list)
 
 def test_numpyPredict():
