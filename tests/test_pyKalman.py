@@ -1,4 +1,4 @@
-from pymht.utils import pyKalman
+from pymht.utils import kalman
 import numpy as np
 from pymht.models import pv
 
@@ -24,7 +24,7 @@ x_bar_list = np.copy(x_0_list)
 P_bar_list = np.copy(P_0_list)
 
 def test_KalmanFilter_class():
-    kf = pyKalman.KalmanFilter(x_0, P_0, A, C, Gamma, Q, R)
+    kf = kalman.KalmanFilter(x_0, P_0, A, C, Gamma, Q, R)
     y = np.ones(2)
     kf.filter(y=y)
     kf2 = kf.filterAndCopy()
@@ -33,14 +33,14 @@ def test_KalmanFilter_class():
 
 
 def test_predict():
-    x_bar_list, P_bar_list = pyKalman.predict(A,Q,Gamma,x_0_list,P_0_list)
+    x_bar_list, P_bar_list = kalman.predict(A, Q, Gamma, x_0_list, P_0_list)
 
 def test_numpyPredict():
-    z_hat_list, S_list, S_inv_list, K_list, P_hat_list = pyKalman.precalc(
+    z_hat_list, S_list, S_inv_list, K_list, P_hat_list = kalman.precalc(
         A, C, Q, R, Gamma, x_bar_list, P_bar_list)
 
     gated_z_tilde_list = np.random.random((n, 5, 2))
-    gated_x_hat_list = [pyKalman.numpyFilter(x_bar_list[i],
-                                             K_list[i],
-                                             gated_z_tilde_list[i])
+    gated_x_hat_list = [kalman.numpyFilter(x_bar_list[i],
+                                           K_list[i],
+                                           gated_z_tilde_list[i])
                         for i in range(n)]
