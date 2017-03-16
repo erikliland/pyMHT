@@ -2,7 +2,7 @@ import numpy as np
 import pymht.models.pv as pv
 from pymht.pyTarget import Target
 from munkres import munkres  # https://github.com/jfrelinger/cython-munkres-wrapper
-import pymunkres  # https://github.com/erikliland/munkres
+# import pymunkres  # https://github.com/erikliland/munkres
 from scipy.stats import chi2
 import logging
 import time
@@ -118,7 +118,7 @@ def _merge_targets(targets):
     P_0 = np.mean(np.array([t.P_0 for t in targets]), axis=0)
     assert P_0.shape == targets[0].P_0.shape
     return Target(time, scanNumber, x_0, P_0,
-                  measurement=targets[0].measurement, #TODO: Make a less crude solution
+                  measurement=targets[0].measurement,  # TODO: Make a less crude solution
                   # measurementNumber=targets[0].measurementNumber
                   )
 
@@ -187,9 +187,11 @@ class Measurement():
 
 
 class Initiator():
-    def __init__(self, M, N, v_max, mergeThreshold=5, **kwargs):
+    def __init__(self, M, N, v_max, C, R,  mergeThreshold=5, **kwargs):
         self.N = N
         self.M = M
+        self.C = C
+        self.R = R
         self.initiators = []
         self.preliminary_tracks = []
         self.v_max = v_max  # m/s
@@ -241,17 +243,20 @@ class Initiator():
         delta_matrix = np.zeros((n1, n2), dtype=np.float32)
         for i, predicted_state in enumerate(predicted_states):
             for j, measurement in enumerate(measurement_array):
-                predicted_measurement = pv.H.dot(predicted_state)
+                predicted_measurement = self.C.dot(predicted_state)
                 delta_vector = measurement - predicted_measurement
                 distance = np.linalg.norm(delta_vector)
                 P_bar = self.preliminary_tracks[i].covariance
-                S = pv.H.dot(P_bar).dot(pv.H.T) + pv.R_RADAR()
+                S = self.C.dot(P_bar).dot(self.C.T) + self.R
                 S_inv = np.linalg.inv(S)
-                K = P_bar.dot(pv.H.T).dot(S_inv)
+                K = P_bar.dot(self.C.T).dot(S_inv)
                 self.preliminary_tracks[i].K = K
                 nis = delta_vector.T.dot(S_inv).dot(delta_vector)
                 inside_gate = nis < self.gamma
                 delta_matrix[i, j] = distance if inside_gate else np.Inf
+
+        self.log.debug("Gamma: " + str(self.gamma))
+        self.log.debug("delta_matrix\n" + str(delta_matrix))
 
         # Assign measurements
         assignments = _solve_global_nearest_neighbour(delta_matrix)
@@ -260,9 +265,9 @@ class Initiator():
         for track_index, meas_index in assignments:
             P_bar = self.preliminary_tracks[track_index].covariance
             K = self.preliminary_tracks[track_index].K
-            delta_vector = measurement_array[meas_index] - pv.H.dot(predicted_states[track_index])
+            delta_vector = measurement_array[meas_index] - self.C.dot(predicted_states[track_index])
             filtered_state = predicted_states[track_index] + K.dot(delta_vector)
-            P_hat = P_bar - K.dot(pv.H).dot(P_bar)
+            P_hat = P_bar - K.dot(self.C).dot(P_bar)
             self.preliminary_tracks[track_index].estimates.append(filtered_state)
             self.preliminary_tracks[track_index].covariance = P_hat
             self.preliminary_tracks[track_index].m += 1
@@ -327,6 +332,10 @@ class Initiator():
 
         dt = time - self.initiators[0].timestamp
         gate_distance = self.v_max * dt
+        # self.log.debug("dt " + str(dt))
+        # self.log.debug("v_max " + str(self.v_max))
+        # self.log.debug("gate_distance " + str(gate_distance))
+        # self.log.debug("delta_matrix\n" + str(delta_matrix))
         assignments = _solve_global_nearest_neighbour(delta_matrix, gate_distance)
         assigned_local_indices = [assignment[1] for assignment in assignments]
         used_indices = [unused_indices[j] for j in assigned_local_indices]
@@ -348,7 +357,7 @@ class Initiator():
         measurements = measurement_list.measurements
         self.log.debug(
             "__spawn_preliminary_tracks " + str(len(assignments)) + ("\n" + "\n".join(
-                ['{0:} -> {1:}'.format(self.initiators[old_index].value, measurements[new_index])
+                ['{0:17} -> {1:17}'.format(str(self.initiators[old_index].value), str(measurements[new_index]))
                  for old_index, new_index in assignments]) if assignments else ""))
 
         for old_index, new_index in assignments:
@@ -358,6 +367,12 @@ class Initiator():
             x0 = np.hstack((measurements[new_index], velocity_vector))
             track = PreliminaryTrack(x0, pv.P0)
             self.preliminary_tracks.append(track)
+        used_initiator_indices = {e[0] for e in assignments}
+        unused_initiator_indices = set(range(len(self.initiators))).difference(used_initiator_indices)
+        if unused_initiator_indices:
+            self.log.debug("discarded initiators:\n" +
+                           "\n".join([str(self.initiators[i].value)
+                                      for i in unused_initiator_indices]))
 
 
 if __name__ == "__main__":
