@@ -103,6 +103,15 @@ class Tracker():
                   str(os.cpu_count()) +
                   " cores")
 
+        # State space model
+        self.A = Phi
+        self.C = C
+        self.Gamma = Gamma
+        self.P_0 = P_0
+        self.R_RADAR = R_RADAR
+        self.R_AIS = R_AIS
+        self.Q = Q
+
         # Target initiator
         self.maxSpeed = kwargs.get('maxSpeed', 20)
         self.M_required = kwargs.get('M_required', 2)
@@ -111,6 +120,8 @@ class Tracker():
         self.initiator = m_of_n.Initiator(self.M_required,
                                           self.N_checks,
                                           self.maxSpeed,
+                                          self.C,
+                                          self.R_RADAR,
                                           self.mergeThreshold,
                                           logLevel='DEBUG')
 
@@ -161,21 +172,14 @@ class Tracker():
         self.pruneThreshold = kwargs.get("pruneThreshold")
         self.targetSizeLimit = 3000
 
-        # State space model
-        self.A = Phi
-        self.C = C
-        self.Gamma = Gamma
-        self.P_0 = P_0
-        self.R_RADAR = R_RADAR
-        self.R_AIS = R_AIS
-        self.Q = Q
-
         if ((kwargs.get("realTime") is not None) and
                 (kwargs.get("realTime") is True)):
             _setHightPriority()
 
         # Misc
         self.colors = ['r', 'g', 'b', 'c', 'm', 'y', 'k']
+
+        log.debug("Initiation done\n" + "#"*100 + "\n")
 
     def __enter__(self):
         return self
