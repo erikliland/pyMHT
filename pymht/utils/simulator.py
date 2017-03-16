@@ -1,7 +1,6 @@
 import numpy as np
-from pymht.utils.classDefinitions import TempTarget as Target
+from pymht.utils.classDefinitions import SimTarget as Target
 from pymht.utils.classDefinitions import MeasurementList, AIS_message, Position
-import pymht.models.pv as model
 import time
 import copy
 import math
@@ -24,10 +23,11 @@ def positionWithNoise(state, H, R):
 
 
 def calculateNextState(target, timeStep, Phi, Q, Gamma):
-    Q_matrix = Q if target.Q is None else target.Q
+    Q_matrix = target.Q if target.Q is not None else Q
     w = np.random.multivariate_normal(np.zeros(2), Q_matrix)
     nextState = Phi.dot(target.state) + Gamma.dot(w.T)
-    return Target(nextState, target.time + timeStep, target.P_d, mmsi=target.mmsi)
+    newVar = {'state': nextState, 'time': target.time + timeStep}
+    return Target(**{**target.__dict__,**newVar})
 
 
 def generateInitialTargets(randomSeed, numOfTargets, centerPosition,
@@ -66,7 +66,7 @@ def simulateScans(randomSeed, simList, radarPeriod, H, R, lambda_phi=0,
     np.random.seed(randomSeed)
     area = np.pi * np.power(rRange, 2)
     gClutter = lambda_phi * area
-    lClutter = kwargs.get('lClutter',2)
+    lClutter = kwargs.get('lClutter', 2)
     scanList = []
     lastScan = None
     for sim in simList:
@@ -112,7 +112,7 @@ def simulateScans(randomSeed, simList, radarPeriod, H, R, lambda_phi=0,
     return scanList
 
 
-def simulateAIS(random_seed, sim_list, **kwargs):
+def simulateAIS(random_seed, sim_list, Phi_func, C, R, P_0, **kwargs):
     np.random.seed(random_seed)
     ais_measurements = []
     integerTime = kwargs.get('integerTime', True)
@@ -125,15 +125,15 @@ def simulateAIS(random_seed, sim_list, **kwargs):
             if integerTime:
                 time = math.floor(target.time)
                 dT = time - target.time
-                state = model.Phi(dT).dot(target.state)
+                state = Phi_func(dT).dot(target.state)
             else:
                 time = target.time
                 state = target.state
             if kwargs.get('noise', True):
-                state = positionWithNoise(state, model.C_AIS,model.R_AIS())
+                state = positionWithNoise(state, C, R)
             prediction = AIS_message(time=time,
                                      state=state,
-                                     covariance=model.GPS_COVARIANCE_PRECISE,
+                                     covariance=P_0,
                                      mmsi=target.mmsi)
             tempList.append(prediction)
         if tempList:

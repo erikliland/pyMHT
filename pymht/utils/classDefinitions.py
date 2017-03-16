@@ -3,7 +3,7 @@ import datetime
 import matplotlib.pyplot as plt
 
 
-class TempTarget:
+class SimTarget:
     def __init__(self, state, time, P_d, **kwargs):
         self.state = state
         self.time = time
