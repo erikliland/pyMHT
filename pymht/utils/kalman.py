@@ -5,10 +5,13 @@ import numpy as np
 
 
 def nllr(lambda_ex, P_d, S_list, nis):
+    # assert S_list.shape[0] ==  nis.size, str(S_list.shape) + str(nis.size) + str(nis.shape)
     if lambda_ex == 0:
         print("RuntimeError('lambda_ex' can not be zero.)")
         lambda_ex += 1e-20
-    return (0.5 * nis + np.log((lambda_ex * np.sqrt(np.linalg.det(2 * np.pi * S_list))) / P_d))
+    result = (0.5 * nis + np.log((lambda_ex * np.sqrt(np.linalg.det(2 * np.pi * S_list))) / P_d))
+    assert result.size == nis.size
+    return result
 
 
 def normalizedInnovationSquared(z_tilde_list, S_inv_list):
@@ -25,62 +28,70 @@ def z_tilde(z_list, z_hat_list, nNodes=1, measDim=2):
 
 
 def numpyFilter(x_bar, K, z_tilde):
-    x_bar = x_bar.reshape(1, 4)
+    x_bar = x_bar.reshape(1, x_bar.shape[0])
     assert z_tilde.ndim == 2
-    assert z_tilde.shape[1] == 2, str(z_tilde.shape)
+    assert z_tilde.shape[1] == K.shape[1], str(z_tilde.shape) + str(x_bar.shape)
     assert z_tilde.ndim == 2
-    assert K.shape == (4, 2)
+    assert K.shape[0] == x_bar.shape[1]
     # assert x_bar.shape == (1, 4), str(x_bar.shape)
     x_hat = x_bar + np.matmul(K, z_tilde.T).T
     assert x_hat.shape[1] == x_bar.shape[1], str(x_hat.shape) + str(x_bar.shape)
     return x_hat
 
 
-def numpyPredict(A, C, Q, R, Gamma, x_0_list, P_0_list):
+def predict(A, Q, Gamma, x_0_list, P_0_list):
+    assert A.ndim == 2
+    assert Q.ndim == 2
+    assert Gamma.ndim == 2
+    assert x_0_list.ndim == 2
+    assert P_0_list.ndim == 3
+    x_bar_list = A.dot(x_0_list.T).T
+    P_bar_list = (np.matmul(np.matmul(A, P_0_list), A.T) +
+                  np.matmul(np.matmul(Gamma, Q), Gamma.T))
+    assert x_bar_list.shape == x_0_list.shape, "x_bar ERROR"
+    assert P_bar_list.shape == P_0_list.shape, "P_bar ERROR"
+    return x_bar_list, P_bar_list
+
+
+def precalc(A, C, Q, R, Gamma, x_bar_list, P_bar_list):
     assert A.ndim == 2
     assert C.ndim == 2
     assert Q.ndim == 2
     assert R.ndim == 2
     assert Gamma.ndim == 2
-    assert x_0_list.ndim == 2
-    assert P_0_list.ndim == 3
 
-    nMeasurement, nStates = x_0_list.shape
+    nMeasurement, nStates = x_bar_list.shape
     nObservableState = C.shape[0]
-    x_bar_list = A.dot(x_0_list.T).T
-    P_bar_list = (np.matmul(np.matmul(A, P_0_list), A.T) +
-                  np.matmul(np.matmul(Gamma, Q), Gamma.T))
+
     z_hat_list = C.dot(x_bar_list.T).T
     S_list = np.matmul(np.matmul(C, P_bar_list), C.T) + R
     S_inv_list = np.linalg.inv(S_list)
     K_list = np.matmul(np.matmul(P_bar_list, C.T), S_inv_list)
     P_hat_list = P_bar_list - np.matmul(K_list.dot(C), P_bar_list)
 
-    assert x_bar_list.shape == x_0_list.shape, "x_bar ERROR"
-    assert P_bar_list.shape == P_0_list.shape, "P_bar ERROR"
     assert z_hat_list.shape == (nMeasurement, nObservableState), "z_hat ERROR"
     assert S_list.shape == (nMeasurement, nObservableState, nObservableState), "S ERROR"
     assert S_inv_list.shape == S_list.shape, "S_inv ERROR"
     assert K_list.shape == (nMeasurement, nStates, nObservableState)
     assert P_hat_list.shape == P_bar_list.shape, "P_hat ERROR"
 
-    return x_bar_list, P_bar_list, z_hat_list, S_list, S_inv_list, K_list, P_hat_list
+    return z_hat_list, S_list, S_inv_list, K_list, P_hat_list
 
 
 class KalmanFilter():
     """
-    A Kalman filter class, does filtering for systems of the type:
+    A Kalman filterUnused class, does filtering for systems of the type:
     x_{k+1} = A*x_k + v_k
-    y_k = C*z_k + e_k
+    y_k = C_RADAR*z_k + e_k
     v_k ~ N(0,Q)
-    e_k ~ N(0,R)
+    e_k ~ N(0,R_RADAR)
     x_0 - Initial state
     P_0 - Initial state covariance
     """
 
     def __init__(self, x_0, P_0, A, C, Gamma, Q, R, **kwargs):
         # Q = kwargs.get('Q')
-        # R = kwargs.get('R')
+        # R_RADAR = kwargs.get('R_RADAR')
         # x_0 = kwargs.get('x_0')
         # P_0 = kwargs.get('P_0')
         # dT = kwargs.get('T')

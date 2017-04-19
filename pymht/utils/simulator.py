@@ -1,19 +1,33 @@
 import numpy as np
-from pymht.utils.classDefinitions import TempTarget as Target
-from pymht.utils.classDefinitions import MeasurementList as MeasurementList
+from pymht.utils.classDefinitions import SimTarget as Target
+from pymht.utils.classDefinitions import MeasurementList, AIS_message, Position
 import time
 import copy
+import math
+import logging
+
+# ----------------------------------------------------------------------------
+# Instantiate logging object
+# ----------------------------------------------------------------------------
+log = logging.getLogger(__name__)
 
 
 def positionWithNoise(state, H, R):
-    v = np.random.multivariate_normal(np.zeros(2), R)
+    assert R.ndim == 2
+    assert R.shape[0] == R.shape[1]
+    assert H.shape[1] == state.shape[0]
+    v = np.random.multivariate_normal(np.zeros(R.shape[0]), R)
+    assert H.shape[0] == v.shape[0], str(state.shape) + str(v.shape)
+    assert v.ndim == 1
     return H.dot(state) + v
 
 
 def calculateNextState(target, timeStep, Phi, Q, Gamma):
-    w = np.random.multivariate_normal(np.zeros(2), Q)
+    Q_matrix = target.Q if target.Q is not None else Q
+    w = np.random.multivariate_normal(np.zeros(2), Q_matrix)
     nextState = Phi.dot(target.state) + Gamma.dot(w.T)
-    return Target(nextState, target.time + timeStep, target.P_d)
+    newVar = {'state': nextState, 'time': target.time + timeStep}
+    return Target(**{**target.__dict__,**newVar})
 
 
 def generateInitialTargets(randomSeed, numOfTargets, centerPosition,
@@ -26,21 +40,20 @@ def generateInitialTargets(randomSeed, numOfTargets, centerPosition,
         heading = np.random.uniform(0, 360)
         distance = np.random.uniform(0, radarRange * 0.8)
         px, py = _pol2cart(heading, distance)
-        P0 = centerPosition + Position(px, py)
         heading = np.random.uniform(0, 360)
         speed = np.random.choice(speeds)
         vx, vy = _pol2cart(heading, speed)
-        V0 = Velocity(vx, vy)
         target = Target(np.array([px, py, vx, vy], dtype=np.float32), initialTime, P_d)
         initialList.append(target)
     return initialList
 
 
-def simulateTargets(randomSeed, initialTargets, nTimeSteps, timeStep, Phi, Q, Gamma):
+def simulateTargets(randomSeed, initialTargets, simTime, timeStep, Phi, Q, Gamma):
     np.random.seed(randomSeed)
     simList = []
     simList.append(initialTargets)
-    for _ in range(nTimeSteps):
+    nTimeSteps = int(simTime / timeStep)
+    for i in range(nTimeSteps):
         targetList = [calculateNextState(target, timeStep, Phi, Q, Gamma)
                       for target in simList[-1]]
         simList.append(targetList)
@@ -48,18 +61,27 @@ def simulateTargets(randomSeed, initialTargets, nTimeSteps, timeStep, Phi, Q, Ga
     return simList
 
 
-def simulateScans(randomSeed, simList, H, R, lambda_phi=0,
+def simulateScans(randomSeed, simList, radarPeriod, H, R, lambda_phi=0,
                   rRange=None, p0=None, **kwargs):
-    DEBUG = kwargs.get('debug', False)
     np.random.seed(randomSeed)
     area = np.pi * np.power(rRange, 2)
     gClutter = lambda_phi * area
-    lClutter = 3e-2 * np.power(3 * R[0, 0], 2) * np.pi
+    lClutter = kwargs.get('lClutter', 2)
     scanList = []
-    for scan in simList:
-        measurementList = MeasurementList(scan[0].time)
-        measurementList.measurements = []  # BUG: Why is this necessary
-        for target in scan:
+    lastScan = None
+    for sim in simList:
+        simTime = sim[0].time
+        if lastScan is None:
+            lastScan = simTime
+        else:
+            timeSinceLastScan = simTime - lastScan
+            if timeSinceLastScan >= radarPeriod:
+                lastScan = simTime
+            else:
+                continue
+
+        measurementList = MeasurementList(simTime)
+        for target in sim:
             visible = np.random.uniform() <= target.P_d
             if (rRange is not None) and (p0 is not None):
                 distance = np.linalg.norm(target.state[0:2] - p0.array)
@@ -71,11 +93,12 @@ def simulateScans(randomSeed, simList, H, R, lambda_phi=0,
                 measurementList.measurements.append(positionWithNoise(target.state, H, R))
                 if kwargs.get('localClutter'):
                     nClutter = np.random.poisson(lClutter)
-                    if DEBUG: print(nClutter)
+                    log.debug("nLocalClutter {:}".format(nClutter))
                     measurementList.measurements.extend([positionWithNoise(target.state, H, R * 5)
                                                          for _ in range(nClutter)])
         if all(e is not None for e in [rRange, p0]) and kwargs.get('globalClutter', True):
             nClutter = np.random.poisson(gClutter)
+            log.debug("nGlobalClutter {:}".format(nClutter))
             for i in range(nClutter):
                 clutter = _generateCartesianClutter(p0, rRange)
                 measurementList.measurements.append(clutter)
@@ -89,8 +112,34 @@ def simulateScans(randomSeed, simList, H, R, lambda_phi=0,
     return scanList
 
 
-def simulateAIS(randomSeed, simList, **kwargs):
-    pass
+def simulateAIS(random_seed, sim_list, Phi_func, C, R, P_0, **kwargs):
+    np.random.seed(random_seed)
+    ais_measurements = []
+    integerTime = kwargs.get('integerTime', True)
+    aisPeriod = kwargs.get('period', 5.0)
+    prevTime = sim_list[0][0].time
+    for sim in sim_list[1:]:
+        if not (sim[0].time - prevTime > aisPeriod): continue
+        tempList = []
+        for target in (t for t in sim if t.mmsi is not None):
+            if integerTime:
+                time = math.floor(target.time)
+                dT = time - target.time
+                state = Phi_func(dT).dot(target.state)
+            else:
+                time = target.time
+                state = target.state
+            if kwargs.get('noise', True):
+                state = positionWithNoise(state, C, R)
+            prediction = AIS_message(time=time,
+                                     state=state,
+                                     covariance=P_0,
+                                     mmsi=target.mmsi)
+            tempList.append(prediction)
+        if tempList:
+            ais_measurements.append(tempList)
+        prevTime = sim[0].time
+    return ais_measurements
 
 
 def writeSimList(initialTargets, simList, filename):
