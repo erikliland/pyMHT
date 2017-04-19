@@ -39,7 +39,7 @@ def initWorker():
     signal.signal(signal.SIGINT, signal.SIG_IGN)
 
 
-def addMeasurementToNode(measurementList, scanNumber, lambda_ex, eta2, params):
+def addMeasurementToNode(measurementList, scanNumber, lambda_ex, eta¸, params):
     target, nodeIndex = params
     trackHypotheses, newMeasurements = (
         target.gateAndCreateNewHypotheses(
@@ -62,6 +62,7 @@ def _getSelectedHyp2(p, threshold=0):
 
 
 class Tracker():
+
     def __init__(self, Phi, C, Gamma, P_d, P_0, R, Q, lambda_phi,
                  lambda_nu, eta2, N, p0, radarRange, solverStr, **kwargs):
 
@@ -325,12 +326,14 @@ class Tracker():
             # Check outside range
             if trackNode.isOutsideRange(self.position.array, self.range):
                 deadTracks.append(trackIndex)
-                print("\tTerminating track {:} since it is out of range".format(trackIndex))
+                print(
+                    "\tTerminating track {:} since it is out of range".format(trackIndex))
 
             # Check if track is to insecure
             elif trackNode.cumulativeNLLR > self.NLLR_UPPER_LIMIT:
                 deadTracks.append(trackIndex)
-                print("\tTerminating track {:} since its cost is above the threshold".format(trackIndex))
+                print(
+                    "\tTerminating track {:} since its cost is above the threshold".format(trackIndex))
 
         self._terminateTracks(deadTracks)
         if self.logTime:
@@ -358,10 +361,8 @@ class Tracker():
                 assert targetDepth <= self.N + 1
                 self.log.info(
                     "\tProcessing of target {0:} took to long. Reducing window size from {1:} to {2:}".format(
-                    targetIndex + 1, targetDepth, targetDepth - 1))
+                        targetIndex + 1, targetDepth, targetDepth - 1))
                 self._pruneTargetIndex(targetIndex, targetDepth - 1)
-
-
 
         # tempTotalTime = time.time() - self.tic[0]
         # if tempTotalTime > self.period:
@@ -426,7 +427,8 @@ class Tracker():
             trackListTypePost = type(self.__trackNodes__)
             associationTypePost = type(self.__associatedMeasurements__)
             assert nTargetsPost == nTargetPre - 1
-            assert nTracksPost == nTracksPre - 1, str(nTracksPre) + '=>' + str(nTracksPost)
+            assert nTracksPost == nTracksPre - \
+                1, str(nTracksPre) + '=>' + str(nTracksPost)
             assert nAssociationsPost == nAssociationsPre - 1
             assert targetListTypePost == targetListTypePre
             assert trackListTypePost == trackListTypePre
@@ -463,7 +465,7 @@ class Tracker():
 
         gated_x_hat_list = [kalman.numpyFilter(
             x_bar_list[i], K_list[i], gated_z_tilde_list[i])
-                            for i in range(nNodes)]
+            for i in range(nNodes)]
         assert len(gated_x_hat_list) == nNodes
 
         nllrList = [kalman.nllr(self.lambda_ex,
@@ -474,7 +476,8 @@ class Tracker():
         assert len(nllrList) == nNodes
 
         # Return (x_bar, P_bar, x_hat_list, P_hat_list, measurementIndices, NLLR_list)
-        newNodesData = (x_bar_list, P_bar_list, gated_x_hat_list, P_hat_list, gatedIndicesList, nllrList)
+        newNodesData = (x_bar_list, P_bar_list, gated_x_hat_list,
+                        P_hat_list, gatedIndicesList, nllrList)
         return newNodesData
 
     def _predictPrecalcBulk(self, targetNodes):
@@ -505,7 +508,7 @@ class Tracker():
         return [(target.filteredStateMean - xTrue[targetIndex].state).T.dot(
             np.linalg.inv(target.filteredStateCovariance)).dot(
             (target.filteredStateMean - xTrue[targetIndex].state))
-                for targetIndex, target in enumerate(self.__trackNodes__)]
+            for targetIndex, target in enumerate(self.__trackNodes__)]
 
     def getRuntimeAverage(self, **kwargs):
         p = kwargs.get("precision", 3)
@@ -795,7 +798,7 @@ class Tracker():
             toc0 * 1000, toc1 * 1000, toc2 * 1000, toc3 * 1000, (toc0 + toc1 + toc2 + toc3) * 1000))
         return selectedHypotheses
 
-    def _pruneTargetIndex(self,targetIndex, N):
+    def _pruneTargetIndex(self, targetIndex, N):
         node = self.__trackNodes__[targetIndex]
         newRootNode = node.pruneDepth(N)
         if newRootNode != self.__targetList__[targetIndex]:
