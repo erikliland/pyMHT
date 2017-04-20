@@ -48,6 +48,7 @@ log = logging.getLogger(__name__)
 
 
 class Tracker():
+
     def __init__(self, Phi, C, Gamma, P_d, P_0, R_RADAR, R_AIS, Q, lambda_phi,
                  lambda_nu, eta2, N, p0, radarRange, solverStr, **kwargs):
 
@@ -194,12 +195,14 @@ class Tracker():
 
         # Verifying time stamps
         scanTime = scanList.time
-        log.debug('Radar time \t' + datetime.datetime.fromtimestamp(scanTime).strftime("%H:%M:%S.%f"))
+        log.debug('Radar time \t' +
+                  datetime.datetime.fromtimestamp(scanTime).strftime("%H:%M:%S.%f"))
 
         if aisList is not None:
             aisTime = aisList.time
             assert aisTime == scanTime
-            log.debug('AIS time \t' + datetime.datetime.fromtimestamp(aisTime).strftime("%H:%M:%S.%f"))
+            log.debug('AIS time \t' +
+                      datetime.datetime.fromtimestamp(aisTime).strftime("%H:%M:%S.%f"))
 
         # 0 --Iterative procedure for tracking --
         self.tic['Total'] = time.time()
@@ -656,7 +659,8 @@ class Tracker():
         return fusedNodesData
 
     def __processMeasurements(self, targetNodes, measurementList, dummyNodesData, C, R):
-        if measurementList is None: return None
+        if measurementList is None:
+            return None
         nNodes = len(targetNodes)
         nMeas = len(measurementList.measurements)
         meas_dim = C.shape[0]
@@ -693,7 +697,7 @@ class Tracker():
 
         gated_x_hat_list = [kalman.numpyFilter(
             x_bar_list[i], K_list[i], gated_z_tilde_list[i])
-                            for i in range(nNodes)]
+            for i in range(nNodes)]
         assert len(gated_x_hat_list) == nNodes
 
         nllr_list = [kalman.nllr(self.lambda_ex,
@@ -721,7 +725,8 @@ class Tracker():
         assert x_0_list.shape == (nNodes, nStates)
         assert P_0_list.shape == (nNodes, nStates, nStates)
 
-        x_bar_list, P_bar_list = kalman.predict(self.A, self.Q, self.Gamma, x_0_list, P_0_list)
+        x_bar_list, P_bar_list = kalman.predict(
+            self.A, self.Q, self.Gamma, x_0_list, P_0_list)
         return x_bar_list, P_bar_list
 
     def __predictPrecalcBulk(self, targetNodes, C, R, dummyNodesData):
@@ -744,7 +749,7 @@ class Tracker():
         return [(target.filteredStateMean - xTrue[targetIndex].state).T.dot(
             np.linalg.inv(target.filteredStateCovariance)).dot(
             (target.filteredStateMean - xTrue[targetIndex].state))
-                for targetIndex, target in enumerate(self.__trackNodes__)]
+            for targetIndex, target in enumerate(self.__trackNodes__)]
 
     def getRuntimeAverage(self, **kwargs):
         p = kwargs.get("precision", 3)
