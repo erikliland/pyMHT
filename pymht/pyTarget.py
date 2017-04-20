@@ -301,7 +301,13 @@ class Target():
         if (self.measurementNumber == 0) or (root):
             return subSet
         else:
-            return {(self.scanNumber, self.measurementNumber)} | subSet
+            radarMeasurement = (self.scanNumber, self.measurementNumber)
+            if self.mmsi is not None:
+                aisMeasurement = (self.scanNumber, self.mmsi)
+                tempSet = {radarMeasurement, aisMeasurement}
+            else:
+                tempSet = {radarMeasurement}
+            return tempSet | subSet
 
     def processNewMeasurementRec(self, measurementList, usedMeasurementSet,
                                  scanNumber, lambda_ex, eta2, kfVars):
@@ -454,6 +460,7 @@ class Target():
         kf = KalmanFilter(transition_matrices=model.Phi(radarPeriod),
                           observation_matrices=model.C_RADAR,
                           initial_state_mean=initialState)
+        print("measurements",measurements.shape,"\n", measurements)
         kf = kf.em(measurements, n_iter=5)
         (smoothed_state_means, _) = kf.smooth(measurements)
         smoothedPositions = smoothed_state_means[:, 0:2]
@@ -469,7 +476,7 @@ class Target():
         if kwargs.get('markEnd', True):
             self.markEnd()
         # colors = itertools.cycle(["r", "b", "g"])
-        if kwargs.get('smooth', False):
+        if kwargs.get('smooth', False) and self.getInitial().depth()>1:
             radarPeriod = kwargs.get('radarPeriod', self._estimateRadarPeriod())
             track = self.getSmoothTrack(radarPeriod)
             linestyle = 'dashed'
