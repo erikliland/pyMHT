@@ -206,22 +206,22 @@ class Initiator():
 
     def processMeasurements(self, measurement_list):
         tic = time.time()
-        self.log.debug("processMeasurements " + str(measurement_list.measurements.shape[0]))
+        self.log.info("processMeasurements " + str(measurement_list.measurements.shape[0]))
         unused_indices, initial_targets = self._processPreliminaryTracks(measurement_list)
         unused_indices = self._processInitiators(unused_indices, measurement_list)
         self._spawnInitiators(unused_indices, measurement_list)
         self.last_timestamp = measurement_list.time
         initial_targets = _merge_similar_targets(initial_targets, self.merge_threshold)
-        self.log.debug("new initial targets " + str(len(initial_targets)))
+        self.log.info("new initial targets " + str(len(initial_targets)))
         toc = time.time() - tic
-        self.log.debug("processMeasurements runtime: {:.1f}ms".format(toc * 1000))
+        self.log.info("processMeasurements runtime: {:.1f}ms".format(toc * 1000))
         return initial_targets
 
     def _processPreliminaryTracks(self, measurement_list):
         newInitialTargets = []
         time = measurement_list.time
         measurement_array = measurement_list.measurements
-        self.log.debug("_processPreliminaryTracks " + str(len(self.preliminary_tracks)))
+        self.log.info("_processPreliminaryTracks " + str(len(self.preliminary_tracks)))
 
         # Check for something to work on
         n1 = len(self.preliminary_tracks)
@@ -255,8 +255,8 @@ class Initiator():
                 inside_gate = nis < self.gamma
                 delta_matrix[i, j] = distance if inside_gate else np.Inf
 
-        self.log.debug("Gamma: " + str(self.gamma))
-        self.log.debug("delta_matrix\n" + str(delta_matrix))
+        # self.log.debug("Gamma: " + str(self.gamma))
+        # self.log.debug("delta_matrix\n" + str(delta_matrix))
 
         # Assign measurements
         assignments = _solve_global_nearest_neighbour(delta_matrix)
@@ -355,8 +355,8 @@ class Initiator():
     def __spawn_preliminary_tracks(self, measurement_list, assignments):
         time = measurement_list.time
         measurements = measurement_list.measurements
-        self.log.debug(
-            "__spawn_preliminary_tracks " + str(len(assignments)) + ("\n" + "\n".join(
+        self.log.info("__spawn_preliminary_tracks " + str(len(assignments)))
+        self.log.debug("New preliminary tracks:" +  ("\n" + "\n".join(
                 ['{0:17} -> {1:17}'.format(str(self.initiators[old_index].value), str(measurements[new_index]))
                  for old_index, new_index in assignments]) if assignments else ""))
 
