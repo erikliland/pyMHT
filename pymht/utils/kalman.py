@@ -53,6 +53,19 @@ def predict(A, Q, Gamma, x_0_list, P_0_list):
     return x_bar_list, P_bar_list
 
 
+def predict_single(A, Q, Gamma, x_hat, P_hat):
+    x_bar = A.dot(x_hat)
+    P_bar = A.dot(P_hat).dot(A.T) + Gamma.dot(Q.dot(Gamma.T))
+    return x_bar, P_bar
+
+def filter_single(z, x_bar, P_bar, H, R):
+    y_tilde = z - H.dot(x_bar)
+    S = H.dot(P_bar).dot(H.T)+R
+    K = P_bar.dot(H.T).dot(np.linalg.inv(S))
+    x_hat = x_bar + K.dot(y_tilde)
+    P_hat = P_bar - K.dot(H).dot(P_bar)
+    return x_hat, P_hat
+
 def precalc(A, C, Q, R, Gamma, x_bar_list, P_bar_list):
     assert A.ndim == 2
     assert C.ndim == 2
