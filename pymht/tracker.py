@@ -23,6 +23,7 @@ import numpy as np
 import multiprocessing as mp
 from scipy.sparse.csgraph import connected_components
 from ortools.linear_solver import pywraplp
+from termcolor import cprint
 
 # ----------------------------------------------------------------------------
 # Instantiate logging object
@@ -31,7 +32,7 @@ cwd = os.getcwd()
 logDir = os.path.join(cwd, 'logs')
 if not os.path.exists(logDir):
     os.makedirs(logDir)
-logging.basicConfig(level=logging.DEBUG,
+logging.basicConfig(level=logging.INFO,
                     format='%(asctime)s %(name)-25s %(levelname)-8s %(message)s',
                     datefmt='%Y-%m-%d %H:%M:%S',
                     filename=os.path.join(logDir, 'myapp.log'),
@@ -41,57 +42,25 @@ console.setLevel(logging.INFO)
 formatter = logging.Formatter('%(name)-12s: %(levelname)-8s %(message)s')
 console.setFormatter(formatter)
 log = logging.getLogger(__name__)
-log.addHandler(console)
 
 
-def _setHighPriority():
-    import psutil
-    import platform
-    p = psutil.Process(os.getpid())
-    OS = platform.system()
-    if (OS == "Darwin") or (OS == "Linux"):
-        p.nice(5)
-    elif OS == "Windows":
-        p.nice(psutil.HIGH_PRIORITY_CLASS)
-
-
-def initWorker():
-    signal.signal(signal.SIGINT, signal.SIG_IGN)
-
-
-def addMeasurementToNode(measurementList, scanNumber, lambda_ex, eta2, params):
-    target, nodeIndex = params
-    trackHypotheses, newMeasurements = (
-        target.gateAndCreateNewHypotheses(
-            measurementList, scanNumber, lambda_ex, eta2))
-    return nodeIndex, trackHypotheses, newMeasurements
-
-
-def _getSelectedHyp1(p, threshold=0):
-    hyp = [int(v.name[2:])
-           for v in p.variables() if abs(v.varValue - 1) <= threshold]
-    hyp.sort()
-    return hyp
-
-
-def _getSelectedHyp2(p, threshold=0):
-    hyp = [int(v[0][2:]) for v in p.variablesDict().items()
-           if abs(v[1].varValue - 1) <= threshold]
-    hyp.sort()
-    return hyp
+# log.addHandler(console)
 
 
 class Tracker():
     def __init__(self, Phi, C, Gamma, P_d, P_0, R_RADAR, R_AIS, Q, lambda_phi,
                  lambda_nu, eta2, N, p0, radarRange, solverStr, **kwargs):
 
-        log.debug('Running base main')
+        log.info('Running base main')
 
         self.logTime = kwargs.get("logTime", False)
         self.parallelize = kwargs.get("w", 1) > 1
         self.kwargs = kwargs
 
         if self.parallelize:
+            def initWorker():
+                signal.signal(signal.SIGINT, signal.SIG_IGN)
+
             self.nWorkers = max(kwargs.get("w") - 1, 1)
             self.workers = mp.Pool(self.nWorkers, initWorker)
         else:
@@ -116,7 +85,7 @@ class Tracker():
         self.maxSpeed = kwargs.get('maxSpeed', 20)
         self.M_required = kwargs.get('M_required', 2)
         self.N_checks = kwargs.get('N_checks', 3)
-        self.mergeThreshold = 2*(model.sigmaR_RADAR_tracker**2)
+        self.mergeThreshold = 2 * (model.sigmaR_RADAR_tracker ** 2)
         self.initiator = m_of_n.Initiator(self.M_required,
                                           self.N_checks,
                                           self.maxSpeed,
@@ -174,12 +143,12 @@ class Tracker():
 
         if ((kwargs.get("realTime") is not None) and
                 (kwargs.get("realTime") is True)):
-            _setHightPriority()
+            self.setHighPriority()
 
         # Misc
         self.colors = ['r', 'g', 'b', 'c', 'm', 'y', 'k']
 
-        log.debug("Initiation done\n" + "#"*100 + "\n")
+        log.info("Initiation done\n" + "#" * 100 + "\n")
 
     def __enter__(self):
         return self
@@ -188,6 +157,16 @@ class Tracker():
         if self.parallelize:
             self.workers.terminate()
             self.workers.join()
+
+    def setHighPriority(self):
+        import psutil
+        import platform
+        p = psutil.Process(os.getpid())
+        OS = platform.system()
+        if (OS == "Darwin") or (OS == "Linux"):
+            p.nice(5)
+        elif OS == "Windows":
+            p.nice(psutil.HIGH_PRIORITY_CLASS)
 
     def initiateTarget(self, newTarget):
         if newTarget.haveNoNeightbours(self.__targetList__, self.mergeThreshold):
@@ -204,7 +183,10 @@ class Tracker():
             log.debug("Discarded an initial target: " + str(newTarget))
 
     def addMeasurementList(self, scanList, aisList=None, **kwargs):
-        log.debug("addMeasurementList starting " + str(len(self.__scanHistory__) + 1))
+        if kwargs.get("checkIntegrity", False):
+            self._checkTrackerIntegrity()
+
+        log.info("addMeasurementList starting " + str(len(self.__scanHistory__) + 1))
 
         # Adding new data to history
         self.__scanHistory__.append(scanList)
@@ -222,8 +204,7 @@ class Tracker():
         # 0 --Iterative procedure for tracking --
         self.tic['Total'] = time.time()
 
-        if kwargs.get("checkIntegrity", False):
-            self._checkTrackerIntegrity()
+
 
         # 1 --Grow each track tree--
         if self.logTime:
@@ -246,6 +227,14 @@ class Tracker():
         nTargetNodes = np.zeros(nTargets)
         for targetIndex, target in enumerate(self.__targetList__):
             if self.parallelize:
+
+                def addMeasurementToNode(measurementList, scanNumber, lambda_ex, eta2, params):
+                    target, nodeIndex = params
+                    trackHypotheses, newMeasurements = (
+                        target.gateAndCreateNewHypotheses(
+                            measurementList, scanNumber, lambda_ex, eta2))
+                    return nodeIndex, trackHypotheses, newMeasurements
+
                 # try openMP
                 targetStartDepth = target.depth()
                 searchTic = time.time()
@@ -412,7 +401,7 @@ class Tracker():
         tempTotalTime = time.time() - self.tic['Total']
         if tempTotalTime > (self.period * 0.8):
             self.N = max(1, self.N - 1)
-            log.debug(
+            log.warning(
                 'Iteration took to long time ({0:.1f}ms), reducing window size roof from {1:} to  {2:}'.format(
                     tempTotalTime * 1000, self.N + 1, self.N))
             self.__targetWindowSize__ = [min(e, self.N) for e in self.__targetWindowSize__]
@@ -438,12 +427,12 @@ class Tracker():
             # Check outside range
             if trackNode.isOutsideRange(self.position.array, self.range):
                 deadTracks.append(trackIndex)
-                log.debug("Terminating track {:} since it is out of range".format(trackIndex))
+                log.info("Terminating track {:} since it is out of range".format(trackIndex))
 
             # Check if track is to insecure
             elif trackNode.cumulativeNLLR > self.NLLR_UPPER_LIMIT:
                 deadTracks.append(trackIndex)
-                log.debug("Terminating track {:} since its cost is above the threshold".format(trackIndex))
+                log.info("Terminating track {:} since its cost is above the threshold".format(trackIndex))
 
         self._terminateTracks(deadTracks)
         if self.logTime:
@@ -463,12 +452,18 @@ class Tracker():
         new_initial_targets = self.initiator.processMeasurements(unused_measurements)
 
         for initial_target in new_initial_targets:
-            log.debug("\tNew target({}): ".format(len(self.__targetList__) + 1) + str(initial_target))
+            log.info("\tNew target({}): ".format(len(self.__targetList__) + 1) + str(initial_target))
             self.initiateTarget(initial_target)
         if self.logTime:
             self.toc['Init'] = time.time() - self.tic['Init']
 
         self.toc['Total'] = time.time() - self.tic['Total']
+        if self.toc['Total'] > self.period:
+            log.critical("Did not pass real time demand! Used {0:.0f}ms of {1:.0f}ms".format(
+                self.toc['Total'] * 1000, self.period * 1000))
+        elif self.toc['Total'] > self.period * 0.6:
+            log.warning("Did almost not pass real time demand! Used {0:.0f}ms of {1:.0f}ms".format(
+                self.toc['Total'] * 1000, self.period * 1000))
 
         if kwargs.get("checkIntegrity", False):
             self._checkTrackerIntegrity()
@@ -493,9 +488,9 @@ class Tracker():
             return self._compareTracksWithTruth(xTrue)
 
         if nTargetNodes.size > 0:
-            avgTimePerNode = self.toc['Process']*1e6 / np.sum(nTargetNodes)
+            avgTimePerNode = self.toc['Process'] * 1e6 / np.sum(nTargetNodes)
             log.debug("Process time per (old) leaf node = {:.0f}us".format(avgTimePerNode))
-        log.debug("addMeasurement completed \n" + self.getTimeLogString() + "\n")
+        log.info("addMeasurement completed \n" + self.getTimeLogString() + "\n")
 
     def _terminateTracks(self, deadTracks):
         deadTracks.sort(reverse=True)
@@ -979,6 +974,12 @@ class Tracker():
         return selectedHypotheses
 
     def _solveBLP_PULP(self, A1, A2, f, nHyp):
+        def _getSelectedHyp2(p, threshold=0):
+            hyp = [int(v[0][2:]) for v in p.variablesDict().items()
+                   if abs(v[1].varValue - 1) <= threshold]
+            hyp.sort()
+            return hyp
+
         tic0 = time.time()
         nScores = len(f)
         (nMeas, nHyp) = A1.shape
@@ -1041,6 +1042,7 @@ class Tracker():
                 node.pruneSimilarState(threshold)
 
     def _checkTrackerIntegrity(self):
+        log.debug("Checking tracker integrity")
         assert len(self.__trackNodes__) == len(self.__targetList__), \
             "There are not the same number trackNodes as targets"
         assert len(self.__targetList__) == len(set(self.__targetList__)), \
@@ -1057,7 +1059,11 @@ class Tracker():
         for targetIndex, target in enumerate(self.__targetList__):
             leafNodes = target.getLeafNodes()
             for leafNode in leafNodes:
-                assert leafNode.scanNumber == scanNumber, "Target " + str(targetIndex + 1)
+                assert leafNode.scanNumber == scanNumber, \
+                    "{0:} != {1:} @ TargetNumber {2:}".format(leafNode.scanNumber,
+                                                              scanNumber,
+                                                              targetIndex+1)
+                leafNode._checkMmsiIntegrity()
 
     def getSmoothTracks(self):
         return [track.getSmoothTrack() for track in self.__trackNodes__]
@@ -1099,9 +1105,9 @@ class Tracker():
     def plotActiveTracks(self, **kwargs):
         colors = kwargs.get("colors", self._getColorCycle())
         for i, track in enumerate(self.__trackNodes__):
-            track.plotTrack(root=self.__targetList__[i], c=next(colors), period = self.period, **kwargs)
+            track.plotTrack(root=self.__targetList__[i], c=next(colors), period=self.period, **kwargs)
         if kwargs.get('markStates', True):
-            defaults = {'labels': False, 'dummy': True, 'real': True, 'ais':True}
+            defaults = {'labels': False, 'dummy': True, 'real': True, 'ais': True}
             self.plotStatesFromTracks(**{**defaults, **kwargs})
 
     def plotTerminatedTracks(self, **kwargs):
@@ -1210,11 +1216,16 @@ class Tracker():
         return timeLogString
 
     def printTimeLog(self):
-        from termcolor import cprint
-        tooLong = self.toc['Total'] > self.period
+        tooLongWarning = self.toc['Total'] > self.period*0.6
+        tooLongCritical = self.toc['Total'] > self.period
+        color = 'on_green'
+        color = 'on_yellow' if tooLongWarning else color
+        color = 'on_red' if tooLongCritical else color
+        attrs = ['dark']
+        attrs = attrs.append('bold') if tooLongWarning else attrs
         cprint(self.getTimeLogString(),
-               'red' if tooLong else None,
-               attrs=(['bold'] if tooLong else [])
+               on_color=color,
+               attrs=attrs
                )
 
 
