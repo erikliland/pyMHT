@@ -1197,6 +1197,19 @@ class Tracker():
                 print(target.__str__(targetIndex=targetIndex))
         print()
 
+    def getTimeLogHeader(self):
+        return ('{:3} '.format("Nr") +
+                '{:9} '.format("Num Targets") +
+                '{:12} '.format("Iteration (ms)") +
+                '({0:23} '.format("(nMeasurements + nAisUpdates / nNodes) Process time ms") +
+                '({0:2}) {1:5}'.format("nClusters", 'Cluster') +
+                '({0:3}) {1:6}'.format("nOptimSolved", 'Optim') +
+                '{:4}'.format('DynN') +
+                '{:5}'.format('N-Prune') +
+                '{:3}'.format('Terminate') +
+                '{:5}'.format('Init')
+                )
+
     def getTimeLogString(self):
         tocMS = {k: v * 1000 for k, v in self.toc.items()}
         totalTime = tocMS['Total']
@@ -1207,16 +1220,16 @@ class Tracker():
         nTargets = len(self.__targetList__)
         nClusters = len(self.__clusterList__)
         timeLogString = ('{:<3.0f} '.format(scanNumber) +
-                         'nTrack {:2.0f}'.format(nTargets) + "  " +
-                         'Total {0:6.0f}'.format(totalTime) + "  " +
-                         'Process({0:3.0f}+{1:<3.0f}/{2:6.0f}) {3:6.1f}'.format(
-                             nMeasurements, nAisUpdates, nNodes, tocMS['Process']) + "  " +
-                         'Cluster({0:2.0f}) {1:5.1f}'.format(nClusters, tocMS['Cluster']) + "  " +
-                         'Optim({0:g}) {1:6.1f}'.format(self.nOptimSolved, tocMS['Optim']) + "  " +
+                         'nTrack {:2.0f} '.format(nTargets) +
+                         'Total {0:6.0f} '.format(totalTime) +
+                         'Process({0:3.0f}+{1:<3.0f}/{2:6.0f}) {3:6.1f} '.format(
+                             nMeasurements, nAisUpdates, nNodes, tocMS['Process']) +
+                         'Cluster({0:2.0f}) {1:5.1f} '.format(nClusters, tocMS['Cluster']) +
+                         'Optim({0:g}) {1:6.1f} '.format(self.nOptimSolved, tocMS['Optim']) +
                          # 'ILP-Prune {:5.0f}'.format(self.toc['ILP-Prune']) + "  " +
-                         'DynN {:4.1f}'.format(tocMS['DynN']) + " " +
-                         'N-Prune {:5.1f}'.format(tocMS['N-Prune']) + " " +
-                         'Kill {:3.1f}'.format(tocMS['Terminate']) + " " +
+                         'DynN {:4.1f} '.format(tocMS['DynN']) +
+                         'N-Prune {:5.1f} '.format(tocMS['N-Prune']) +
+                         'Kill {:3.1f} '.format(tocMS['Terminate']) +
                          'Init {:5.1f}'.format(tocMS['Init']))
         return timeLogString
 
@@ -1233,6 +1246,8 @@ class Tracker():
                attrs=attrs
                )
 
+    def printTimeLogHeader(self):
+        print(self.getTimeLogHeader())
 
 if __name__ == '__main__':
     pass
