@@ -7,44 +7,6 @@ import copy
 import datetime
 import matplotlib.pyplot as plt
 
-
-# import queue
-# import multiprocessing as mp
-# class TargetManager(mp.Process):
-#     def __init__(self, q, idx):
-#         super(TargetManager, self).__init__()
-#         self.exit_flag = False
-#         self.queue = q
-#         self.idx = idx
-#         self.rootNode = None
-#
-#     def exit_request(self):
-#         print(self.idx, "got exit flag")
-#         self.exit_flag = True
-#         print(self.idx, self.exit_flag)
-#
-#     def parseInput(self, data):
-#         dataType = type(data)
-#         if dataType is MeasurementList:
-#             return self.processMeasurements
-#
-#     def processMeasurements(self, measurementList):
-#         print("Processing measurements")
-#         pass
-#
-#     def run(self):
-#         print("Starting run")
-#         while not self.exit_flag:
-#             try:
-#                 data = self.queue.get()
-#                 print(data)
-#                 functionToCall = self.parseInput(data)
-#                 functionToCall(*data)
-#             except queue.Empty:
-#                 pass
-#         print("Exiting run and terminating")
-
-
 class Target():
     def __init__(self, time, scanNumber, x_0, P_0, **kwargs):
         assert (scanNumber is None) or (scanNumber == int(scanNumber))
