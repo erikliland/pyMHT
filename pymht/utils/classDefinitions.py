@@ -214,6 +214,7 @@ class MeasurementList:
 class PredictionList(MeasurementList):
     def __init__(self, time, predictions=None):
         MeasurementList.__init__(self, time, predictions)
+        self.aisMessages = []
 
     def __str__(self):
         if self.time == int(self.time):
