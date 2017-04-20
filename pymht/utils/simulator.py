@@ -27,7 +27,7 @@ def calculateNextState(target, timeStep, Phi, Q, Gamma):
     w = np.random.multivariate_normal(np.zeros(2), Q_matrix)
     nextState = Phi.dot(target.state) + Gamma.dot(w.T)
     newVar = {'state': nextState, 'time': target.time + timeStep}
-    return Target(**{**target.__dict__,**newVar})
+    return Target(**{**target.__dict__, **newVar})
 
 
 def generateInitialTargets(randomSeed, numOfTargets, centerPosition,
@@ -131,10 +131,16 @@ def simulateAIS(random_seed, sim_list, Phi_func, C, R, P_0, **kwargs):
                 state = target.state
             if kwargs.get('noise', True):
                 state = positionWithNoise(state, C, R)
+            if kwargs.get('idScrambling',False) and np.random.uniform() > 0.5:
+                mmsi = target.mmsi + 10
+                log.info("Scrambling MMSI {0:} to {1:} at {2:}".format(target.mmsi,mmsi, time))
+            else:
+                mmsi = target.mmsi
+
             prediction = AIS_message(time=time,
                                      state=state,
                                      covariance=P_0,
-                                     mmsi=target.mmsi)
+                                     mmsi=mmsi)
             tempList.append(prediction)
         if tempList:
             ais_measurements.append(tempList)
