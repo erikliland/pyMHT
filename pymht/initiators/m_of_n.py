@@ -302,7 +302,8 @@ class Initiator():
                                     track.covariance,
                                     measurementNumber=track.measurement_index + 1,
                                     measurement=measurement_array[track.measurement_index])
-                self.log.debug("Spawning new (initial) Target: " + str(new_target))
+                self.log.debug("Spawning new (initial) Target: " + str(new_target)
+                               + " Covariance:\n" + np.array_str(track.covariance))
                 newInitialTargets.append(new_target)
                 removeIndices.append(track_index)
         for i in reversed(removeIndices):
