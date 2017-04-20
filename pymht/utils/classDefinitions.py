@@ -80,7 +80,9 @@ class Position:
     def plot(self, measurementNumber=-1, scanNumber=None, mmsi=None, **kwargs):
         if mmsi is not None:
             plt.plot(self.array[0], self.array[1],
-                     marker='D', markerfacecolor='None')
+                     marker='D', markerfacecolor='None',
+                     markeredgewidth=kwargs.get('markeredgewidth',1)
+                     )
         elif measurementNumber > 0:
             plt.plot(self.array[0], self.array[1], 'kx')
         elif measurementNumber == 0:
@@ -225,7 +227,7 @@ class PredictionList(MeasurementList):
 
     def plot(self, **kwargs):
         for measurement in self.measurements:
-            Position(measurement.state[0:2]).plot(mmsi=measurement.mmsi)
+            Position(measurement.state[0:2]).plot(mmsi=measurement.mmsi, **kwargs)
 
     def getMeasurements(self):
         return np.array([m.state for m in self.measurements])
