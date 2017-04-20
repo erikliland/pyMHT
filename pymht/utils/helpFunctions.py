@@ -13,6 +13,9 @@ import datetime
 # ----------------------------------------------------------------------------
 log = logging.getLogger(__name__)
 
+log.setLevel(logging.DEBUG)
+log.debug("Loaded helpFunctions")
+log.info("Loaded helpFunctions")
 
 def _getBestTextPosition(normVelocity, **kwargs):
     DEBUG = kwargs.get('debug', False)
@@ -236,5 +239,7 @@ def predictAisMeasurements(scanTime, aisMeasurements):
         x_bar, P_bar = kalman.predict(A, Q, model.Gamma, np.array(state, ndmin=2),
                                       np.array(measurement.covariance, ndmin=3))
         aisPredictions.measurements.append(AIS_prediction(x_bar[0], P_bar[0], measurement.mmsi))
+        log.debug(np.array_str(state)+"=>"+np.array_str(x_bar[0]))
+        aisPredictions.aisMessages.append(measurement)
     assert len(aisPredictions.measurements) == len(aisMeasurements)
     return aisPredictions
