@@ -249,6 +249,7 @@ class Target():
          fusedMeasurementIndices,
          fusedNllr,
          fusedMMSI) = fusedAisData
+        historicalMmsi = self._getHistoricalMmsi()
         self.trackHypotheses.extend(
             [Target(scanTime,
                     scanNumber,
@@ -260,7 +261,16 @@ class Target():
                     mmsi=fusedMMSI[i],
                     P_d=self.P_d,
                     parent=self)
-             for i in range(len(fusedMeasurementIndices))])
+             for i in range(len(fusedMeasurementIndices))
+             if (historicalMmsi is None) or (fusedMMSI[i] == historicalMmsi)
+             ])
+
+    def _getHistoricalMmsi(self):
+        if self.mmsi is not None:
+            return self.mmsi
+        if self.parent is not None:
+            return self.parent._getHistoricalMmsi()
+        return None
 
     def _normalizedInnovationSquared(self, measurementsResidual, S_inv):
         return np.sum(measurementsResidual.dot(S_inv) *
@@ -415,6 +425,23 @@ class Target():
 
         recCheckReferenceIntegrety(self.getInitial())
 
+    def _checkMmsiIntegrity(self, activeMMSI=None):
+        if self.mmsi is not None:
+            if activeMMSI is None:
+                if self.parent is not None:
+                    self.parent._checkMmsiIntegrity(self.mmsi)
+            else:
+                assert self.mmsi == activeMMSI, "A track is associated with multiple MMSI's"
+                if self.parent is not None:
+                    self.parent._checkMmsiIntegrity(self.mmsi)
+        else:
+            if self.parent is not None:
+                self.parent._checkMmsiIntegrity(activeMMSI)
+
+    def _estimateRadarPeriod(self):
+        if self.parent is not None:
+            return self.time - self.parent.time
+
     def plotValidationRegion(self, eta2, stepsBack=0):
         if not hasattr(self, 'kalmanFilter'):
             raise NotImplementedError("plotValidationRegion is not functional in this version")
@@ -480,11 +507,17 @@ class Target():
         if kwargs.get('markEnd'):
             self.markEnd()
         # colors = itertools.cycle(["r", "b", "g"])
-        if kwargs.get('smooth', False) and kwargs.get('radarPeriod', False):
-            track = self.getSmoothTrack(kwargs.get('radarPeriod'))
+        if kwargs.get('smooth', False):
+            radarPeriod = kwargs.get('radarPeriod', self._estimateRadarPeriod())
+            track = self.getSmoothTrack(radarPeriod)
+            linestyle = 'dashed'
         else:
             track = self.backtrackPosition(stepsBack)
-        plt.plot([p[0] for p in track], [p[1] for p in track], c=kwargs.get('c'))
+            linestyle = 'solid'
+        plt.plot([p[0] for p in track],
+                 [p[1] for p in track],
+                 c=kwargs.get('c'),
+                 linestyle=linestyle)
 
     def plotMeasurement(self, stepsBack=0, **kwargs):
         if (self.measurement is not None) and kwargs.get('real', True):
