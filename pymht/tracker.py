@@ -52,6 +52,8 @@ class Tracker():
     def __init__(self, Phi, C, Gamma, P_d, P_0, R_RADAR, R_AIS, Q, lambda_phi,
                  lambda_nu, eta2, N, p0, radarRange, solverStr, **kwargs):
 
+        if 'logLevel' in kwargs:
+            log.setLevel(kwargs.get('logLevel'))
         log.info('Running base main')
 
         self.logTime = kwargs.get("logTime", False)
@@ -86,7 +88,7 @@ class Tracker():
         self.maxSpeed = kwargs.get('maxSpeed', 20)
         self.M_required = kwargs.get('M_required', 2)
         self.N_checks = kwargs.get('N_checks', 3)
-        self.mergeThreshold = 2 * (model.sigmaR_RADAR_tracker ** 2)
+        self.mergeThreshold = 3 * (model.sigmaR_RADAR_tracker ** 2)
         self.initiator = m_of_n.Initiator(self.M_required,
                                           self.N_checks,
                                           self.maxSpeed,
@@ -208,7 +210,6 @@ class Tracker():
         self.tic['Total'] = time.time()
 
 
-
         # 1 --Grow each track tree--
         if self.logTime:
             self.tic['Process'] = time.time()
@@ -229,107 +230,8 @@ class Tracker():
         targetProcessTimes = np.zeros(nTargets)
         nTargetNodes = np.zeros(nTargets)
         for targetIndex, target in enumerate(self.__targetList__):
-            if self.parallelize:
-
-                def addMeasurementToNode(measurementList, scanNumber, lambda_ex, eta2, params):
-                    target, nodeIndex = params
-                    trackHypotheses, newMeasurements = (
-                        target.gateAndCreateNewHypotheses(
-                            measurementList, scanNumber, lambda_ex, eta2))
-                    return nodeIndex, trackHypotheses, newMeasurements
-
-                # try openMP
-                targetStartDepth = target.depth()
-                searchTic = time.time()
-                leafNodes = target.getLeafNodes()
-                searchToc = time.time() - searchTic
-                predictTic = time.time()
-                for node in leafNodes:
-                    node.predictMeasurement()
-                predictToc = time.time() - predictTic
-                createTic = time.time()
-                floatChunkSize = len(leafNodes) / self.nWorkers
-                workerIterations = 1
-                chunkSize = int(np.ceil(floatChunkSize / workerIterations))
-                self.createComputationTime = 0
-                for nodeIndex, trackHypotheses, newMeasurements in (
-                        self.workers.imap_unordered(functools.partial(
-                            addMeasurementToNode,
-                            scanList,
-                            scanNumber,
-                            self.lambda_ex,
-                            self.eta2),
-                            zip(leafNodes, range(len(leafNodes))), chunkSize)):
-                    leafNodes[nodeIndex].trackHypotheses = trackHypotheses
-                    for hyp in leafNodes[nodeIndex].trackHypotheses:
-                        hyp.parent = leafNodes[nodeIndex]
-                    self.__associatedMeasurements__[targetIndex].update(newMeasurements)
-                createToc = time.time() - createTic
-                addToc = 0
-                self.leafNodeTimeList.append([searchToc, predictToc, createToc, addToc])
-                targetEndDepth = target.depth()
-                assert targetEndDepth - 1 == targetStartDepth, \
-                    "'processNewMeasurements' did not increase the target depth"
-                target._checkReferenceIntegrity()
-            else:
-                if kwargs.get('R', False):
-                    usedMeasurementIndices = set()
-                    target.processNewMeasurementRec(
-                        scanList,
-                        usedMeasurementIndices,
-                        scanNumber,
-                        self.lambda_ex,
-                        self.eta2,
-                        (self.A, self.C, self.Q, self.R, self.Gamma)
-                    )
-                    for i in usedMeasurementIndices:
-                        self.__associatedMeasurements__[targetIndex].update({(scanNumber, i + 1)})
-                        unused_measurement_indices[i] = False
-
-                else:
-                    tic = time.time()
-                    targetNodes = target.getLeafNodes()
-                    nNodes = len(targetNodes)
-                    nTargetNodes[targetIndex] = nNodes
-                    dummyNodesData, radarNodesData, fusedNodesData = self._processLeafNodes(targetNodes,
-                                                                                            scanList,
-                                                                                            aisList)
-                    x_bar_list, P_bar_list = dummyNodesData
-                    gated_x_hat_list, P_hat_list, gatedIndicesList, nllrList = radarNodesData
-                    (fused_x_hat_list,
-                     fused_P_hat_list,
-                     fused_radar_indices_list,
-                     fused_nllr_list,
-                     fused_mmsi_list) = fusedNodesData
-                    gatedMeasurementsList = [np.array(scanList.measurements[gatedIndices])
-                                             for gatedIndices in gatedIndicesList]
-                    assert len(gatedMeasurementsList) == nNodes
-                    assert all([m.shape[1] == measDim for m in gatedMeasurementsList])
-
-                    for gated_index in gatedIndicesList:
-                        unused_measurement_indices[gated_index] = False
-
-                    for i, node in enumerate(targetNodes):
-                        node.spawnNewNodes(scanTime,
-                                           scanNumber,
-                                           x_bar_list[i],
-                                           P_bar_list[i],
-                                           gatedIndicesList[i],
-                                           scanList.measurements,
-                                           gated_x_hat_list[i],
-                                           P_hat_list[i],
-                                           nllrList[i],
-                                           (fused_x_hat_list[i],
-                                            fused_P_hat_list[i],
-                                            fused_radar_indices_list[i],
-                                            fused_nllr_list[i],
-                                            fused_mmsi_list[i]))
-
-                    for i in range(nNodes):
-                        for measurementIndex in gatedIndicesList[i]:
-                            self.__associatedMeasurements__[targetIndex].update(
-                                {(scanNumber, measurementIndex + 1)})
-                    targetProcessTimes[targetIndex] = time.time() - tic
+            self._growTarget(targetIndex, nTargetNodes, scanList, aisList, measDim,
+                             unused_measurement_indices, scanTime, scanNumber, targetProcessTimes)
 
         if self.logTime:
             self.toc['Process'] = time.time() - self.tic['Process']
@@ -483,7 +385,7 @@ class Tracker():
 
         if kwargs.get("printTime", False):
             if self.logTime:
-                self.printTimeLog()
+                self.printTimeLog(**kwargs)
 
         # Covariance consistence
         if "trueState" in kwargs:
@@ -494,6 +396,58 @@ class Tracker():
             avgTimePerNode = self.toc['Process'] * 1e6 / np.sum(nTargetNodes)
             log.debug("Process time per (old) leaf node = {:.0f}us".format(avgTimePerNode))
         log.info("addMeasurement completed \n" + self.getTimeLogString() + "\n")
+
+    def _growTarget(self,targetIndex, nTargetNodes, scanList, aisList, measDim,unused_measurement_indices,
+                    scanTime, scanNumber, targetProcessTimes):
+        tic = time.time()
+        target = self.__targetList__[targetIndex]
+        targetNodes = target.getLeafNodes()
+        nNodes = len(targetNodes)
+        nTargetNodes[targetIndex] = nNodes
+        dummyNodesData, radarNodesData, fusedNodesData = self._processLeafNodes(targetNodes,
+                                                                                scanList,
+                                                                                aisList)
+        x_bar_list, P_bar_list = dummyNodesData
+        gated_x_hat_list, P_hat_list, gatedIndicesList, nllrList = radarNodesData
+        (fused_x_hat_list,
+         fused_P_hat_list,
+         fused_radar_indices_list,
+         fused_nllr_list,
+         fused_mmsi_list) = fusedNodesData
+        gatedMeasurementsList = [np.array(scanList.measurements[gatedIndices])
+                                 for gatedIndices in gatedIndicesList]
+        assert len(gatedMeasurementsList) == nNodes
+        assert all([m.shape[1] == measDim for m in gatedMeasurementsList])
+
+        for gated_index in gatedIndicesList:
+            unused_measurement_indices[gated_index] = False
+
+        for i, node in enumerate(targetNodes):
+            node.spawnNewNodes(scanTime,
+                               scanNumber,
+                               x_bar_list[i],
+                               P_bar_list[i],
+                               gatedIndicesList[i],
+                               scanList.measurements,
+                               gated_x_hat_list[i],
+                               P_hat_list[i],
+                               nllrList[i],
+                               (fused_x_hat_list[i],
+                                fused_P_hat_list[i],
+                                fused_radar_indices_list[i],
+                                fused_nllr_list[i],
+                                fused_mmsi_list[i]))
+
+        for i in range(nNodes):
+            for measurementIndex in gatedIndicesList[i]:
+                self.__associatedMeasurements__[targetIndex].update(
+                    {(scanNumber, measurementIndex + 1)}
+                )
+            for mmsi in fused_mmsi_list[i]:
+                self.__associatedMeasurements__[targetIndex].update(
+                    {(scanNumber, mmsi)}
+                )
+        targetProcessTimes[targetIndex] = time.time() - tic
 
     def _terminateTracks(self, deadTracks):
         deadTracks.sort(reverse=True)
@@ -532,7 +486,7 @@ class Tracker():
                                                     model.C_RADAR,
                                                     self.R_RADAR)
 
-        newNodesData = self.__createPureRadarNodes(gatedRadarData)
+        radarNodesData = self.__createPureRadarNodes(gatedRadarData)
 
         gatedAisData = self.__processMeasurements(targetNodes,
                                                   aisList,
@@ -544,7 +498,7 @@ class Tracker():
                                                 gatedRadarData,
                                                 gatedAisData)
 
-        return dummyNodesData, newNodesData, fusedNodesData
+        return dummyNodesData, radarNodesData, fusedNodesData
 
     def __createPureRadarNodes(self, gatedRadarData):
         (gated_radar_indices_list,
@@ -639,14 +593,9 @@ class Tracker():
         assert len(fused_radar_indices_list) == nNodes
         assert len(fused_nllr_list) == nNodes
         assert len(fused_mmsi_list) == nNodes
-        # print("nNodes", nNodes)
         for i in range(nNodes):
-            # print("Hei")
-            # print(type(fused_x_hat_list[i]))
             assert fused_x_hat_list[i].ndim == 2, str(fused_x_hat_list[i].ndim)
             nFusedNodes, nStates = fused_x_hat_list[i].shape
-            # print(fused_x_hat_list[i])
-            # print("nFusedNodes, nStates", nFusedNodes, nStates)
             if nStates == 0: continue
             assert fused_P_hat_list[i].shape == (nStates, nStates), str(fused_P_hat_list[i].shape)
 
@@ -775,38 +724,37 @@ class Tracker():
         return self.__trackNodes__
 
     def _solveOptimumAssociation(self, cluster):
+        log.debug("nTargetsInCluster {:}".format(len(cluster)))
         nHypInClusterArray = self._getHypInCluster(cluster)
-        nRealMeasurementsInCluster = len(
-            set.union(*[self.__associatedMeasurements__[i] for i in cluster]))
-        # problemSize = nRealMeasurementsInCluster * sum(nHypInClusterArray)
+        log.debug("nHypInClusterArray {0:} => Sum = {1:}".format(nHypInClusterArray,sum(nHypInClusterArray)))
 
-        # t0 = time.time()
+
+        uniqueMeasurementSet = set.union(*[self.__associatedMeasurements__[i] for i in cluster])
+        nRealMeasurementsInCluster = len(uniqueMeasurementSet)
+        log.debug("nRealMeasurementsInCluster {:}".format(nRealMeasurementsInCluster))
+        log.debug("Measurement set: {:}".format(uniqueMeasurementSet))
+
         (A1, measurementList) = self._createA1(
             nRealMeasurementsInCluster, sum(nHypInClusterArray), cluster)
+        log.debug("size(A1) " + str(A1.shape) + "\t=>\t" + str(nRealMeasurementsInCluster * sum(nHypInClusterArray)))
+        log.debug("A1 \n" + str(A1.astype(np.int)))
+        log.debug("measurementList" + str(measurementList))
+        assert len(measurementList) == nRealMeasurementsInCluster
         A2 = self._createA2(len(cluster), nHypInClusterArray)
+        log.debug("A2 \n" + str(A2.astype(np.int)))
         C = self._createC(cluster)
-        # t1 = time.time() - t0
-        # log.debug("matricesTime\t" + str(round(t1,3)))
+        log.debug("C =" + np.array_str(np.array(C), precision=1))
 
+        log.debug("Solving optimal association in cluster with targets" +
+                       str(cluster) + ",   \t" +
+                       str(sum(nHypInClusterArray)) + " hypotheses and " +
+                       str(nRealMeasurementsInCluster) + " real measurements.")
         selectedHypotheses = self._solveBLP_OR_TOOLS(A1, A2, C, len(cluster))
+        log.debug("selectedHypotheses" + str(selectedHypotheses))
         # selectedHypotheses = self._solveBLP_PULP(A1, A2, C_RADAR, len(cluster))
         # assert selectedHypotheses0 == selectedHypotheses
         selectedNodes = self._hypotheses2Nodes(selectedHypotheses, cluster)
         selectedNodesArray = np.array(selectedNodes)
-        # log.debug("Solving optimal association in cluster with targets" +
-        #                str(cluster) + ",   \t" +
-        #                str(sum(nHypInClusterArray)) + " hypotheses and " +
-        #                str(nRealMeasurementsInCluster) + " real measurements.")
-        # log.debug("nHypothesesInCluster {:}".format(sum(nHypInClusterArray)))
-        # log.debug("nRealMeasurementsInCluster {:}".format(nRealMeasurementsInCluster))
-        # log.debug("nTargetsInCluster {:}".format(len(cluster)))
-        # log.debug("nHypInClusterArray {:}".format(HypInClusterArray))
-        # log.debug("c =" + str(c))
-        # log.debug("A1 \n" + str(A1))
-        # log.debug("size(A1) " + str(A1.shape) + "\t=>\t" + str(nRealMeasurementsInCluster * sum(nHypInClusterArray)))
-        # log.debug("A2 \n" + str(A2))
-        # log.debug("measurementList" + str(measurementList))
-        # log.debug("selectedHypotheses" + str(selectedHypotheses))
         # log.debug("selectedNodes" +  str(*selectedNodes))
         # log.debug("selectedNodesArray" + str(*selectedNodesArray))
 
@@ -838,32 +786,52 @@ class Tracker():
     def _createA1(self, nRow, nCol, cluster):
         def recActiveMeasurement(target, A1, measurementList,
                                  activeMeasurements, hypothesisIndex):
-            if target.trackHypotheses is None:
-                # we are at a real measurement
-                if ((target.measurementNumber != 0) and
-                        (target.measurementNumber is not None)):
-                    measurement = (target.scanNumber, target.measurementNumber)
+            if target.trackHypotheses is None: #leaf node
+
+                if ((target.measurementNumber is not None) and
+                        (target.measurementNumber != 0)):# we are at a real measurement
+                    radarMeasurement = (target.scanNumber, target.measurementNumber)
                     try:
-                        measurementIndex = measurementList.index(measurement)
+                        radarMeasurementIndex = measurementList.index(radarMeasurement)
                     except ValueError:
-                        measurementList.append(measurement)
-                        measurementIndex = len(measurementList) - 1
-                    activeMeasurements[measurementIndex] = True
+                        measurementList.append(radarMeasurement)
+                        radarMeasurementIndex = len(measurementList) - 1
+                    activeMeasurements[radarMeasurementIndex] = True
+
+                if target.mmsi is not None:
+                    aisMeasurement = (target.scanNumber, target.mmsi)
+                    try:
+                        aisMeasurementIndex = measurementList.index(aisMeasurement)
+                    except ValueError:
+                        measurementList.append(aisMeasurement)
+                        aisMeasurementIndex = len(measurementList) -1
+                    activeMeasurements[aisMeasurementIndex] = True
+
                 A1[activeMeasurements, hypothesisIndex[0]] = True
                 hypothesisIndex[0] += 1
 
             else:
                 for hyp in target.trackHypotheses:
                     activeMeasurementsCpy = activeMeasurements.copy()
-                    if ((hyp.measurementNumber != 0) and
-                            (hyp.measurementNumber is not None)):
-                        measurement = (hyp.scanNumber, hyp.measurementNumber)
+                    if ((hyp.measurementNumber is not None) and
+                        (hyp.measurementNumber != 0)):
+                        radarMeasurement = (hyp.scanNumber, hyp.measurementNumber)
                         try:
-                            measurementIndex = measurementList.index(measurement)
+                            radarMeasurementIndex = measurementList.index(radarMeasurement)
                         except ValueError:
-                            measurementList.append(measurement)
-                            measurementIndex = len(measurementList) - 1
-                        activeMeasurementsCpy[measurementIndex] = True
+                            measurementList.append(radarMeasurement)
+                            radarMeasurementIndex = len(measurementList) - 1
+                        activeMeasurementsCpy[radarMeasurementIndex] = True
+
+                        if hyp.mmsi is not None:
+                            aisMeasurement = (hyp.scanNumber, hyp.mmsi)
+                            try:
+                                aisMeasurementIndex = measurementList.index(aisMeasurement)
+                            except ValueError:
+                                measurementList.append(aisMeasurement)
+                                aisMeasurementIndex = len(measurementList) - 1
+                            activeMeasurementsCpy[aisMeasurementIndex] = True
+
                     recActiveMeasurement(hyp, A1, measurementList,
                                          activeMeasurementsCpy, hypothesisIndex)
 
@@ -1104,13 +1072,13 @@ class Tracker():
         for target in self.__targetList__:
             recPlotHypothesesTrack(target, c=next(colors))
         if kwargs.get('markStates', False):
-            self.plotStatesFromRoot(dummy=True, real=True, includeHistory=False)
+            self.plotStatesFromRoot(dummy=True, real=True, ais=True, includeHistory=False)
             # tracker.plotValidationRegionFromRoot() # TODO: Does not work
 
     def plotActiveTracks(self, **kwargs):
         colors = kwargs.get("colors", self._getColorCycle())
         for i, track in enumerate(self.__trackNodes__):
-            track.plotTrack(root=self.__targetList__[i], c=next(colors), period=self.period, **kwargs)
+            track.plotTrack(root=self.__targetList__[i], index=i, c=next(colors), period=self.period, **kwargs)
         if kwargs.get('markStates', True):
             defaults = {'labels': False, 'dummy': True, 'real': True, 'ais': True}
             self.plotStatesFromTracks(**{**defaults, **kwargs})
@@ -1129,25 +1097,25 @@ class Tracker():
             node.plotStates(stepsBack, **kwargs)
 
     def plotMeasurementsFromRoot(self, **kwargs):
-        if not (("real" in kwargs) or ("dummy" in kwargs)):
+        if not (("real" in kwargs) or ("dummy" in kwargs) or ("ais" in kwargs)):
             return
         plottedMeasurements = set()
         for target in self.__targetList__:
             if kwargs.get("includeHistory", False):
-                target.getInitial().recPlotMeasurements(plottedMeasurements, **kwargs)
+                target.getInitial().recDownPlotMeasurements(plottedMeasurements, **kwargs)
             else:
                 for hyp in target.trackHypotheses:
-                    hyp.recPlotMeasurements(plottedMeasurements, **kwargs)
+                    hyp.recDownPlotMeasurements(plottedMeasurements, **kwargs)
 
     def plotStatesFromRoot(self, **kwargs):
-        if not (("real" in kwargs) or ("dummy" in kwargs)):
+        if not (("real" in kwargs) or ("dummy" in kwargs) or ("ais" in kwargs)):
             return
         for target in self.__targetList__:
             if kwargs.get("includeHistory", False):
-                target.getInitial().recPlotStates(**kwargs)
+                target.getInitial().recDownPlotStates(**kwargs)
             else:
                 for hyp in target.trackHypotheses:
-                    hyp.recPlotStates(**kwargs)
+                    hyp.recDownPlotStates(**kwargs)
 
     def plotScanIndex(self, index, **kwargs):
         self.__scanHistory__[index].plot(**kwargs)
@@ -1166,7 +1134,7 @@ class Tracker():
     def plotAllAisUpdates(self, **kwargs):
         for update in self.__aisHistory__:
             if update is not None:
-                update.plot(**kwargs)
+                update.plot(markeredgewidth=2,**kwargs)
 
     def plotVelocityArrowForTrack(self, stepsBack=1):
         for track in self.__trackNodes__:
@@ -1233,16 +1201,17 @@ class Tracker():
                          'Init {:5.1f}'.format(tocMS['Init']))
         return timeLogString
 
-    def printTimeLog(self):
+    def printTimeLog(self,**kwargs):
         tooLongWarning = self.toc['Total'] > self.period*0.6
         tooLongCritical = self.toc['Total'] > self.period
-        color = 'on_green'
-        color = 'on_yellow' if tooLongWarning else color
-        color = 'on_red' if tooLongCritical else color
+        on_color = 'on_green'
+        on_color = 'on_yellow' if tooLongWarning else on_color
+        on_color = 'on_red' if tooLongCritical else on_color
+        on_color = kwargs.get('on_color', on_color)
         attrs = ['dark']
         attrs = attrs.append('bold') if tooLongWarning else attrs
         cprint(self.getTimeLogString(),
-               on_color=color,
+               on_color=on_color,
                attrs=attrs
                )
 
