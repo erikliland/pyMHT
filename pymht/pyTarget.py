@@ -501,10 +501,10 @@ class Target():
 
     def plotTrack(self, root=None, stepsBack=float('inf'), **kwargs):
         if kwargs.get('markInitial', False) and stepsBack == float('inf'):
-            self.getInitial().markInitial()
+            self.getInitial().markInitial(offset=2, **kwargs)
         if kwargs.get('markRoot', False) and root is not None:
             root.markRoot()
-        if kwargs.get('markEnd'):
+        if kwargs.get('markEnd', True):
             self.markEnd()
         # colors = itertools.cycle(["r", "b", "g"])
         if kwargs.get('smooth', False):
@@ -571,11 +571,12 @@ class Target():
                  markerfacecolor='black',
                  markeredgecolor='black')
         index = kwargs.get("index")
-        if index is not None:
+        if (index is not None) and kwargs.get('markInitial',True):
             ax = plt.subplot(111)
             normVelocity = (self.x_0[2:4] /
                             np.linalg.norm(self.x_0[2:4]))
-            offset = kwargs.get('offset', np.zeros_like(normVelocity))
+            offsetScale = kwargs.get('offset', 0.0)
+            offset = offsetScale * np.array(normVelocity)
             position = self.x_0[0:2] - offset
             horizontalalignment, verticalalignment = hpf._getBestTextPosition(normVelocity)
             ax.text(position[0],
@@ -595,11 +596,11 @@ class Target():
     def markEnd(self):
         plt.plot(self.x_0[0],
                  self.x_0[1],
-                 "h",
+                 "H",
                  markerfacecolor='None',
                  markeredgecolor='black')
 
-    def recPlotMeasurements(self, plottedMeasurements, **kwargs):
+    def recDownPlotMeasurements(self, plottedMeasurements, **kwargs):
         if self.parent is not None:
             if self.measurementNumber == 0:
                 self.plotMeasurement(**kwargs)
@@ -611,14 +612,14 @@ class Target():
                         plottedMeasurements.add(measurementID)
         if self.trackHypotheses is not None:
             for hyp in self.trackHypotheses:
-                hyp.recPlotMeasurements(plottedMeasurements, **kwargs)
+                hyp.recDownPlotMeasurements(plottedMeasurements, **kwargs)
 
-    def recPlotStates(self, **kwargs):
+    def recDownPlotStates(self, **kwargs):
         if self.parent is not None:
             self.plotStates(**kwargs)
         if self.trackHypotheses is not None:
             for hyp in self.trackHypotheses:
-                hyp.recPlotStates(**kwargs)
+                hyp.recDownPlotStates(**kwargs)
 
 
 if __name__ == '__main__':
