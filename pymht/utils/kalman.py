@@ -19,6 +19,10 @@ def normalizedInnovationSquared(z_tilde_list, S_inv_list):
                   z_tilde_list,
                   axis=2)
 
+def nis_single(z_tilde, S):
+    nis =  z_tilde.dot(np.linalg.inv(S).dot(z_tilde.T))
+    return nis
+
 
 def z_tilde(z_list, z_hat_list, nNodes=1, measDim=2):
     z_tensor = np.array([z_list, ] * nNodes)
@@ -64,7 +68,7 @@ def filter_single(z, x_bar, P_bar, H, R):
     K = P_bar.dot(H.T).dot(np.linalg.inv(S))
     x_hat = x_bar + K.dot(y_tilde)
     P_hat = P_bar - K.dot(H).dot(P_bar)
-    return x_hat, P_hat
+    return x_hat, P_hat, S, y_tilde
 
 def precalc(A, C, Q, R, Gamma, x_bar_list, P_bar_list):
     assert A.ndim == 2
