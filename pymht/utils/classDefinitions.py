@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 
 class SimTarget:
     def __init__(self, state, time, P_d, **kwargs):
+        assert state.ndim == 1
         self.state = state
         self.time = time
         self.P_d = P_d
@@ -20,6 +21,16 @@ class SimTarget:
                 'Speed: {0:4.1f}m/s ({1:4.1f}knt)'.format(self.speed('m/s'), self.speed('knots')) + " " +
                 'Pd: {:3.0f}%'.format(self.P_d * 100.) + " " +
                 mmsiString)
+
+    __repr__ = __str__
+
+    def __eq__(self, other):
+        if not np.array_equal(self.state,other.state): return False
+        if self.time != other.time: return False
+        if self.P_d != other.P_d: return False
+        if self.mmsi != other.mmsi: return False
+        if self.Q != other.Q: return False
+        return True
 
     def storeString(self):
         return ',{0:.2f},{1:.2f}'.format(*self.state[0:2])
@@ -38,7 +49,6 @@ class SimTarget:
             return speed_ms * 1.94384449
         else:
             raise ValueError("Unknown unit")
-
 
 class Position:
     def __init__(self, *args, **kwargs):
@@ -79,8 +89,9 @@ class Position:
 
     def plot(self, measurementNumber=-1, scanNumber=None, mmsi=None, **kwargs):
         if mmsi is not None:
+            marker = 'h' if kwargs.get('original',False) else 'D'
             plt.plot(self.array[0], self.array[1],
-                     marker='D', markerfacecolor='None',
+                     marker=marker, markerfacecolor='None',
                      markeredgewidth=kwargs.get('markeredgewidth',1)
                      )
         elif measurementNumber > 0:
@@ -159,13 +170,23 @@ class AIS_message:
                                                        suppress_small=True) + " " +
                 mmsiString)
 
+
+    def __eq__(self, other):
+        if self.time != other.time: return False
+        if not np.array_equal(self.state, other.state): return False
+        if not np.array_equal(self.covariance, other.covariance): return False
+        if self.mmsi != other.mmsi: return False
+        return True
+
     __repr__ = __str__
+
+    def plot(self, **kwargs):
+        Position(self.state[0:2]).plot(mmsi=self.mmsi, original=True, **kwargs)
 
 
 class AIS_prediction:
     def __init__(self, state, covariance, mmsi):
-        assert state.shape == (4,)
-        assert covariance.shape == (4, 4)
+        assert state.shape[0] == covariance.shape[0] == covariance.shape[1]
         assert type(mmsi) is int
         self.state = state
         self.covariance = covariance
@@ -173,8 +194,7 @@ class AIS_prediction:
 
     def __str__(self):
         mmsiString = 'MMSI: ' + str(self.mmsi) if self.mmsi is not None else ""
-        stateString = 'State: ({0: 7.1f},{1: 7.1f},{2: 7.1f},{3: 7.1f})'.format(
-            self.state[0], self.state[1], self.state[2], self.state[3])
+        stateString = np.array_str(self.state, precision=1)
         covarianceString = 'Covariance diagonal: ' + np.array_str(np.diagonal(self.covariance),
                                                                   precision=1, suppress_small=True)
         return (stateString + " " + covarianceString + " " + mmsiString)
@@ -193,6 +213,11 @@ class MeasurementList:
         return ("Time: " + timeString +
                 "\tMeasurements:\t" + ", ".join(
             [str(measurement) for measurement in self.measurements]))
+
+    def __eq__(self, other):
+        if self.time != other.time: return False
+        if not np.array_equal(self.measurements, other.measurements): return False
+        return True
 
     __repr__ = __str__
 
@@ -227,8 +252,12 @@ class PredictionList(MeasurementList):
             [str(measurement) for measurement in self.measurements]))
 
     def plot(self, **kwargs):
-        for measurement in self.measurements:
-            Position(measurement.state[0:2]).plot(mmsi=measurement.mmsi, **kwargs)
+        if kwargs.get('original', True):
+            for message in self.aisMessages:
+                message.plot(**kwargs)
+        if kwargs.get('predicted', False):
+            for measurement in self.measurements:
+                Position(measurement.state[0:2]).plot(mmsi=measurement.mmsi, **kwargs)
 
     def getMeasurements(self):
         return np.array([m.state for m in self.measurements])
