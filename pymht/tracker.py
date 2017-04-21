@@ -176,6 +176,7 @@ class Tracker():
             target = copy.copy(newTarget)
             target.scanNumber = len(self.__scanHistory__)
             target.P_d = self.default_P_d
+            # target.P_0 = self.P_0
             # assert target.measurementNumber is not None
             assert target.measurement is not None
             self.__targetList__.append(target)
@@ -399,7 +400,7 @@ class Tracker():
 
     def _growTarget(self,targetIndex, nTargetNodes, scanList, aisList, measDim,unused_measurement_indices,
                     scanTime, scanNumber, targetProcessTimes):
-        print("Growing target index", targetIndex)
+        # print("Growing target index", targetIndex)
         tic = time.time()
         target = self.__targetList__[targetIndex]
         targetNodes = target.getLeafNodes()
@@ -492,8 +493,8 @@ class Tracker():
         gatedAisData = self.__processMeasurements(targetNodes,
                                                   aisList,
                                                   dummyNodesData,
-                                                  model.C_AIS,
-                                                  self.R_AIS)
+                                                  model.C_RADAR,
+                                                  self.R_RADAR)
 
         fusedNodesData = self.__fuseRadarAndAis(targetNodes,
                                                 gatedRadarData,
@@ -546,6 +547,7 @@ class Tracker():
 
         #NICE TO KNOW: nNodes == len(gated_radar_indices_list) == len(gated_ais_indices_list)
 
+
         # print("Processing nodes:", *targetNodes, sep="\n")
         # print("gated_radar_indices_list", gated_radar_indices_list)
         # print("Fusing AIS and radar")
@@ -578,42 +580,63 @@ class Tracker():
                     P_0 = targetNodes[i].P_0
                     dT1 = aisList.aisMessages[aisMeasurementIndex].time - targetNodes[i].time
                     x_bar1, P_bar1 = kalman.predict_single(model.Phi(dT1),model.Q(dT1),model.Gamma,x_0, P_0)
-                    z1 = aisList.aisMessages[aisMeasurementIndex].state
-                    x_hat1, P_hat1 = kalman.filter_single(z1, x_bar1, P_bar1, model.H_ais, self.R_AIS)
+                    z1 = aisList.aisMessages[aisMeasurementIndex].state[0:2]
+                    x_hat1, P_hat1,S1, z_tilde_1 = kalman.filter_single(z1, x_bar1, P_bar1, model.H_radar,
+                                                                model.C_RADAR.dot(self.R_AIS).dot(model.C_RADAR.T))
                     dT2 = aisList.time - aisList.aisMessages[aisMeasurementIndex].time
                     x_bar2, P_bar2 = kalman.predict_single(model.Phi(dT2),model.Q(dT2),model.Gamma,x_hat1, P_hat1)
                     z2 = self.__scanHistory__[-1].measurements[radarMeasurementIndex]
-                    x_hat2, P_hat2 = kalman.filter_single(z2, x_bar2, P_bar2, model.H_radar, self.R_RADAR)
+                    x_hat2, P_hat2,  S2, z_tilde_2 = kalman.filter_single(z2, x_bar2, P_bar2, model.H_radar, self.R_RADAR)
+                    nis1 = kalman.nis_single(z_tilde_1, S1)
+                    nis2 = kalman.nis_single(z_tilde_2, S2)
+                    ais_nllr = kalman.nllr(self.lambda_nu,1.0, S1, nis1)
+                    radar_nllr = kalman.nllr(self.lambda_ex, targetNodes[i].P_d, S2, nis2)
+                    fusedNLLR = ais_nllr + radar_nllr
+                    # fusedNLLR = ais_nllr_list[i][k] + radar_nllr_list[i][k]
                     # fusedState = gated_x_ais_hat_list[i][k]
+
 
                     # print("i", i)
                     # print("j", j)
                     # print("k", k)
                     # print("radarMeasurementIndex", radarMeasurementIndex)
                     # print("aisMeasurementIndex", aisMeasurementIndex)
-                    # print("Gamma\n", model.Gamma)
-                    # print("Phi1\n", model.Phi(dT1))
-                    # print("FPFt\n", model.Phi(dT1).dot(P_0).dot(model.Phi(dT1).T))
-                    # print("GQGt\n", model.Gamma.dot(model.Q(dT1)).dot(model.Gamma.T))
+                    # # print("Gamma\n", model.Gamma)
+                    # # print("Phi1\n", model.Phi(dT1))
+                    # # print("FPFt\n", model.Phi(dT1).dot(P_0).dot(model.Phi(dT1).T))
+                    # # print("GQGt\n", model.Gamma.dot(model.Q(dT1)).dot(model.Gamma.T))
                     # print("Origin state     ", x_0)
+                    # print("Origin covariance\n", P_0)
                     # print("dT1              ", dT1)
                     # print("Predicted state1 ", x_bar1)
+                    # print("Predicted cov1\n", P_bar1)
                     # print("AIS measurement  ", z1)
+                    # print("z_tilde1         ", z_tilde_1)
+                    # print("S1\n", S1)
                     # print("Filtered state1  ", x_hat1)
                     # print("dT2              ", dT2)
                     # print("Predicted state2 ", x_bar2)
                     # print("Radar measurement", z2)
                     # print("Filtered state2  ", x_hat2)
-                    # print("Old fused state  ", fusedState)
-                    # print("dT1 + dT2        ", dT1+dT2)
-                    # print("P_0\n", P_0)
-                    # print("P_bar1\n", P_bar1)
-                    # print("P_hat1\n", P_hat1)
-                    # print("P_bar2\n", P_bar2)
-                    # print("P_hat2\n", P_hat2)
-                    # print()
+                    # # print("Old fused state  ", fusedState)
+                    # # print("dT1 + dT2        ", dT1+dT2)
+                    # # print("P_0\n", P_0)
+                    # # print("P_bar1\n", P_bar1)
+                    # # print("P_hat1\n", P_hat1)
+                    # # print("P_bar2\n", P_bar2)
+                    # # print("P_hat2\n", P_hat2)
+                    # print("NIS1               ", nis1)
+                    # print("NIS2               ", nis2)
+                    # print("Radar NIS          ", radar_nis[i])
+                    # print("AIS NIS            ", ais_nis[i])
+                    # print("Radar S\n", S_radar_list[i])
+                    # print("AIS NLLR           ", ais_nllr)
+                    # print("Radar NLLR         ", radar_nllr)
+                    # print("Old Radar NLLR     ", radar_nllr_list[i])
+                    # print("Old AIS NLLR       ", ais_nllr_list[i])
+                    # print("Fused NLLR         ", fusedNLLR)
+                    # # print()
 
-                    fusedNLLR = ais_nllr_list[i][k] + radar_nllr_list[i][k]
                     mmsi = self.__aisHistory__[-1].measurements[aisMeasurementIndex].mmsi
                     x_hat_list.append(x_hat2)
                     radar_indices_list.append(radarMeasurementIndex)
@@ -663,15 +686,22 @@ class Tracker():
 
         z_list = measurementList.getMeasurements()
         assert z_list.shape[1] == meas_dim
+        # print("z_list",z_list)
 
         z_tilde_list = kalman.z_tilde(z_list, z_hat_list, nNodes, meas_dim)
         assert z_tilde_list.shape == (nNodes, nMeas, meas_dim)
+        # print("z_tilde_list", z_tilde_list)
+
+        # print("S_list\n", np.array_str(S_list, precision=3))
+        # print("S_inv_list\n", np.array_str(S_inv_list, precision=3))
 
         nis = kalman.normalizedInnovationSquared(z_tilde_list, S_inv_list)
         assert nis.shape == (nNodes, nMeas,)
+        # print("NIS-full\n", nis)
 
         gated_filter = nis <= self.eta2
         assert gated_filter.shape == (nNodes, nMeas)
+        # print("gated_filter\n", gated_filter)
 
         gated_indices_list = [np.nonzero(gated_filter[row])[0]
                               for row in range(nNodes)]
@@ -699,7 +729,7 @@ class Tracker():
                 gated_x_hat_list,
                 P_hat_list,
                 S_list,
-                nis,
+                np.array(nis[gated_filter], ndmin=2),
                 nllr_list)
 
     def __predictDummyMeasurements(self, targetNodes):
