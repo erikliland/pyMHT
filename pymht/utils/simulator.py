@@ -11,6 +11,8 @@ import logging
 # ----------------------------------------------------------------------------
 log = logging.getLogger(__name__)
 
+def seed_simulator(seed):
+    np.random.seed(seed)
 
 def positionWithNoise(state, H, R):
     assert R.ndim == 2
@@ -30,9 +32,9 @@ def calculateNextState(target, timeStep, Phi, Q, Gamma):
     return Target(**{**target.__dict__, **newVar})
 
 
-def generateInitialTargets(randomSeed, numOfTargets, centerPosition,
-                           radarRange, meanSpeed, P_d):
-    np.random.seed(randomSeed)
+def generateInitialTargets(numOfTargets, centerPosition,
+                           radarRange, P_d, **kwargs):
+    usedMMSI = []
     initialTime = time.time()
     initialList = []
     speeds = np.array([1, 10, 12, 15, 28, 35], dtype=np.float32) * 0.5  # ~knots to m/s
@@ -40,17 +42,27 @@ def generateInitialTargets(randomSeed, numOfTargets, centerPosition,
         heading = np.random.uniform(0, 360)
         distance = np.random.uniform(0, radarRange * 0.8)
         px, py = _pol2cart(heading, distance)
+        px += centerPosition[0]
+        py += centerPosition[1]
         heading = np.random.uniform(0, 360)
         speed = np.random.choice(speeds)
         vx, vy = _pol2cart(heading, speed)
-        target = Target(np.array([px, py, vx, vy], dtype=np.float32), initialTime, P_d)
+        if kwargs.get('assignMMSI',False):
+            while True:
+                mmsi = np.random.randint(100000000,999999999)
+                if mmsi not in usedMMSI:
+                    usedMMSI.append(mmsi)
+                    break
+        else:
+            mmsi = None
+        target = Target(np.array([px, py, vx, vy], dtype=np.float32), initialTime, P_d, mmsi = mmsi)
         initialList.append(target)
     return initialList
 
 
-def simulateTargets(randomSeed, initialTargets, simTime, timeStep, Phi, Q, Gamma):
-    np.random.seed(randomSeed)
+def simulateTargets(initialTargets, simTime, timeStep, Phi, Q, Gamma):
     simList = []
+    assert all([type(initialTarget) == Target for initialTarget in initialTargets])
     simList.append(initialTargets)
     nTimeSteps = int(simTime / timeStep)
     for i in range(nTimeSteps):
@@ -61,9 +73,8 @@ def simulateTargets(randomSeed, initialTargets, simTime, timeStep, Phi, Q, Gamma
     return simList
 
 
-def simulateScans(randomSeed, simList, radarPeriod, H, R, lambda_phi=0,
+def simulateScans(simList, radarPeriod, H, R, lambda_phi=0,
                   rRange=None, p0=None, **kwargs):
-    np.random.seed(randomSeed)
     area = np.pi * np.power(rRange, 2)
     gClutter = lambda_phi * area
     lClutter = kwargs.get('lClutter', 2)
@@ -112,8 +123,7 @@ def simulateScans(randomSeed, simList, radarPeriod, H, R, lambda_phi=0,
     return scanList
 
 
-def simulateAIS(random_seed, sim_list, Phi_func, C, R, P_0, **kwargs):
-    np.random.seed(random_seed)
+def simulateAIS(sim_list, Phi_func, C, R, P_0, **kwargs):
     ais_measurements = []
     integerTime = kwargs.get('integerTime', True)
     aisPeriod = kwargs.get('period', 5.0)
