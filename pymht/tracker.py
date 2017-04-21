@@ -333,12 +333,15 @@ class Tracker():
             # Check outside range
             if trackNode.isOutsideRange(self.position.array, self.range):
                 deadTracks.append(trackIndex)
-                log.info("Terminating track {:} since it is out of range".format(trackIndex))
+                log.info("Terminating track {0:} at {1:} since it is out of range".format(
+                    trackIndex,np.array_str(self.__trackNodes__[trackIndex].x_0[0:2])))
 
             # Check if track is to insecure
             elif trackNode.cumulativeNLLR > self.NLLR_UPPER_LIMIT:
                 deadTracks.append(trackIndex)
-                log.info("Terminating track {:} since its cost is above the threshold".format(trackIndex))
+                log.info("Terminating track {0:} at {1:} since its cost is above the threshold ({2:.1f}>{3:.1f})".format(
+                    trackIndex, np.array_str(self.__trackNodes__[trackIndex].x_0[0:2]),
+                    trackNode.cumulativeNLLR, self.NLLR_UPPER_LIMIT))
 
         self._terminateTracks(deadTracks)
         if self.logTime:
@@ -1154,7 +1157,7 @@ class Tracker():
     def plotTerminatedTracks(self, **kwargs):
         colors = kwargs.get("colors", self._getColorCycle())
         for track in self.__terminatedTargets__:
-            track.plotTrack(c=next(colors), markInitial=True, markEnd=True, **kwargs)
+            track.plotTrack(c=next(colors), markInitial=True, markEnd=True, terminated = True, **kwargs)
 
     def plotMeasurementsFromTracks(self, stepsBack=float('inf'), **kwargs):
         for node in self.__trackNodes__:
