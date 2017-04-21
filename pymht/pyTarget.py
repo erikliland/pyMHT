@@ -474,7 +474,7 @@ class Target():
         if kwargs.get('markRoot', False) and root is not None:
             root.markRoot()
         if kwargs.get('markEnd', True):
-            self.markEnd()
+            self.markEnd(**kwargs)
         # colors = itertools.cycle(["r", "b", "g"])
         if kwargs.get('smooth', False) and self.getInitial().depth()>1:
             radarPeriod = kwargs.get('radarPeriod', self._estimateRadarPeriod())
@@ -562,12 +562,17 @@ class Target():
                  markerfacecolor='None',
                  markeredgecolor='black')
 
-    def markEnd(self):
+    def markEnd(self, **kwargs):
         plt.plot(self.x_0[0],
                  self.x_0[1],
                  "H",
                  markerfacecolor='None',
                  markeredgecolor='black')
+        if kwargs.get('terminated',False):
+            plt.plot(self.x_0[0],
+                     self.x_0[1],
+                     "*",
+                     markeredgecolor = 'red')
 
     def recDownPlotMeasurements(self, plottedMeasurements, **kwargs):
         if self.parent is not None:
