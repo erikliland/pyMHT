@@ -238,7 +238,9 @@ def predictAisMeasurements(scanTime, aisMeasurements):
         Q = model.Q(dT)
         x_bar, P_bar = kalman.predict(A, Q, model.Gamma, np.array(state, ndmin=2),
                                       np.array(measurement.covariance, ndmin=3))
-        aisPredictions.measurements.append(AIS_prediction(x_bar[0], P_bar[0], measurement.mmsi))
+        aisPredictions.measurements.append(
+            AIS_prediction(model.C_RADAR.dot(x_bar[0]),
+                           model.C_RADAR.dot(P_bar[0]).dot(model.C_RADAR.T), measurement.mmsi))
         log.debug(np.array_str(state)+"=>"+np.array_str(x_bar[0]))
         aisPredictions.aisMessages.append(measurement)
     assert len(aisPredictions.measurements) == len(aisMeasurements)
