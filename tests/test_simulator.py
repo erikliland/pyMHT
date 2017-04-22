@@ -31,6 +31,7 @@ def test_simulation_seed_consistency():
     global simLists
     simLists = []
     for i in range(nTests):
+        sim.seed_simulator(seed)
         simLists.append(sim.simulateTargets(initialTargets,
                                   simTime,
                                   simulationTimeStep,
@@ -46,7 +47,10 @@ def test_simulation_seed_consistency():
 
 def test_scan_simulation_consistency():
     global scanList
-    scanLists = [sim.simulateScans(simLists[0],
+    scanLists = []
+    for _ in range(nTests):
+        sim.seed_simulator(seed)
+        scanLists.append(sim.simulateScans(simLists[0],
                                      radarPeriod,
                                      model.C_RADAR,
                                      model.R_RADAR(model.sigmaR_RADAR_true),
@@ -56,7 +60,7 @@ def test_scan_simulation_consistency():
                                      shuffle=True,
                                      localClutter=True,
                                      globalClutter=True)
-                 for _ in range(nTests)]
+                         )
     for i in range(nTests-1):
         scanListA = scanLists[i]
         scanListB = scanLists[i+1]
@@ -72,6 +76,7 @@ def test_ais_simulation_consistency():
     global aisMeasurements
     aisMeasurementsList = []
     for i in range(nTests):
+        sim.seed_simulator(seed)
         aisMeasurementsList.append(
             sim.simulateAIS(simLists[i],
                           model.Phi,
