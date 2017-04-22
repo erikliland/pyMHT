@@ -103,6 +103,11 @@ class Target():
     def __sub__(self, other):
         return self.x_0 - other.x_0
 
+
+    def getXmlPositionStrings(self, precision=2):
+        return (str(round(self.x_0[0],precision)),
+                str(round(self.x_0[1],precision)))
+
     def getPosition(self):
         return Position(self.x_0[0:2])
 
@@ -450,6 +455,12 @@ class Target():
         else:
             return self.parent.backtrackMeasurement() + [self.measurement]
 
+    def backtrackNodes(self, stepsBack=float('inf')):
+        if self.parent is None:
+            return [self]
+        else:
+            return self.parent.backtrackNodes(stepsBack) + [self]
+
     def getSmoothTrack(self, radarPeriod):
         from pykalman import KalmanFilter
         roughTrackArray = self.backtrackMeasurement()
@@ -465,7 +476,6 @@ class Target():
         kf = KalmanFilter(transition_matrices=model.Phi(radarPeriod),
                           observation_matrices=model.C_RADAR,
                           initial_state_mean=initialState)
-        print("measurements",measurements.shape,"\n", measurements)
         kf = kf.em(measurements, n_iter=5)
         (smoothed_state_means, _) = kf.smooth(measurements)
         smoothedPositions = smoothed_state_means[:, 0:2]

@@ -12,18 +12,19 @@ import pymht.initiators.m_of_n as m_of_n
 import pymht.models.pv as model
 import time
 import signal
-import os
 import logging
 import datetime
 import copy
 import itertools
-import functools
 import matplotlib.pyplot as plt
 import numpy as np
 import multiprocessing as mp
 from scipy.sparse.csgraph import connected_components
 from ortools.linear_solver import pywraplp
 from termcolor import cprint
+import xml.etree.ElementTree as ET
+import os
+from pymht.utils.xmlDefinitions import *
 
 # ----------------------------------------------------------------------------
 # Instantiate logging object
@@ -108,12 +109,13 @@ class Tracker():
         self.__clusterList__ = []
         self.__aisHistory__ = []
         self.trackIdCounter = 0
+        self.groundTruth = kwargs.get('groundTruth')
 
         # Radar parameters
         self.position = p0
         self.range = radarRange
-        self.period = kwargs.get('period')
-        self.fixedPeriod = 'period' in kwargs
+        self.radarPeriod = kwargs.get('radarPeriod')
+        self.fixedPeriod = 'radarPeriod' in kwargs
         self.default_P_d = 0.8
 
         # Timing and logging
@@ -224,7 +226,7 @@ class Tracker():
         nTargets = len(self.__targetList__)
         timeSinceLastScan = scanTime - self.__scanHistory__[-1].time
         if not self.fixedPeriod:
-            self.period = timeSinceLastScan
+            self.radarPeriod = timeSinceLastScan
 
         unused_measurement_indices = np.ones(nMeas, dtype=np.bool)
 
@@ -284,7 +286,7 @@ class Tracker():
             self.tic['DynN'] = time.time()
 
         totalGrowTime = sum(targetProcessTimes)
-        growTimeLimit = self.period * 0.5
+        growTimeLimit = self.radarPeriod * 0.5
         tooSlowTotal = totalGrowTime > growTimeLimit
         targetProcessTimeLimit = growTimeLimit / len(self.__targetList__) if tooSlowTotal else 200e-3
         for targetIndex, target in enumerate(self.__targetList__):
@@ -308,7 +310,7 @@ class Tracker():
                 log.debug(infoString)
 
         tempTotalTime = time.time() - self.tic['Total']
-        if tempTotalTime > (self.period * 0.8):
+        if tempTotalTime > (self.radarPeriod * 0.8):
             self.N = max(1, self.N - 1)
             log.warning(
                 'Iteration took to long time ({0:.1f}ms), reducing window size roof from {1:} to  {2:}'.format(
@@ -370,12 +372,12 @@ class Tracker():
             self.toc['Init'] = time.time() - self.tic['Init']
 
         self.toc['Total'] = time.time() - self.tic['Total']
-        if self.toc['Total'] > self.period:
+        if self.toc['Total'] > self.radarPeriod:
             log.critical("Did not pass real time demand! Used {0:.0f}ms of {1:.0f}ms".format(
-                self.toc['Total'] * 1000, self.period * 1000))
-        elif self.toc['Total'] > self.period * 0.6:
+                self.toc['Total'] * 1000, self.radarPeriod * 1000))
+        elif self.toc['Total'] > self.radarPeriod * 0.6:
             log.warning("Did almost not pass real time demand! Used {0:.0f}ms of {1:.0f}ms".format(
-                self.toc['Total'] * 1000, self.period * 1000))
+                self.toc['Total'] * 1000, self.radarPeriod * 1000))
 
         if kwargs.get("checkIntegrity", False):
             self._checkTrackerIntegrity()
@@ -1152,7 +1154,7 @@ class Tracker():
     def plotActiveTracks(self, **kwargs):
         colors = kwargs.get("colors", self._getColorCycle())
         for i, track in enumerate(self.__trackNodes__):
-            track.plotTrack(root=self.__targetList__[i], index=i, c=next(colors), period=self.period, **kwargs)
+            track.plotTrack(root=self.__targetList__[i], index=i, c=next(colors), period=self.radarPeriod, **kwargs)
         if kwargs.get('markStates', True):
             defaults = {'labels': False, 'dummy': True, 'real': True, 'ais': True}
             self.plotStatesFromTracks(**{**defaults, **kwargs})
@@ -1276,8 +1278,8 @@ class Tracker():
         return timeLogString
 
     def printTimeLog(self,**kwargs):
-        tooLongWarning = self.toc['Total'] > self.period*0.6
-        tooLongCritical = self.toc['Total'] > self.period
+        tooLongWarning = self.toc['Total'] > self.radarPeriod * 0.6
+        tooLongCritical = self.toc['Total'] > self.radarPeriod
         on_color = 'on_green'
         on_color = 'on_yellow' if tooLongWarning else on_color
         on_color = 'on_red' if tooLongCritical else on_color
@@ -1291,6 +1293,84 @@ class Tracker():
 
     def printTimeLogHeader(self):
         print(self.getTimeLogHeader())
+
+    def exportToFile(self, path, **kwargs):
+        (head, tail) = os.path.split(path)
+        if not os.path.isdir(head):
+            os.makedirs(head)
+        root = ET.Element(simulationTag)
+        tree = ET.ElementTree(root)
+        self._storeGroundTruth(root,**kwargs)
+        self._storeEstimatedTracks(root,**kwargs)
+        tree.write(path)
+
+    def _storeGroundTruth(self, root,**kwargs):
+        if self.groundTruth is None: return
+        nSamples = len(self.groundTruth)
+        nTargets = len(self.groundTruth[0])
+        for i in range(nTargets):
+            trackElement = ET.SubElement(root,
+                                         trackTag,
+                                         attrib=groundtruthAttrib)
+            positions = ET.SubElement(trackElement,
+                                      positionsTag)
+            for j in range(nSamples):
+                simTarget = self.groundTruth[j][i]
+                position = ET.SubElement(positions,
+                              positionTag,
+                              attrib={timeTag:str(simTarget.time)}
+                              )
+                east, north = simTarget.getXmlPositionStrings()
+                ET.SubElement(position,
+                              northTag).text = north
+                ET.SubElement(position,
+                              eastTag).text = east
+                if simTarget.mmsi is not None:
+                    trackElement.attrib[mmsiTag] = str(simTarget.mmsi)
+
+    def _storeEstimatedTracks(self, root, **kwargs):
+
+        for target in self.__trackNodes__:
+            trackElement = ET.SubElement(root,
+                                         trackTag,
+                                         attrib=estimateAttrib)
+            unSmoothedPositions = ET.SubElement(trackElement,
+                                                positionsTag,
+                                                attrib={'type':unsmoothedTag})
+            smoothedPositionsElement = ET.SubElement(trackElement,
+                                                     positionsTag,
+                                                     attrib={'type': smoothedTag})
+            mmsi = target._getHistoricalMmsi()
+            if mmsi is not None:
+                trackElement.attrib[mmsiTag] = str(mmsi)
+
+            unSmoothedNodes = target.backtrackNodes()
+            smoothedPositions = target.getSmoothTrack(self.radarPeriod)
+
+            assert len(unSmoothedNodes) == len(smoothedPositions)
+
+            for node, sPos in zip(unSmoothedNodes, smoothedPositions):
+                position = ET.SubElement(unSmoothedPositions,
+                                         positionTag,
+                                         attrib={timeTag:str(node.time)}
+                                         )
+                east, north = node.getXmlPositionStrings()
+                ET.SubElement(position,
+                              northTag).text = north
+                ET.SubElement(position,
+                              eastTag).text = east
+
+                sPosition = ET.SubElement(smoothedPositionsElement,
+                                          positionTag,
+                                          attrib={timeTag:str(node.time)})
+                sEast = str(round(sPos[0], 2))
+                sNorth = str(round(sPos[1], 2))
+                ET.SubElement(sPosition,
+                              northTag).text = sNorth
+                ET.SubElement(sPosition,
+                              eastTag).text = sEast
+
+
 
 if __name__ == '__main__':
     pass
