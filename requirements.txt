@@ -6,3 +6,5 @@ ipywidgets
 psutil
 pytest
 coveralls
+coverage
+pykalman

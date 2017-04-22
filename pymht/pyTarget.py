@@ -1,53 +1,19 @@
-from pymht.utils.classDefinitions import Position, Velocity, MeasurementList
+from pymht.utils.classDefinitions import Position, Velocity
 import pymht.models.pv as model
-import pymht.utils.pyKalman as kalman
+import pymht.utils.kalman as kalman
 import pymht.utils.helpFunctions as hpf
 import numpy as np
-import time
 import copy
-import itertools
-import queue
+import datetime
 import matplotlib.pyplot as plt
-import multiprocessing as mp
-
-
-class TargetManager(mp.Process):
-    def __init__(self, q, idx):
-        super(TargetManager, self).__init__()
-        self.exit_flag = False
-        self.queue = q
-        self.idx = idx
-        self.rootNode = None
-
-    def exit_request(self):
-        print(self.idx, "got exit flag")
-        self.exit_flag = True
-        print(self.idx, self.exit_flag)
-
-    def parseInput(self, data):
-        dataType = type(data)
-        if dataType is MeasurementList:
-            return self.processMeasurements
-
-    def processMeasurements(self, measurementList):
-        print("Processing measurements")
-        pass
-
-    def run(self):
-        print("Starting run")
-        while not self.exit_flag:
-            try:
-                data = self.queue.get()
-                print(data)
-                functionToCall = self.parseInput(data)
-                functionToCall(*data)
-            except queue.Empty:
-                pass
-        print("Exiting run and terminating")
-
 
 class Target():
-    def __init__(self, time, scanNumber, x_0, P_0, **kwargs):
+    def __init__(self, time, scanNumber, x_0, P_0, ID=None, **kwargs):
+        assert (scanNumber is None) or (scanNumber == int(scanNumber))
+        assert x_0.ndim == 1
+        assert P_0.ndim == 2, str(P_0.shape)
+        assert x_0.shape[0] == P_0.shape[0] == P_0.shape[1]
+        self.ID = ID
         self.time = time
         self.scanNumber = scanNumber
         self.x_0 = x_0
@@ -58,15 +24,20 @@ class Target():
         self.measurement = kwargs.get("measurement")
         self.cumulativeNLLR = copy.copy(kwargs.get("cumulativeNLLR", 0))
         self.trackHypotheses = None
+        self.mmsi = kwargs.get('mmsi')
+        assert self.P_d >= 0
+        assert self.P_d <= 1
+        assert (type(self.parent) == type(self) or self.parent is None)
+        assert (self.mmsi is None) or (self.mmsi > 1e8)
 
     def __repr__(self):
-        if False:  # self.x_bar is not None:
+        if hasattr(self, 'kalmanFilter'):
             np.set_printoptions(precision=4, suppress=True)
             predStateStr = " \tPredState: " + str(self.kalmanFilter.x_bar)
         else:
             predStateStr = ""
 
-        if self.measurementNumber is not None:
+        if (self.measurementNumber is not None) and (self.scanNumber is not None):
             measStr = (" \tMeasurement(" +
                        str(self.scanNumber) +
                        ":" +
@@ -77,7 +48,7 @@ class Target():
         else:
             measStr = ""
 
-        if False:  # self.kalmanFilter.S is not None:
+        if hasattr(self, 'kalmanFilter'):
             lambda_, _ = np.linalg.eig(self.kalmanFilter.S)
             gateStr = (" \tGate size: (" +
                        '{:5.2f}'.format(np.sqrt(lambda_[0]) * 2) +
@@ -92,13 +63,21 @@ class Target():
         else:
             nllrStr = " \tcNLLR:" + '{: 06.4f}'.format(self.cumulativeNLLR)
 
-        return ("Time: " + time.strftime("%H:%M:%S", time.gmtime(self.time)) +
+        if self.mmsi is not None:
+            mmsiString = " \tMMSI: " + str(self.mmsi)
+        else:
+            mmsiString = ""
+
+        timeString = datetime.datetime.fromtimestamp(self.time).strftime("%H:%M:%S.%f")
+
+        return ("Time: " + timeString +
                 "\t" + str(self.getPosition()) +
                 " \t" + str(self.getVelocity()) +
                 nllrStr +
                 measStr +
                 predStateStr +
-                gateStr
+                gateStr +
+                mmsiString
                 )
 
     def __str__(self, **kwargs):
@@ -135,7 +114,7 @@ class Target():
             return self
         return self.parent.stepBack(stepsBack - 1)
 
-    def getRoot(self):
+    def getInitial(self):
         return self.stepBack(float('inf'))
 
     def getNumOfNodes(self):
@@ -152,94 +131,112 @@ class Target():
         self.kalmanFilter._precalculateMeasurementUpdate()
 
     def isOutsideRange(self, position, range):
-        distance = np.linalg.norm(model.C.dot(self.x_0) - position)
+        distance = np.linalg.norm(model.C_RADAR.dot(self.x_0) - position)
         return distance > range
+
+    def haveNoNeightbours(self, targetList, thresholdDistance):
+        for target in targetList:
+            leafNodes = target.getLeafNodes()
+            for node in leafNodes:
+                delta = node.x_0[0:2] - self.x_0[0:2]
+                distance = np.linalg.norm(delta)
+                if distance < thresholdDistance:
+                    return False
+        return True
 
     def gateAndCreateNewHypotheses(self, measurementList, scanNumber, lambda_ex, eta2, kfVars):
         assert self.scanNumber == scanNumber - 1, "inconsistent scan numbering"
-        # nMeasurements = len(measurementList.measurements)
-        x_bar, P_bar, z_hat, S, S_inv, K, P_hat = kalman.numpyPredict(
+        x_bar, P_bar, z_hat, S, S_inv, K, P_hat = kalman.precalc(
             *kfVars, self.x_0.reshape(1, 4), self.P_0.reshape(1, 4, 4))
-
         scanTime = measurementList.time
         z_list = measurementList.measurements
         z_tilde = z_list - z_hat
         nis = self._normalizedInnovationSquared(z_tilde, S_inv.reshape(2, 2))
         gatedMeasurements = nis <= eta2
-        # nMeasurementInsideGate = np.sum(gatedMeasurements)
-
-        # print(nMeasurements)
-        # print("x_0", self.x_0)
-        # print("x_bar", x_bar)
-        # print("z_hat", z_hat)
-        # print("S_inv", S_inv)
-        # print("Z_list", z_list)
-        # print("z_tilde", z_tilde)
-        # print("nis", nis)
-        # print("gatedMeasurements", gatedMeasurements)
-
-        self.trackHypotheses = [self.createZeroHypothesis(scanTime,
-                                                          scanNumber,
-                                                          x_bar[0],
-                                                          P_bar[0])]
-
+        self.trackHypotheses = [
+            self.createZeroHypothesis(scanTime, scanNumber, x_bar[0], P_bar[0])]
         newNodes = []
-        associatedMeasurements = set()
+        usedMeasurementIndices = set()
         for measurementIndex, insideGate in enumerate(gatedMeasurements):
-            if insideGate:
-                nllr = kalman.nllr(lambda_ex,
-                                   self.P_d,
-                                   z_tilde[measurementIndex],
-                                   S,
-                                   S_inv)[0]
-                x_hat = kalman.numpyFilter(
-                    x_bar, K.reshape(4, 2), z_tilde[measurementIndex].reshape(1, 2)).reshape(4, )
-                assert x_hat.shape == self.x_0.shape
-                newNodes.append(
-                    Target(scanTime,
-                           scanNumber,
-                           x_hat,
-                           P_hat[0],
-                           measurementNumber=measurementIndex + 1,
-                           measurement=z_list[measurementIndex],
-                           cumulativeNLLR=self.cumulativeNLLR + nllr,
-                           P_d=self.P_d,
-                           parent=self
-                           )
-                )
-                associatedMeasurements.add((scanNumber, measurementIndex + 1))
-
+            if not insideGate: continue
+            nllr = kalman.nllr(lambda_ex, self.P_d, S, nis[measurementIndex])[0]
+            x_hat = kalman.numpyFilter(
+                x_bar, K.reshape(4, 2), z_tilde[measurementIndex].reshape(1, 2)).reshape(4, )
+            assert x_hat.shape == self.x_0.shape
+            newNodes.append(Target(time=scanTime,
+                                   scanNumber=scanNumber,
+                                   x_0=x_hat,
+                                   P_0=P_hat[0],
+                                   ID=self.ID,
+                                   measurementNumber=measurementIndex + 1,
+                                   measurement=z_list[measurementIndex],
+                                   cumulativeNLLR=self.cumulativeNLLR + nllr,
+                                   P_d=self.P_d,
+                                   parent=self
+                                   )
+                            )
+            usedMeasurementIndices.add(measurementIndex)
         self.trackHypotheses.extend(newNodes)
-        return associatedMeasurements
+        return usedMeasurementIndices
 
     def spawnNewNodes(self, scanTime, scanNumber, x_bar, P_bar, measurementsIndices,
-                      measurements, states, covariance, nllrList):
+                      measurements, states, covariance, nllrList, fusedAisData=None):
         assert scanTime > self.time
         assert self.scanNumber == scanNumber - 1, str(self.scanNumber) + "->" + str(scanNumber)
         assert x_bar.shape == (4,)
         assert P_bar.shape == (4, 4)
         assert all([state.shape == (4,) for state in states])
         assert covariance.shape == (4, 4)
-        nNewMeasurementsIndices = len(measurementsIndices)
-        nNewMeasurements = len(measurements)
+        nNewRadarMeasurementsIndices = len(measurementsIndices)
         nNewStates = len(states)
         nNewScores = len(nllrList)
-        assert nNewMeasurementsIndices == nNewMeasurements == nNewStates == nNewScores
+        assert nNewRadarMeasurementsIndices == nNewStates == nNewScores
         self.trackHypotheses = [self.createZeroHypothesis(
             scanTime, scanNumber, x_bar, P_bar)]
 
         self.trackHypotheses.extend(
-            [Target(scanTime,
-                    scanNumber,
+            [Target(time=scanTime,
+                    scanNumber=scanNumber,
                     x_0=states[i],
                     P_0=covariance,
+                    ID=self.ID,
                     measurementNumber=measurementsIndices[i] + 1,
-                    measurement=measurements[i],
+                    measurement=measurements[measurementsIndices[i]],
                     cumulativeNLLR=self.cumulativeNLLR + nllrList[i],
                     P_d=self.P_d,
                     parent=self
-                    ) for i in range(nNewMeasurements)]
+                    ) for i in range(nNewStates)]
         )
+
+        if fusedAisData is None: return
+        (fusedStates,
+         fusedCovariance,
+         fusedMeasurementIndices,
+         fusedNllr,
+         fusedMMSI) = fusedAisData
+        historicalMmsi = self._getHistoricalMmsi()
+        self.trackHypotheses.extend(
+            [Target(time=scanTime,
+                    scanNumber=scanNumber,
+                    x_0=fusedStates[i],
+                    P_0=fusedCovariance,
+                    ID=self.ID,
+                    measurementNumber=fusedMeasurementIndices[i] + 1,
+                    measurement=measurements[fusedMeasurementIndices[i]],
+                    cumulativeNLLR=self.cumulativeNLLR + fusedNllr[i],
+                    mmsi=fusedMMSI[i],
+                    P_d=self.P_d,
+                    parent=self)
+             for i in range(len(fusedMeasurementIndices))
+             if (historicalMmsi is None) or (fusedMMSI[i] == historicalMmsi)
+             ])
+
+    def _getHistoricalMmsi(self):
+        if self.mmsi is not None:
+            return self.mmsi
+        if self.parent is not None:
+            return self.parent._getHistoricalMmsi()
+        return None
 
     def _normalizedInnovationSquared(self, measurementsResidual, S_inv):
         return np.sum(measurementsResidual.dot(S_inv) *
@@ -250,7 +247,6 @@ class Target():
         nis = measurementResidual.T.dot(S_inv).dot(measurementResidual)
         nllr = (0.5 * nis +
                 np.log((lambda_ex * np.sqrt(np.linalg.det(2. * np.pi * S))) / P_d))
-        print("nllr", nllr)
         return self.cumulativeNLLR + nllr
 
     def measurementIsInsideErrorEllipse(self, measurement, eta2):
@@ -258,10 +254,11 @@ class Target():
         return measRes.T.dot(self.invResidualCovariance).dot(measRes) <= eta2
 
     def createZeroHypothesis(self, time, scanNumber, x_0, P_0):
-        return Target(time,
-                      scanNumber,
-                      x_0,
-                      P_0,
+        return Target(time=time,
+                      scanNumber=scanNumber,
+                      x_0=x_0,
+                      P_0=P_0,
+                      ID=self.ID,
                       measurementNumber=0,
                       cumulativeNLLR=self.cumulativeNLLR - np.log(1 - self.P_d),
                       P_d=self.P_d,
@@ -309,20 +306,27 @@ class Target():
         if (self.measurementNumber == 0) or (root):
             return subSet
         else:
-            return {(self.scanNumber, self.measurementNumber)} | subSet
+            radarMeasurement = (self.scanNumber, self.measurementNumber)
+            if self.mmsi is not None:
+                aisMeasurement = (self.scanNumber, self.mmsi)
+                tempSet = {radarMeasurement, aisMeasurement}
+            else:
+                tempSet = {radarMeasurement}
+            return tempSet | subSet
 
-    def processNewMeasurementRec(self, measurementList, measurementSet,
+    def processNewMeasurementRec(self, measurementList, usedMeasurementSet,
                                  scanNumber, lambda_ex, eta2, kfVars):
         if self.trackHypotheses is None:
-            measurementSet.update(self.gateAndCreateNewHypotheses(measurementList,
-                                                                  scanNumber,
-                                                                  lambda_ex,
-                                                                  eta2, kfVars)
-                                  )
+            usedMeasurementIndices = self.gateAndCreateNewHypotheses(measurementList,
+                                                                     scanNumber,
+                                                                     lambda_ex,
+                                                                     eta2,
+                                                                     kfVars)
+            usedMeasurementSet.update(usedMeasurementIndices)
         else:
             for hyp in self.trackHypotheses:
                 hyp.processNewMeasurementRec(
-                    measurementList, measurementSet, scanNumber, lambda_ex, eta2, kfVars)
+                    measurementList, usedMeasurementSet, scanNumber, lambda_ex, eta2, kfVars)
 
     def _selectBestHypothesis(self):
         def recSearchBestHypothesis(target, bestScore, bestHypothesis):
@@ -392,11 +396,28 @@ class Target():
                          str(hyp.measurementNumber) + ")")
                     recCheckReferenceIntegrety(hyp)
 
-        recCheckReferenceIntegrety(self.getRoot())
+        recCheckReferenceIntegrety(self.getInitial())
+
+    def _checkMmsiIntegrity(self, activeMMSI=None):
+        if self.mmsi is not None:
+            if activeMMSI is None:
+                if self.parent is not None:
+                    self.parent._checkMmsiIntegrity(self.mmsi)
+            else:
+                assert self.mmsi == activeMMSI, "A track is associated with multiple MMSI's"
+                if self.parent is not None:
+                    self.parent._checkMmsiIntegrity(self.mmsi)
+        else:
+            if self.parent is not None:
+                self.parent._checkMmsiIntegrity(activeMMSI)
+
+    def _estimateRadarPeriod(self):
+        if self.parent is not None:
+            return self.time - self.parent.time
 
     def plotValidationRegion(self, eta2, stepsBack=0):
-        print("plotValidationRegion is not functional in this version")
-        return
+        if not hasattr(self, 'kalmanFilter'):
+            raise NotImplementedError("plotValidationRegion is not functional in this version")
         if self.kalmanFilter.S is not None:
             self._plotCovarianceEllipse(eta2)
         if (self.parent is not None) and (stepsBack > 0):
@@ -419,18 +440,59 @@ class Target():
 
     def backtrackPosition(self, stepsBack=float('inf')):
         if self.parent is None:
-            return [self.getPosition()]
+            return [self.x_0[0:2]]
         else:
-            return self.parent.backtrackPosition(stepsBack) + [self.getPosition()]
+            return self.parent.backtrackPosition(stepsBack) + [self.x_0[0:2]]
 
-    def plotTrack(self, stepsBack=float('inf'), **kwargs):
+    def backtrackMeasurement(self):
+        if self.parent is None:
+            return [self.measurement]
+        else:
+            return self.parent.backtrackMeasurement() + [self.measurement]
+
+    def getSmoothTrack(self, radarPeriod):
+        from pykalman import KalmanFilter
+        roughTrackArray = self.backtrackMeasurement()
+        initialState = self.getInitial().x_0
+        for i, m in enumerate(roughTrackArray):
+            if m is None:
+                roughTrackArray[i] = [np.NaN, np.NaN]
+        measurements = np.ma.asarray(roughTrackArray)
+        for i, m in enumerate(measurements):
+            if np.isnan(np.sum(m)):
+                measurements[i] = np.ma.masked
+        assert measurements.shape[1] == 2, str(measurements.shape)
+        kf = KalmanFilter(transition_matrices=model.Phi(radarPeriod),
+                          observation_matrices=model.C_RADAR,
+                          initial_state_mean=initialState)
+        print("measurements",measurements.shape,"\n", measurements)
+        kf = kf.em(measurements, n_iter=5)
+        (smoothed_state_means, _) = kf.smooth(measurements)
+        smoothedPositions = smoothed_state_means[:, 0:2]
+        assert smoothedPositions.shape == measurements.shape, \
+            str(smoothedPositions.shape) + str(measurements.shape)
+        return smoothedPositions
+
+    def plotTrack(self, root=None, stepsBack=float('inf'), **kwargs):
         if kwargs.get('markInitial', False) and stepsBack == float('inf'):
-            self.getRoot().plotInitial()
-        if kwargs.get('markEnd'):
-            self.plotEnd()
-        colors = itertools.cycle(["r", "b", "g"])
-        track = self.backtrackPosition(stepsBack)
-        plt.plot([p.x() for p in track], [p.y() for p in track], c=kwargs.get('c'))
+            self.getInitial().markInitial(**kwargs)
+        if kwargs.get('markID', True):
+            self.getInitial().markID(offset=20,**kwargs)
+        if kwargs.get('markRoot', False) and root is not None:
+            root.markRoot()
+        if kwargs.get('markEnd', True):
+            self.markEnd(**kwargs)
+        if kwargs.get('smooth', False) and self.getInitial().depth()>1:
+            radarPeriod = kwargs.get('radarPeriod', self._estimateRadarPeriod())
+            track = self.getSmoothTrack(radarPeriod)
+            linestyle = 'dashed'
+        else:
+            track = self.backtrackPosition(stepsBack)
+            linestyle = 'solid'
+        plt.plot([p[0] for p in track],
+                 [p[1] for p in track],
+                 c=kwargs.get('c'),
+                 linestyle=linestyle)
 
     def plotMeasurement(self, stepsBack=0, **kwargs):
         if (self.measurement is not None) and kwargs.get('real', True):
@@ -441,6 +503,23 @@ class Target():
 
         if (self.parent is not None) and (stepsBack > 0):
             self.parent.plotMeasurement(stepsBack - 1, **kwargs)
+
+    def plotStates(self, stepsBack=0, **kwargs):
+        if (self.mmsi is not None) and kwargs.get('ais', True):
+            Position(self.x_0).plot(self.measurementNumber,
+                                    self.scanNumber,
+                                    self.mmsi,
+                                    **kwargs)
+        elif (self.measurementNumber == 0) and kwargs.get("dummy", True):
+            Position(self.x_0).plot(self.measurementNumber,
+                                    self.scanNumber,
+                                    **kwargs)
+        elif (self.measurementNumber > 0) and kwargs.get('real', True):
+            Position(self.x_0).plot(self.measurementNumber,
+                                    self.scanNumber,
+                                    **kwargs)
+        if (self.parent is not None) and (stepsBack > 0):
+            self.parent.plotStates(stepsBack - 1, **kwargs)
 
     def plotVelocityArrow(self, stepsBack=1):
         if self.kalmanFilter.x_bar is not None:
@@ -460,20 +539,24 @@ class Target():
         if (self.parent is not None) and (stepsBack > 0):
             self.parent.plotVelocityArrow(stepsBack - 1)
 
-    def plotInitial(self, **kwargs):
+    def markInitial(self, **kwargs):
         plt.plot(self.x_0[0],
                  self.x_0[1],
-                 "s",
-                 markerfacecolor=(1, 1, 0, 0.),
+                 "*",
+                 markerfacecolor='black',
                  markeredgecolor='black')
-        index = kwargs.get("index")
-        if index is not None:
+
+    def markID(self,**kwargs):
+        index = kwargs.get("index", self.ID)
+        if (index is not None):
             ax = plt.subplot(111)
             normVelocity = (self.x_0[2:4] /
                             np.linalg.norm(self.x_0[2:4]))
-            offset = kwargs.get('offset', np.zeros_like(normVelocity))
+            offsetScale = kwargs.get('offset', 0.0)
+            offset = offsetScale * np.array(normVelocity)
             position = self.x_0[0:2] - offset
-            horizontalalignment, verticalalignment = hpf._getBestTextPosition(normVelocity)
+            (horizontalalignment,
+             verticalalignment) = hpf._getBestTextPosition(normVelocity)
             ax.text(position[0],
                     position[1],
                     "T" + str(index),
@@ -481,12 +564,45 @@ class Target():
                     horizontalalignment=horizontalalignment,
                     verticalalignment=verticalalignment)
 
-    def plotEnd(self):
+    def markRoot(self):
         plt.plot(self.x_0[0],
                  self.x_0[1],
-                 "h",
-                 markerfacecolor=(1, 1, 0, 0.),
+                 's',
+                 markerfacecolor='None',
                  markeredgecolor='black')
+
+    def markEnd(self, **kwargs):
+        plt.plot(self.x_0[0],
+                 self.x_0[1],
+                 "H",
+                 markerfacecolor='None',
+                 markeredgecolor='black')
+        if kwargs.get('terminated',False):
+            plt.plot(self.x_0[0],
+                     self.x_0[1],
+                     "*",
+                     markeredgecolor = 'red')
+
+    def recDownPlotMeasurements(self, plottedMeasurements, **kwargs):
+        if self.parent is not None:
+            if self.measurementNumber == 0:
+                self.plotMeasurement(**kwargs)
+            else:
+                if kwargs.get('real', True):
+                    measurementID = (self.scanNumber, self.measurementNumber)
+                    if measurementID not in plottedMeasurements:
+                        self.plotMeasurement(**kwargs)
+                        plottedMeasurements.add(measurementID)
+        if self.trackHypotheses is not None:
+            for hyp in self.trackHypotheses:
+                hyp.recDownPlotMeasurements(plottedMeasurements, **kwargs)
+
+    def recDownPlotStates(self, **kwargs):
+        if self.parent is not None:
+            self.plotStates(**kwargs)
+        if self.trackHypotheses is not None:
+            for hyp in self.trackHypotheses:
+                hyp.recDownPlotStates(**kwargs)
 
 
 if __name__ == '__main__':

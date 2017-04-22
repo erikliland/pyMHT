@@ -19,6 +19,8 @@ test.py
 *.mps
 .sol
 *.sol
+.iml
+*.iml
 
 
 # C extensions
@@ -112,3 +114,6 @@ ENV/
 
 # Rope project settings
 .ropeproject
+.idea/dictionaries/
+.idea/inspectionProfiles/
+mpTest.py

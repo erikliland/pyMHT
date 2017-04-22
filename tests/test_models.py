@@ -8,8 +8,8 @@ def test_Q():
 
 
 def test_R():
-    R_1 = pv.R()
-    R_2 = pv.R(2)
+    R_1 = pv.R_RADAR()
+    R_2 = pv.R_RADAR(2)
     assert R_1.shape == R_2.shape
 
 

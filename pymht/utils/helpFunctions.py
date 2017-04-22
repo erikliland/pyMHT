@@ -1,11 +1,21 @@
 from __future__ import print_function
-
 import matplotlib.pyplot as plt
 import numpy as np
-
-# import itertools
 import copy
+from pymht.utils.classDefinitions import MeasurementList, AIS_prediction, PredictionList
+import pymht.utils.kalman as kalman
+import pymht.models.pv as model
+import logging
+import datetime
 
+# ----------------------------------------------------------------------------
+# Instantiate logging object
+# ----------------------------------------------------------------------------
+log = logging.getLogger(__name__)
+
+log.setLevel(logging.DEBUG)
+log.debug("Loaded helpFunctions")
+log.info("Loaded helpFunctions")
 
 def _getBestTextPosition(normVelocity, **kwargs):
     DEBUG = kwargs.get('debug', False)
@@ -42,6 +52,7 @@ def plotVelocityArrowFromNode(nodes, **kwargs):
             plotVelocityArrow(node)
         if stepsLeft > 0 and (node.parent is not None):
             recPlotVelocityArrowFromNode(node.parent, stepsLeft - 1)
+
     for node in nodes:
         recPlotVelocityArrowFromNode(node, kwargs.get("stepsBack", 1))
 
@@ -51,8 +62,8 @@ def plotRadarOutline(centerPosition, radarRange, **kwargs):
     if kwargs.get("markCenter", True):
         plt.plot(centerPosition.x(), centerPosition.y(), "bo")
     ax = plt.subplot(111)
-    circle = Ellipse((centerPosition.x(),centerPosition.y()), radarRange * 2, radarRange * 2,
-                     edgecolor = "black", linestyle="dotted", facecolor="none")
+    circle = Ellipse((centerPosition.x(), centerPosition.y()), radarRange * 2, radarRange * 2,
+                     edgecolor="black", linestyle="dotted", facecolor="none")
     ax.add_artist(circle)
 
 
@@ -61,6 +72,7 @@ def plotTrueTrack(simList, **kwargs):
     newArgs = copy.copy(kwargs)
     if "colors" in newArgs:
         del newArgs["colors"]
+
     nScan = len(simList)
     nTargets = len(simList[0])
     posArray = np.zeros((nScan, nTargets, 2))
@@ -69,8 +81,10 @@ def plotTrueTrack(simList, **kwargs):
     for col in range(nTargets):
         plt.plot(posArray[:, col, 0], posArray[:, col, 1], '.', alpha=0.7,
                  markeredgewidth=0.6, color=next(colors) if colors is not None else None, **newArgs)
-    for col in range(nTargets):
-        plt.plot(posArray[0,col,0], posArray[0,col,1], '.', color = 'black')
+    if kwargs.get('markStart', True):
+       for col in range(nTargets):
+            plt.plot(posArray[0, col, 0], posArray[0, col, 1], '.', color='black')
+
 
 def printScanList(scanList):
     for index, measurement in enumerate(scanList):
@@ -90,11 +104,12 @@ def printHypothesesScore(targetList):
         if target.trackHypotheses is not None:
             for hyp in target.trackHypotheses:
                 recPrint(hyp, targetIndex)
+
     for targetIndex, target in enumerate(targetList):
-        print(	"\tTarget: ", targetIndex,
-               "\tInit",	target.initial.position,
-               "\tPred",	target.predictedPosition(),
-               "\tMeas",	target.measurement, sep="")
+        print("\tTarget: ", targetIndex,
+              "\tInit", target.initial.position,
+              "\tPred", target.predictedPosition(),
+              "\tMeas", target.measurement, sep="")
 
 
 # def nllr(*args):
@@ -122,7 +137,7 @@ def printHypothesesScore(targetList):
 #         raise ValueError("nllr() takes either 1 or 5 arguments (", len(args), ") given")
 
 
-def backtrackMeasurementsIndices(selectedNodes, steps=None):
+def backtrackMeasurementNumbers(selectedNodes, steps=None):
     def recBacktrackNodeMeasurements(node, measurementBacktrack, stepsLeft=None):
         if node.parent is not None:
             if stepsLeft is None:
@@ -132,12 +147,13 @@ def backtrackMeasurementsIndices(selectedNodes, steps=None):
                 measurementBacktrack.append(node.measurementNumber)
                 recBacktrackNodeMeasurements(
                     node.parent, measurementBacktrack, stepsLeft - 1)
+
     measurementsBacktracks = []
     for node in selectedNodes:
-        measurementBacktrack = []
-        recBacktrackNodeMeasurements(node, measurementBacktrack, steps)
-        measurementBacktrack.reverse()
-        measurementsBacktracks.append(measurementBacktrack)
+        measurementNumberBacktrack = []
+        recBacktrackNodeMeasurements(node, measurementNumberBacktrack, steps)
+        measurementNumberBacktrack.reverse()
+        measurementsBacktracks.append(measurementNumberBacktrack)
     return measurementsBacktracks
 
 
@@ -151,6 +167,7 @@ def backtrackNodePositions(selectedNodes, **kwargs):
                 raise ValueError("Inconsistent scanNumber-ing:",
                                  node.parent.scanNumber, "->", node.scanNumber)
             recBacktrackNodePosition(node.parent, measurementList)
+
     try:
         trackList = []
         for leafNode in selectedNodes:
@@ -205,3 +222,26 @@ def solverIsAvailable(solverString):
     if s == "gurobi":
         return pulp.GUROBI_CMD().available() != False
     return False
+
+
+def predictAisMeasurements(scanTime, aisMeasurements):
+    assert len(aisMeasurements) > 0
+    aisPredictions = PredictionList(scanTime)
+    scanTimeString = datetime.datetime.fromtimestamp(scanTime).strftime("%H:%M:%S.%f")
+    for measurement in aisMeasurements:
+        aisTimeString = datetime.datetime.fromtimestamp(measurement.time).strftime("%H:%M:%S.%f")
+        log.debug("Predicting AIS from " + aisTimeString + " to " + scanTimeString)
+        dT = scanTime - measurement.time
+        assert dT > 0
+        state = measurement.state
+        A = model.Phi(dT)
+        Q = model.Q(dT)
+        x_bar, P_bar = kalman.predict(A, Q, model.Gamma, np.array(state, ndmin=2),
+                                      np.array(measurement.covariance, ndmin=3))
+        aisPredictions.measurements.append(
+            AIS_prediction(model.C_RADAR.dot(x_bar[0]),
+                           model.C_RADAR.dot(P_bar[0]).dot(model.C_RADAR.T), measurement.mmsi))
+        log.debug(np.array_str(state)+"=>"+np.array_str(x_bar[0]))
+        aisPredictions.aisMessages.append(measurement)
+    assert len(aisPredictions.measurements) == len(aisMeasurements)
+    return aisPredictions
