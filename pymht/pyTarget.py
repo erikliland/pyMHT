@@ -8,11 +8,12 @@ import datetime
 import matplotlib.pyplot as plt
 
 class Target():
-    def __init__(self, time, scanNumber, x_0, P_0, **kwargs):
+    def __init__(self, time, scanNumber, x_0, P_0, ID=None, **kwargs):
         assert (scanNumber is None) or (scanNumber == int(scanNumber))
         assert x_0.ndim == 1
         assert P_0.ndim == 2, str(P_0.shape)
         assert x_0.shape[0] == P_0.shape[0] == P_0.shape[1]
+        self.ID = ID
         self.time = time
         self.scanNumber = scanNumber
         self.x_0 = x_0
@@ -162,10 +163,11 @@ class Target():
             x_hat = kalman.numpyFilter(
                 x_bar, K.reshape(4, 2), z_tilde[measurementIndex].reshape(1, 2)).reshape(4, )
             assert x_hat.shape == self.x_0.shape
-            newNodes.append(Target(scanTime,
-                                   scanNumber,
-                                   x_hat,
-                                   P_hat[0],
+            newNodes.append(Target(time=scanTime,
+                                   scanNumber=scanNumber,
+                                   x_0=x_hat,
+                                   P_0=P_hat[0],
+                                   ID=self.ID,
                                    measurementNumber=measurementIndex + 1,
                                    measurement=z_list[measurementIndex],
                                    cumulativeNLLR=self.cumulativeNLLR + nllr,
@@ -193,10 +195,11 @@ class Target():
             scanTime, scanNumber, x_bar, P_bar)]
 
         self.trackHypotheses.extend(
-            [Target(scanTime,
-                    scanNumber,
+            [Target(time=scanTime,
+                    scanNumber=scanNumber,
                     x_0=states[i],
                     P_0=covariance,
+                    ID=self.ID,
                     measurementNumber=measurementsIndices[i] + 1,
                     measurement=measurements[measurementsIndices[i]],
                     cumulativeNLLR=self.cumulativeNLLR + nllrList[i],
@@ -213,10 +216,11 @@ class Target():
          fusedMMSI) = fusedAisData
         historicalMmsi = self._getHistoricalMmsi()
         self.trackHypotheses.extend(
-            [Target(scanTime,
-                    scanNumber,
+            [Target(time=scanTime,
+                    scanNumber=scanNumber,
                     x_0=fusedStates[i],
                     P_0=fusedCovariance,
+                    ID=self.ID,
                     measurementNumber=fusedMeasurementIndices[i] + 1,
                     measurement=measurements[fusedMeasurementIndices[i]],
                     cumulativeNLLR=self.cumulativeNLLR + fusedNllr[i],
@@ -250,10 +254,11 @@ class Target():
         return measRes.T.dot(self.invResidualCovariance).dot(measRes) <= eta2
 
     def createZeroHypothesis(self, time, scanNumber, x_0, P_0):
-        return Target(time,
-                      scanNumber,
-                      x_0,
-                      P_0,
+        return Target(time=time,
+                      scanNumber=scanNumber,
+                      x_0=x_0,
+                      P_0=P_0,
+                      ID=self.ID,
                       measurementNumber=0,
                       cumulativeNLLR=self.cumulativeNLLR - np.log(1 - self.P_d),
                       P_d=self.P_d,
@@ -470,12 +475,13 @@ class Target():
 
     def plotTrack(self, root=None, stepsBack=float('inf'), **kwargs):
         if kwargs.get('markInitial', False) and stepsBack == float('inf'):
-            self.getInitial().markInitial(offset=2, **kwargs)
+            self.getInitial().markInitial(**kwargs)
+        if kwargs.get('markID', True):
+            self.getInitial().markID(offset=20,**kwargs)
         if kwargs.get('markRoot', False) and root is not None:
             root.markRoot()
         if kwargs.get('markEnd', True):
             self.markEnd(**kwargs)
-        # colors = itertools.cycle(["r", "b", "g"])
         if kwargs.get('smooth', False) and self.getInitial().depth()>1:
             radarPeriod = kwargs.get('radarPeriod', self._estimateRadarPeriod())
             track = self.getSmoothTrack(radarPeriod)
@@ -539,15 +545,18 @@ class Target():
                  "*",
                  markerfacecolor='black',
                  markeredgecolor='black')
-        index = kwargs.get("index")
-        if (index is not None) and kwargs.get('markInitial',True):
+
+    def markID(self,**kwargs):
+        index = kwargs.get("index", self.ID)
+        if (index is not None):
             ax = plt.subplot(111)
             normVelocity = (self.x_0[2:4] /
                             np.linalg.norm(self.x_0[2:4]))
             offsetScale = kwargs.get('offset', 0.0)
             offset = offsetScale * np.array(normVelocity)
             position = self.x_0[0:2] - offset
-            horizontalalignment, verticalalignment = hpf._getBestTextPosition(normVelocity)
+            (horizontalalignment,
+             verticalalignment) = hpf._getBestTextPosition(normVelocity)
             ax.text(position[0],
                     position[1],
                     "T" + str(index),

@@ -107,6 +107,7 @@ class Tracker():
         self.__terminatedTargets__ = []
         self.__clusterList__ = []
         self.__aisHistory__ = []
+        self.trackIdCounter = 0
 
         # Radar parameters
         self.position = p0
@@ -176,6 +177,8 @@ class Tracker():
             target = copy.copy(newTarget)
             target.scanNumber = len(self.__scanHistory__)
             target.P_d = self.default_P_d
+            target.ID = copy.copy(self.trackIdCounter)
+            self.trackIdCounter += 1
             # target.P_0 = self.P_0
             # assert target.measurementNumber is not None
             assert target.measurement is not None
