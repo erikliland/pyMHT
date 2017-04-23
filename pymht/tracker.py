@@ -43,10 +43,7 @@ logging.basicConfig(level=logging.DEBUG,
 # formatter = logging.Formatter('%(name)-12s: %(levelname)-8s %(message)s')
 # console.setFormatter(formatter)
 log = logging.getLogger(__name__)
-
-
 # log.addHandler(console)
-
 
 class Tracker():
 
@@ -1304,31 +1301,7 @@ class Tracker():
         self._storeEstimatedTracks(root,**kwargs)
         tree.write(path)
 
-    def _storeGroundTruth(self, root,**kwargs):
-        if self.groundTruth is None: return
-        nSamples = len(self.groundTruth)
-        nTargets = len(self.groundTruth[0])
-        for i in range(nTargets):
-            trackElement = ET.SubElement(root,
-                                         trackTag,
-                                         attrib=groundtruthAttrib)
-            positions = ET.SubElement(trackElement,
-                                      positionsTag)
-            for j in range(nSamples):
-                simTarget = self.groundTruth[j][i]
-                position = ET.SubElement(positions,
-                              positionTag,
-                              attrib={timeTag:str(simTarget.time)}
-                              )
-                east, north = simTarget.getXmlPositionStrings()
-                ET.SubElement(position,
-                              northTag).text = north
-                ET.SubElement(position,
-                              eastTag).text = east
-                if simTarget.mmsi is not None:
-                    trackElement.attrib[mmsiTag] = str(simTarget.mmsi)
-
-    def _storeEstimatedTracks(self, root, **kwargs):
+    def _storeEstimatedTracks(self, root):
 
         for target in self.__trackNodes__:
             trackElement = ET.SubElement(root,
@@ -1370,7 +1343,22 @@ class Tracker():
                 ET.SubElement(sPosition,
                               eastTag).text = sEast
 
-
+    def _storeGroundTruth(self, root):
+        if self.groundTruth is None:
+            return
+        nSamples = len(self.groundTruth)
+        nTargets = len(self.groundTruth[0])
+        for i in range(nTargets):
+            trackElement = ET.SubElement(root,trackTag,attrib=groundtruthAttrib)
+            positions = ET.SubElement(trackElement,positionsTag)
+            for j in range(nSamples):
+                simTarget = self.groundTruth[j][i]
+                position = ET.SubElement(positions,positionTag,attrib={timeTag:str(simTarget.time)})
+                east, north = simTarget.getXmlPositionStrings()
+                ET.SubElement(position,northTag).text = north
+                ET.SubElement(position,eastTag).text = east
+                if simTarget.mmsi is not None:
+                    trackElement.attrib[mmsiTag] = str(simTarget.mmsi)
 
 if __name__ == '__main__':
     pass
