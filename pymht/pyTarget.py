@@ -104,9 +104,12 @@ class Target():
         return self.x_0 - other.x_0
 
 
-    def getXmlPositionStrings(self, precision=2):
+    def getXmlStateStrings(self, precision=2):
         return (str(round(self.x_0[0],precision)),
-                str(round(self.x_0[1],precision)))
+                str(round(self.x_0[1],precision)),
+                str(round(self.x_0[2],precision)),
+                str(round(self.x_0[3],precision))
+                )
 
     def getPosition(self):
         return Position(self.x_0[0:2])
@@ -271,8 +274,10 @@ class Target():
                       )
 
     def _pruneAllHypothesisExceptThis(self, keep, backtrack=False):
-        indices = np.where(self.trackHypotheses != keep)
-        self.trackHypotheses = np.delete(self.trackHypotheses, indices)
+        keepIndex= self.trackHypotheses.index(keep)
+        indices = np.delete(np.arange(len(self.trackHypotheses)),[keepIndex])
+        self.trackHypotheses = np.delete(self.trackHypotheses, indices).tolist()
+        assert len(self.trackHypotheses) == 1, "It should have been one node left."
 
         if backtrack and self.parent is not None:
             self.parent._pruneAllHypothesisExceptThis(self, backtrack=backtrack)
