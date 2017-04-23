@@ -1,6 +1,6 @@
 import numpy as np
 from pymht.utils.classDefinitions import SimTarget as Target
-from pymht.utils.classDefinitions import MeasurementList, AIS_message, Position
+from pymht.utils.classDefinitions import MeasurementList, AIS_message, Position, AIS_messageList
 import time
 import copy
 import math
@@ -61,7 +61,7 @@ def generateInitialTargets(numOfTargets, centerPosition,
 
 
 def simulateTargets(initialTargets, simTime, timeStep, Phi, Q, Gamma):
-    simList = []
+    simList = list()
     assert all([type(initialTarget) == Target for initialTarget in initialTargets])
     simList.append(initialTargets)
     nTimeSteps = int(simTime / timeStep)
@@ -124,7 +124,7 @@ def simulateScans(simList, radarPeriod, H, R, lambda_phi=0,
 
 
 def simulateAIS(sim_list, Phi_func, C, R, P_0, **kwargs):
-    ais_measurements = []
+    ais_measurements = AIS_messageList()
     integerTime = kwargs.get('integerTime', True)
     aisPeriod = kwargs.get('period', 5.0)
     prevTime = sim_list[0][0].time

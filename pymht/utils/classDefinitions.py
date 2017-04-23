@@ -1,6 +1,7 @@
 import numpy as np
 import datetime
 import matplotlib.pyplot as plt
+from . import helpFunctions as hpf
 
 
 class SimTarget:
@@ -205,6 +206,45 @@ class AIS_prediction:
 
     __repr__ = __str__
 
+
+class AIS_messageList:
+    def __init__(self,*args):
+        self._list = list(*args)
+        self._lastExtractedTime = None
+        self._iterator = None
+        self._nextAisMeasurements = None
+
+    def __getitem__(self, item):
+        return self._list.__getitem__(item)
+
+    def __iter__(self):
+        return self._list.__iter__()
+
+    def append(self,*args):
+        self._list.append(*args)
+
+    def pop(self,*args):
+        self._list.pop(*args)
+
+    def print(self):
+        print("aisMeasurements:")
+        print(*self._list, sep="\n", end="\n\n")
+
+    def getMeasurements(self, scanTime, predict = False):
+        if self._iterator is None:
+            self._iterator = (m for m in self._list)
+            self._nextAisMeasurements = next(self._iterator, None)
+
+        if self._nextAisMeasurements is not None:
+            if all((m.time <= scanTime) for m in self._nextAisMeasurements):
+                self._lastExtractedTime = scanTime
+                if predict:
+                    res = hpf.predictAisMeasurements(scanTime, self._nextAisMeasurements)
+                else:
+                    res = self._nextAisMeasurements
+                self._nextAisMeasurements = next(self._iterator, None)
+                return res
+        return None
 
 class MeasurementList:
     def __init__(self, time, measurements=None):
