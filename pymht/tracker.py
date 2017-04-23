@@ -464,7 +464,7 @@ class Tracker():
             targetListTypePre = type(self.__targetList__)
             trackListTypePre = type(self.__trackNodes__)
             associationTypePre = type(self.__associatedMeasurements__)
-            self.__terminatedTargets__.append(copy.copy(self.__trackNodes__[trackIndex]))
+            self.__terminatedTargets__.append(copy.deepcopy(self.__trackNodes__[trackIndex]))
             del self.__targetList__[trackIndex]
             del self.__targetWindowSize__[trackIndex]
             self.__trackNodes__ = np.delete(self.__trackNodes__, trackIndex)
@@ -1312,15 +1312,16 @@ class Tracker():
             trackElement = ET.SubElement(root,
                                          trackTag,
                                          attrib=estimateAttrib)
-            unSmoothedPositions = ET.SubElement(trackElement,
-                                                positionsTag,
+            unSmoothedStates = ET.SubElement(trackElement,
+                                                statesTag,
                                                 attrib={'type':unsmoothedTag})
-            smoothedPositionsElement = ET.SubElement(trackElement,
-                                                     positionsTag,
+            smoothedStateElement = ET.SubElement(trackElement,
+                                                     statesTag,
                                                      attrib={'type': smoothedTag})
             mmsi = target._getHistoricalMmsi()
             if mmsi is not None:
                 trackElement.attrib[mmsiTag] = str(mmsi)
+            trackElement.attrib[idTag] = str(target.ID)
 
             unSmoothedNodes = target.backtrackNodes()
             smoothedPositions = target.getSmoothTrack(self.radarPeriod)
@@ -1328,25 +1329,25 @@ class Tracker():
             assert len(unSmoothedNodes) == len(smoothedPositions)
 
             for node, sPos in zip(unSmoothedNodes, smoothedPositions):
-                position = ET.SubElement(unSmoothedPositions,
-                                         positionTag,
-                                         attrib={timeTag:str(node.time)}
-                                         )
-                east, north = node.getXmlPositionStrings()
-                ET.SubElement(position,
-                              northTag).text = north
-                ET.SubElement(position,
-                              eastTag).text = east
+                stateElement = ET.SubElement(unSmoothedStates,
+                                      stateTag,
+                                      attrib={timeTag:str(node.time)})
+                positionElement = ET.SubElement(stateElement,positionTag)
+                eastPos, northPos, eastVel, northVel = node.getXmlStateStrings()
+                ET.SubElement(positionElement,northTag).text = northPos
+                ET.SubElement(positionElement,eastTag).text = eastPos
+                velocityElement = ET.SubElement(stateElement,velocityTag)
+                ET.SubElement(velocityElement, northTag).text = northVel
+                ET.SubElement(velocityElement, eastTag).text = eastVel
 
-                sPosition = ET.SubElement(smoothedPositionsElement,
-                                          positionTag,
-                                          attrib={timeTag:str(node.time)})
+                sStateElement = ET.SubElement(smoothedStateElement,
+                                              stateTag,
+                                              attrib={timeTag:str(node.time)})
+                sPositionElement = ET.SubElement(sStateElement,positionTag)
                 sEast = str(round(sPos[0], 2))
                 sNorth = str(round(sPos[1], 2))
-                ET.SubElement(sPosition,
-                              northTag).text = sNorth
-                ET.SubElement(sPosition,
-                              eastTag).text = sEast
+                ET.SubElement(sPositionElement,northTag).text = sNorth
+                ET.SubElement(sPositionElement,eastTag).text = sEast
 
     def _storeGroundTruth(self, root):
         if self.groundTruth is None:
@@ -1355,13 +1356,19 @@ class Tracker():
         nTargets = len(self.groundTruth[0])
         for i in range(nTargets):
             trackElement = ET.SubElement(root,trackTag,attrib=groundtruthAttrib)
-            positions = ET.SubElement(trackElement,positionsTag)
+            statesElement = ET.SubElement(trackElement, statesTag)
             for j in range(nSamples):
                 simTarget = self.groundTruth[j][i]
-                position = ET.SubElement(positions,positionTag,attrib={timeTag:str(simTarget.time)})
-                east, north = simTarget.getXmlPositionStrings()
-                ET.SubElement(position,northTag).text = north
-                ET.SubElement(position,eastTag).text = east
+                stateElement = ET.SubElement(statesElement,
+                                             stateTag,
+                                             attrib={timeTag:str(simTarget.time)})
+                eastPos, northPos, eastVel, northVel = simTarget.getXmlStateStrings()
+                positionElement = ET.SubElement(stateElement,positionTag)
+                ET.SubElement(positionElement,northTag).text = northPos
+                ET.SubElement(positionElement,eastTag).text = eastPos
+                velocityElement = ET.SubElement(stateElement, velocityTag)
+                ET.SubElement(velocityElement, northTag).text = northVel
+                ET.SubElement(velocityElement, eastTag).text = eastVel
                 if simTarget.mmsi is not None:
                     trackElement.attrib[mmsiTag] = str(simTarget.mmsi)
 
