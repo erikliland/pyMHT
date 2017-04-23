@@ -38,9 +38,11 @@ class SimTarget:
     def storeString(self):
         return ',{0:.2f},{1:.2f}'.format(*self.state[0:2])
 
-    def getXmlPositionStrings(self, precision=2):
+    def getXmlStateStrings(self, precision=2):
         return (str(round(self.state[0],precision)),
-                str(round(self.state[1],precision)))
+                str(round(self.state[1],precision)),
+                str(round(self.state[2],precision)),
+                str(round(self.state[3],precision)))
 
     def position(self):
         return Position(self.state[0], self.state[1])
