@@ -1,7 +1,9 @@
 import numpy as np
 import datetime
 import matplotlib.pyplot as plt
-from . import helpFunctions as hpf
+import logging
+import copy
+log = logging.getLogger(__name__)
 
 
 class SimTarget:
@@ -230,7 +232,7 @@ class AIS_messageList:
         print("aisMeasurements:")
         print(*self._list, sep="\n", end="\n\n")
 
-    def getMeasurements(self, scanTime, predict = False):
+    def getMeasurements(self, scanTime):
         if self._iterator is None:
             self._iterator = (m for m in self._list)
             self._nextAisMeasurements = next(self._iterator, None)
@@ -238,13 +240,34 @@ class AIS_messageList:
         if self._nextAisMeasurements is not None:
             if all((m.time <= scanTime) for m in self._nextAisMeasurements):
                 self._lastExtractedTime = scanTime
-                if predict:
-                    res = hpf.predictAisMeasurements(scanTime, self._nextAisMeasurements)
-                else:
-                    res = self._nextAisMeasurements
+                res = self.predictAisMeasurements(scanTime, self._nextAisMeasurements)
                 self._nextAisMeasurements = next(self._iterator, None)
                 return res
         return None
+
+    def predictAisMeasurements(self,scanTime, aisMeasurements):
+        import pymht.models.pv as model
+        import pymht.utils.kalman as kalman
+        assert len(aisMeasurements) > 0
+        aisPredictions = PredictionList(scanTime)
+        scanTimeString = datetime.datetime.fromtimestamp(scanTime).strftime("%H:%M:%S.%f")
+        for measurement in aisMeasurements:
+            aisTimeString = datetime.datetime.fromtimestamp(measurement.time).strftime("%H:%M:%S.%f")
+            log.debug("Predicting AIS from " + aisTimeString + " to " + scanTimeString)
+            dT = scanTime - measurement.time
+            assert dT > 0
+            state = measurement.state
+            A = model.Phi(dT)
+            Q = model.Q(dT)
+            x_bar, P_bar = kalman.predict(A, Q, model.Gamma, np.array(state, ndmin=2),
+                                          np.array(measurement.covariance, ndmin=3))
+            aisPredictions.measurements.append(
+                AIS_prediction(model.C_RADAR.dot(x_bar[0]),
+                               model.C_RADAR.dot(P_bar[0]).dot(model.C_RADAR.T), measurement.mmsi))
+            log.debug(np.array_str(state) + "=>" + np.array_str(x_bar[0]))
+            aisPredictions.aisMessages.append(measurement)
+        assert len(aisPredictions.measurements) == len(aisMeasurements)
+        return aisPredictions
 
 class MeasurementList:
     def __init__(self, time, measurements=None):
