@@ -1324,11 +1324,11 @@ class Tracker():
             trackElement.attrib[idTag] = str(target.ID)
 
             unSmoothedNodes = target.backtrackNodes()
-            smoothedPositions = target.getSmoothTrack(self.radarPeriod)
+            smoothedPositions, smoothedVelocities = target.getSmoothTrack(self.radarPeriod)
 
             assert len(unSmoothedNodes) == len(smoothedPositions)
 
-            for node, sPos in zip(unSmoothedNodes, smoothedPositions):
+            for node, sPos, sVel in zip(unSmoothedNodes, smoothedPositions, smoothedVelocities):
                 stateElement = ET.SubElement(unSmoothedStates,
                                       stateTag,
                                       attrib={timeTag:str(node.time)})
@@ -1344,10 +1344,17 @@ class Tracker():
                                               stateTag,
                                               attrib={timeTag:str(node.time)})
                 sPositionElement = ET.SubElement(sStateElement,positionTag)
-                sEast = str(round(sPos[0], 2))
-                sNorth = str(round(sPos[1], 2))
-                ET.SubElement(sPositionElement,northTag).text = sNorth
-                ET.SubElement(sPositionElement,eastTag).text = sEast
+                sEastPos = str(round(sPos[0], 2))
+                sNorthPos = str(round(sPos[1], 2))
+                ET.SubElement(sPositionElement,northTag).text = sNorthPos
+                ET.SubElement(sPositionElement,eastTag).text = sEastPos
+
+                sVelocityElement = ET.SubElement(sStateElement, velocityTag)
+                sEastVel = str(round(sVel[0], 2))
+                sNorthVel = str(round(sVel[1], 2))
+                ET.SubElement(sVelocityElement, northTag).text = sNorthVel
+                ET.SubElement(sVelocityElement, eastTag).text = sEastVel
+
 
     def _storeGroundTruth(self, root):
         if self.groundTruth is None:

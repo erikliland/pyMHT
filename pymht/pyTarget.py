@@ -484,9 +484,12 @@ class Target():
         kf = kf.em(measurements, n_iter=5)
         (smoothed_state_means, _) = kf.smooth(measurements)
         smoothedPositions = smoothed_state_means[:, 0:2]
+        smoothedVelocities = smoothed_state_means[:, 2:4]
         assert smoothedPositions.shape == measurements.shape, \
             str(smoothedPositions.shape) + str(measurements.shape)
-        return smoothedPositions
+        assert smoothedVelocities.shape == measurements.shape, \
+            str(smoothedVelocities.shape) + str(measurements.shape)
+        return smoothedPositions, smoothedVelocities
 
     def plotTrack(self, root=None, stepsBack=float('inf'), **kwargs):
         if kwargs.get('markInitial', False) and stepsBack == float('inf'):
@@ -499,7 +502,7 @@ class Target():
             self.markEnd(**kwargs)
         if kwargs.get('smooth', False) and self.getInitial().depth()>1:
             radarPeriod = kwargs.get('radarPeriod', self._estimateRadarPeriod())
-            track = self.getSmoothTrack(radarPeriod)
+            track,_ = self.getSmoothTrack(radarPeriod)
             linestyle = 'dashed'
         else:
             track = self.backtrackPosition(stepsBack)
