@@ -6,7 +6,6 @@ Trondheim, Norway
 Spring 2017
 ========================================================================================
 """
-import pymht.utils.helpFunctions as hpf
 import pymht.utils.kalman as kalman
 import pymht.initiators.m_of_n as m_of_n
 import pymht.models.pv as model
@@ -253,7 +252,7 @@ class Tracker():
         if self.logTime:
             self.toc['Cluster'] = time.time() - self.tic['Cluster']
         if kwargs.get("printCluster", False):
-            hpf.printClusterList(self.__clusterList__)
+            self.printClusterList(self.__clusterList__)
 
         # 3 --Maximize global (cluster vise) likelihood--
         if self.logTime:
@@ -1290,6 +1289,12 @@ class Tracker():
 
     def printTimeLogHeader(self):
         print(self.getTimeLogHeader())
+
+    def printClusterList(clusterList):
+        print("Clusters:")
+        for clusterIndex, cluster in enumerate(clusterList):
+            print("Cluster ", clusterIndex, " contains target(s):\t", cluster,
+                  sep="", end="\n")
 
     def exportToFile(self, path, **kwargs):
         (head, tail) = os.path.split(path)
