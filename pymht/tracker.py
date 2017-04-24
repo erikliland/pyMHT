@@ -47,7 +47,7 @@ log = logging.getLogger(__name__)
 class Tracker():
 
     def __init__(self, Phi, C, Gamma, P_d, P_0, R_RADAR, R_AIS, Q, lambda_phi,
-                 lambda_nu, eta2, N, p0, radarRange, solverStr, **kwargs):
+                 lambda_nu, eta2, N, p0, radarRange, **kwargs):
 
         if 'logLevel' in kwargs:
             log.setLevel(kwargs.get('logLevel'))
@@ -85,7 +85,7 @@ class Tracker():
         self.maxSpeed = kwargs.get('maxSpeed', 20)
         self.M_required = kwargs.get('M_required', 2)
         self.N_checks = kwargs.get('N_checks', 3)
-        self.mergeThreshold = 3 * (model.sigmaR_RADAR_tracker ** 2)
+        self.mergeThreshold = 4 * (model.sigmaR_RADAR_tracker ** 2)
         self.initiator = m_of_n.Initiator(self.M_required,
                                           self.N_checks,
                                           self.maxSpeed,
@@ -109,7 +109,7 @@ class Tracker():
 
         # Radar parameters
         self.position = p0
-        self.range = radarRange
+        self.radarRange = radarRange
         self.radarPeriod = kwargs.get('radarPeriod')
         self.fixedPeriod = 'radarPeriod' in kwargs
         self.default_P_d = 0.8
@@ -125,12 +125,11 @@ class Tracker():
                            'Terminate': np.array([0.0, 0]),
                            'Init': np.array([0.0, 0]),
                            }
-        if self.logTime:
-            self.tic = {}
-            self.toc = {}
-            self.nOptimSolved = 0
-            self.leafNodeTimeList = []
-            self.createComputationTime = None
+        self.tic = {}
+        self.toc = {}
+        self.nOptimSolved = 0
+        self.leafNodeTimeList = []
+        self.createComputationTime = None
 
         # Tracker parameters
         self.lambda_phi = lambda_phi
@@ -211,10 +210,8 @@ class Tracker():
         # 0 --Iterative procedure for tracking --
         self.tic['Total'] = time.time()
 
-
         # 1 --Grow each track tree--
-        if self.logTime:
-            self.tic['Process'] = time.time()
+        self.tic['Process'] = time.time()
         nMeas = len(scanList.measurements)
         measDim = self.C.shape[0]
         scanNumber = len(self.__scanHistory__)
@@ -226,8 +223,7 @@ class Tracker():
 
         unused_measurement_indices = np.ones(nMeas, dtype=np.bool)
 
-        if self.logTime:
-            self.leafNodeTimeList = []
+        self.leafNodeTimeList = []
 
         targetProcessTimes = np.zeros(nTargets)
         nTargetNodes = np.zeros(nTargets)
@@ -235,8 +231,7 @@ class Tracker():
             self._growTarget(targetIndex, nTargetNodes, scanList, aisList, measDim,
                              unused_measurement_indices, scanTime, scanNumber, targetProcessTimes)
 
-        if self.logTime:
-            self.toc['Process'] = time.time() - self.tic['Process']
+        self.toc['Process'] = time.time() - self.tic['Process']
         if self.parallelize:
             log.debug(str([round(e) for e in self.leafNodeTimeList]))
         if kwargs.get("printAssociation", False):
@@ -246,17 +241,14 @@ class Tracker():
             self._checkTrackerIntegrity()
 
         # 2 --Cluster targets --
-        if self.logTime:
-            self.tic['Cluster'] = time.time()
+        self.tic['Cluster'] = time.time()
         self.__clusterList__ = self._findClustersFromSets()
-        if self.logTime:
-            self.toc['Cluster'] = time.time() - self.tic['Cluster']
+        self.toc['Cluster'] = time.time() - self.tic['Cluster']
         if kwargs.get("printCluster", False):
             self.printClusterList(self.__clusterList__)
 
         # 3 --Maximize global (cluster vise) likelihood--
-        if self.logTime:
-            self.tic['Optim'] = time.time()
+        self.tic['Optim'] = time.time()
         self.nOptimSolved = 0
         for cluster in self.__clusterList__:
             if len(cluster) == 1:
@@ -267,19 +259,15 @@ class Tracker():
             else:
                 self.__trackNodes__[cluster] = self._solveOptimumAssociation(cluster)
                 self.nOptimSolved += 1
-        if self.logTime:
-            self.toc['Optim'] = time.time() - self.tic['Optim']
+        self.toc['Optim'] = time.time() - self.tic['Optim']
 
         # 4 -- ILP Pruning
-        if self.logTime:
-            self.tic['ILP-Prune'] = time.time()
+        self.tic['ILP-Prune'] = time.time()
 
-        if self.logTime:
-            self.toc['ILP-Prune'] = time.time() - self.tic['ILP-Prune']
+        self.toc['ILP-Prune'] = time.time() - self.tic['ILP-Prune']
 
         # 5 -- Dynamic window size
-        if self.logTime:
-            self.tic['DynN'] = time.time()
+        self.tic['DynN'] = time.time()
 
         totalGrowTime = sum(targetProcessTimes)
         growTimeLimit = self.radarPeriod * 0.5
@@ -313,28 +301,24 @@ class Tracker():
                     tempTotalTime * 1000, self.N + 1, self.N))
             self.__targetWindowSize__ = [min(e, self.N) for e in self.__targetWindowSize__]
 
-        if self.logTime:
-            self.toc['DynN'] = time.time() - self.tic['DynN']
+        self.toc['DynN'] = time.time() - self.tic['DynN']
 
         # 5 --Prune sliding window --
-        if self.logTime:
-            self.tic['N-Prune'] = time.time()
+        self.tic['N-Prune'] = time.time()
         self._nScanPruning()
-        if self.logTime:
-            self.toc['N-Prune'] = time.time() - self.tic['N-Prune']
+        self.toc['N-Prune'] = time.time() - self.tic['N-Prune']
 
         if kwargs.get("checkIntegrity", False):
             self._checkTrackerIntegrity()
 
         # 6 -- Pick out dead tracks (terminate)
-        if self.logTime:
-            self.tic['Terminate'] = time.time()
+        self.tic['Terminate'] = time.time()
         deadTracks = []
         for trackIndex, trackNode in enumerate(self.__trackNodes__):
-            # Check outside range
-            if trackNode.isOutsideRange(self.position.array, self.range):
+            # Check outside radarRange
+            if trackNode.isOutsideRange(self.position, self.radarRange):
                 deadTracks.append(trackIndex)
-                log.info("Terminating track {0:} at {1:} since it is out of range".format(
+                log.info("Terminating track {0:} at {1:} since it is out of radarRange".format(
                     trackIndex,np.array_str(self.__trackNodes__[trackIndex].x_0[0:2])))
 
             # Check if track is to insecure
@@ -345,12 +329,10 @@ class Tracker():
                     trackNode.cumulativeNLLR, self.NLLR_UPPER_LIMIT))
 
         self._terminateTracks(deadTracks)
-        if self.logTime:
-            self.toc['Terminate'] = time.time() - self.tic['Terminate']
+        self.toc['Terminate'] = time.time() - self.tic['Terminate']
 
         # 7 -- Initiate new tracks
-        if self.logTime:
-            self.tic['Init'] = time.time()
+        self.tic['Init'] = time.time()
         unused_measurements = scanList.filterUnused(unused_measurement_indices)
         # import cProfile, pstats
         # new_initial_targets = []
@@ -364,8 +346,7 @@ class Tracker():
         for initial_target in new_initial_targets:
             log.info("\tNew target({}): ".format(len(self.__targetList__) + 1) + str(initial_target))
             self.initiateTarget(initial_target)
-        if self.logTime:
-            self.toc['Init'] = time.time() - self.tic['Init']
+        self.toc['Init'] = time.time() - self.tic['Init']
 
         self.toc['Total'] = time.time() - self.tic['Total']
         if self.toc['Total'] > self.radarPeriod:
@@ -378,10 +359,9 @@ class Tracker():
         if kwargs.get("checkIntegrity", False):
             self._checkTrackerIntegrity()
 
-        if self.logTime:
-            for k, v in self.runtimeLog.items():
-                if k in self.toc:
-                    v += np.array([self.toc[k], 1])
+        for k, v in self.runtimeLog.items():
+            if k in self.toc:
+                v += np.array([self.toc[k], 1])
 
         if kwargs.get("printInfo", False):
             print("Added scan number:", len(self.__scanHistory__),
@@ -389,8 +369,7 @@ class Tracker():
                   sep="")
 
         if kwargs.get("printTime", False):
-            if self.logTime:
-                self.printTimeLog(**kwargs)
+            self.printTimeLog(**kwargs)
 
         # Covariance consistence
         if "trueState" in kwargs:
@@ -774,8 +753,7 @@ class Tracker():
 
     def getRuntimeAverage(self, **kwargs):
         p = kwargs.get("precision", 3)
-        if self.logTime:
-            return {k: v[0] / v[1] for k, v in self.runtimeLog.items()}
+        return {k: v[0] / v[1] for k, v in self.runtimeLog.items()}
 
     def _findClustersFromSets(self):
         self.superSet = set()
@@ -1296,73 +1274,49 @@ class Tracker():
             print("Cluster ", clusterIndex, " contains target(s):\t", cluster,
                   sep="", end="\n")
 
-    def exportToFile(self, path, **kwargs):
-        (head, tail) = os.path.split(path)
-        if not os.path.isdir(head):
-            os.makedirs(head)
-        root = ET.Element(simulationTag)
-        tree = ET.ElementTree(root)
-        self._storeGroundTruth(root,**kwargs)
-        self._storeEstimatedTracks(root,**kwargs)
-        tree.write(path)
+    def getScenarioElement(self):
+        scenarioElement = ET.Element(scenarioTag)
+        scenarioElement.attrib['M_required'] = str(self.M_required)
+        scenarioElement.attrib['N_checks'] = str(self.N_checks)
+        scenarioElement.attrib['mergeThreshold'] = str(self.mergeThreshold)
+        scenarioElement.attrib['ownPosition'] = str(self.position)
+        scenarioElement.attrib['radarRange'] = str(self.radarRange)
+        scenarioElement.attrib['radarPeriod'] = str(self.radarPeriod)
+        scenarioElement.attrib['lambdaPhi'] = str(self.lambda_phi)
+        scenarioElement.attrib['lambdaNu'] = str(self.lambda_nu)
+        scenarioElement.attrib['lambdaEx'] = str(self.lambda_ex)
+        scenarioElement.attrib['eta2'] = str(self.eta2)
+        scenarioElement.attrib['N_max'] = str(self.N_max)
+        scenarioElement.attrib['NLLR_upperLimit'] = str(self.NLLR_UPPER_LIMIT)
+        scenarioElement.attrib['pruneThreshold'] = str(self.pruneThreshold)
+        scenarioElement.attrib['targetSizeLimit'] = str(self.targetSizeLimit)
 
-    def _storeEstimatedTracks(self, root):
+        self._storeGroundTruth(scenarioElement)
+        return scenarioElement
+
+    def _storeEstimatedTracks(self, scenarioElement, **kwargs):
+        simulationElement = ET.SubElement(scenarioElement, simulationTag)
+
+        if iterationTag in kwargs:
+            iteration = kwargs.get(iterationTag)
+        else:
+            iteration = len(scenarioElement.findall(simulationTag))
+        simulationElement.attrib[iterationTag] = str(iteration)
 
         for target in self.__trackNodes__:
-            trackElement = ET.SubElement(root,
-                                         trackTag,
-                                         attrib=estimateAttrib)
-            unSmoothedStates = ET.SubElement(trackElement,
-                                                statesTag,
-                                                attrib={'type':unsmoothedTag})
-            smoothedStateElement = ET.SubElement(trackElement,
-                                                     statesTag,
-                                                     attrib={'type': smoothedTag})
-            mmsi = target._getHistoricalMmsi()
-            if mmsi is not None:
-                trackElement.attrib[mmsiTag] = str(mmsi)
-            trackElement.attrib[idTag] = str(target.ID)
+            target._storeNode(simulationElement, self.radarPeriod)
 
-            unSmoothedNodes = target.backtrackNodes()
-            smoothedPositions, smoothedVelocities = target.getSmoothTrack(self.radarPeriod)
+        for target in self.__terminatedTargets__:
+            target._storeNode(simulationElement, self.radarPeriod, terminated=True)
 
-            assert len(unSmoothedNodes) == len(smoothedPositions)
-
-            for node, sPos, sVel in zip(unSmoothedNodes, smoothedPositions, smoothedVelocities):
-                stateElement = ET.SubElement(unSmoothedStates,
-                                      stateTag,
-                                      attrib={timeTag:str(node.time)})
-                positionElement = ET.SubElement(stateElement,positionTag)
-                eastPos, northPos, eastVel, northVel = node.getXmlStateStrings()
-                ET.SubElement(positionElement,northTag).text = northPos
-                ET.SubElement(positionElement,eastTag).text = eastPos
-                velocityElement = ET.SubElement(stateElement,velocityTag)
-                ET.SubElement(velocityElement, northTag).text = northVel
-                ET.SubElement(velocityElement, eastTag).text = eastVel
-
-                sStateElement = ET.SubElement(smoothedStateElement,
-                                              stateTag,
-                                              attrib={timeTag:str(node.time)})
-                sPositionElement = ET.SubElement(sStateElement,positionTag)
-                sEastPos = str(round(sPos[0], 2))
-                sNorthPos = str(round(sPos[1], 2))
-                ET.SubElement(sPositionElement,northTag).text = sNorthPos
-                ET.SubElement(sPositionElement,eastTag).text = sEastPos
-
-                sVelocityElement = ET.SubElement(sStateElement, velocityTag)
-                sEastVel = str(round(sVel[0], 2))
-                sNorthVel = str(round(sVel[1], 2))
-                ET.SubElement(sVelocityElement, northTag).text = sNorthVel
-                ET.SubElement(sVelocityElement, eastTag).text = sEastVel
-
-
-    def _storeGroundTruth(self, root):
+    def _storeGroundTruth(self, scenarioElement, **kwargs):
         if self.groundTruth is None:
             return
         nSamples = len(self.groundTruth)
         nTargets = len(self.groundTruth[0])
+        groundtruthElement = ET.SubElement(scenarioElement, groundtruthTag)
         for i in range(nTargets):
-            trackElement = ET.SubElement(root,trackTag,attrib=groundtruthAttrib)
+            trackElement = ET.SubElement(groundtruthElement,trackTag,attrib=groundtruthAttrib)
             statesElement = ET.SubElement(trackElement, statesTag)
             for j in range(nSamples):
                 simTarget = self.groundTruth[j][i]
@@ -1378,6 +1332,7 @@ class Tracker():
                 ET.SubElement(velocityElement, eastTag).text = eastVel
                 if simTarget.mmsi is not None:
                     trackElement.attrib[mmsiTag] = str(simTarget.mmsi)
+
 
 if __name__ == '__main__':
     pass
