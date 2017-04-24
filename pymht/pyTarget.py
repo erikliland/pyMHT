@@ -456,11 +456,17 @@ class Target():
         else:
             return self.parent.backtrackPosition(stepsBack) + [self.x_0[0:2]]
 
-    def backtrackMeasurement(self):
+    def backtrackState(self, stepsBack=float('inf')):
+        if self.parent is None:
+            return [self.x_0]
+        else:
+            return self.parent.backtrackPosition(stepsBack) + [self.x_0]
+
+    def backtrackMeasurement(self, stepsBack=float('inf')):
         if self.parent is None:
             return [self.measurement]
         else:
-            return self.parent.backtrackMeasurement() + [self.measurement]
+            return self.parent.backtrackMeasurement(stepsBack) + [self.measurement]
 
     def backtrackNodes(self, stepsBack=float('inf')):
         if self.parent is None:
@@ -471,7 +477,9 @@ class Target():
     def getSmoothTrack(self, radarPeriod):
         from pykalman import KalmanFilter
         roughTrackArray = self.backtrackMeasurement()
-        initialState = self.getInitial().x_0
+        initialNode = self.getInitial()
+        depth = initialNode.depth()
+        initialState = initialNode.x_0
         for i, m in enumerate(roughTrackArray):
             if m is None:
                 roughTrackArray[i] = [np.NaN, np.NaN]
@@ -480,6 +488,8 @@ class Target():
             if np.isnan(np.sum(m)):
                 measurements[i] = np.ma.masked
         assert measurements.shape[1] == 2, str(measurements.shape)
+        if depth < 2:
+            pos, vel =  (measurements, np.empty_like(measurements)*np.nan)
         kf = KalmanFilter(transition_matrices=model.Phi(radarPeriod),
                           observation_matrices=model.C_RADAR,
                           initial_state_mean=initialState)
@@ -627,7 +637,7 @@ class Target():
     def _storeNode(self, simulationElement, radarPeriod, **kwargs):
         trackElement = ET.SubElement(simulationElement,
                                      trackTag,
-                                     attrib=estimateAttrib)
+                                     attrib={typeTag:estimateTag})
         unSmoothedStates = ET.SubElement(trackElement,
                                          statesTag,
                                          attrib={'type': unsmoothedTag})
@@ -643,6 +653,8 @@ class Target():
 
         unSmoothedNodes = self.backtrackNodes()
         smoothedPositions, smoothedVelocities = self.getSmoothTrack(radarPeriod)
+
+        trackElement.attrib[lengthTag] = str(len(unSmoothedNodes))
 
         assert len(unSmoothedNodes) == len(smoothedPositions)
 

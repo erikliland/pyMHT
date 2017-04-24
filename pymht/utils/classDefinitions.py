@@ -2,18 +2,19 @@ import numpy as np
 import datetime
 import matplotlib.pyplot as plt
 import logging
-import copy
 log = logging.getLogger(__name__)
 
 
 class SimTarget:
-    def __init__(self, state, time, P_d, **kwargs):
+    def __init__(self, state, time, P_d, sigma_Q, **kwargs):
         assert state.ndim == 1
         self.state = state
         self.time = time
         self.P_d = P_d
+        self.sigma_Q = sigma_Q
         self.mmsi = kwargs.get('mmsi')
-        self.Q = kwargs.get('Q')
+        self.aisClass = kwargs.get('aisClass', 'B')
+        self.timeOfLastAisMessage = 0
 
     def __str__(self):
         timeString = datetime.datetime.fromtimestamp(self.time).strftime("%H:%M:%S.%f")

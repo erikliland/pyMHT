@@ -24,9 +24,9 @@ def positionWithNoise(state, H, R):
     return H.dot(state) + v
 
 
-def calculateNextState(target, timeStep, Phi, Q, Gamma):
-    Q_matrix = target.Q if target.Q is not None else Q
-    w = np.random.multivariate_normal(np.zeros(2), Q_matrix)
+def calculateNextState(target, timeStep, Phi, Gamma, model):
+    Q = model.Q(timeStep, target.sigma_Q)
+    w = np.random.multivariate_normal(np.zeros(Gamma.shape[1]), Q)
     nextState = Phi.dot(target.state) + Gamma.dot(w.T)
     newVar = {'state': nextState, 'time': target.time + timeStep}
     return Target(**{**target.__dict__, **newVar})
@@ -60,13 +60,15 @@ def generateInitialTargets(numOfTargets, centerPosition,
     return initialList
 
 
-def simulateTargets(initialTargets, simTime, timeStep, Phi, Q, Gamma):
+def simulateTargets(initialTargets, simTime, timeStep, model):
+    Phi = model.Phi(timeStep)
+    Gamma = model.Gamma
     simList = list()
     assert all([type(initialTarget) == Target for initialTarget in initialTargets])
     simList.append(initialTargets)
     nTimeSteps = int(simTime / timeStep)
     for i in range(nTimeSteps):
-        targetList = [calculateNextState(target, timeStep, Phi, Q, Gamma)
+        targetList = [calculateNextState(target, timeStep, Phi, Gamma, model)
                       for target in simList[-1]]
         simList.append(targetList)
     simList.pop(0)
@@ -126,12 +128,19 @@ def simulateScans(simList, radarPeriod, H, R, lambda_phi=0,
 def simulateAIS(sim_list, Phi_func, C, R, P_0, **kwargs):
     ais_measurements = AIS_messageList()
     integerTime = kwargs.get('integerTime', True)
-    aisPeriod = kwargs.get('period', 5.0)
-    prevTime = sim_list[0][0].time
-    for sim in sim_list[1:]:
-        if not (sim[0].time - prevTime > aisPeriod): continue
+    P_r = kwargs.get('probabilityOfReceive', 1.0)
+    for i, sim in enumerate(sim_list[1:]):
         tempList = []
-        for target in (t for t in sim if t.mmsi is not None):
+        for j, target in enumerate(t for t in sim if t.mmsi is not None):
+            timeSinceLastAisMessage = target.time - target.timeOfLastAisMessage
+            speedMS = np.linalg.norm(target.state[2:4])
+            reportingInterval = _aisReportInterval(speedMS, target.aisClass)
+            shouldSendAisMessage = timeSinceLastAisMessage >= reportingInterval
+            if not shouldSendAisMessage: continue
+            try:
+                sim_list[i+1][j].timeOfLastAisMessage = target.time
+            except IndexError:
+                pass
             if integerTime:
                 time = math.floor(target.time)
                 dT = time - target.time
@@ -151,11 +160,37 @@ def simulateAIS(sim_list, Phi_func, C, R, P_0, **kwargs):
                                      state=state,
                                      covariance=P_0,
                                      mmsi=mmsi)
-            tempList.append(prediction)
+            if np.random.uniform() <= P_r:
+                tempList.append(prediction)
         if tempList:
             ais_measurements.append(tempList)
-        prevTime = sim[0].time
     return ais_measurements
+
+def _aisReportInterval(speedMS, aisClass):
+    from scipy.constants import knot
+    speedKnot = speedMS * knot
+    if aisClass.upper() == 'A':
+        if speedKnot > 23:
+            return 2
+        if speedKnot > 14:
+            return 4 #Should be 2 or 6, but are missing acceleration data
+        if speedKnot > 0:
+            return 6 #Should be 3.3 or 10, but are missing acceleration data
+        if speedKnot == 0:
+            return 60 #Should be 10s og 3min, but are missing mored status
+        raise ValueError("Speed must be positive")
+    elif aisClass.upper() == 'B':
+        if speedKnot > 23:
+            return 10
+        if speedKnot > 14:
+            return 5
+        if speedKnot > 2:
+            return 30
+        if speedKnot >= 0:
+            return 60*3
+        raise ValueError("Speed must be positive")
+    else:
+        raise ValueError("aisClass must be 'A' og 'B'")
 
 
 def writeSimList(initialTargets, simList, filename):

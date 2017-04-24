@@ -1,5 +1,5 @@
 scenarioTag = "Scenario"
-groundtruthTag = "Groundtruth"
+groundtruthTag = "groundtruth"
 simulationTag = "Simulation"
 trackerSettingsTag = "Tracker-settings"
 runTag = "Run"
@@ -22,8 +22,11 @@ unsmoothedTag = "unsmoothed"
 smoothedTag = "smoothed"
 idTag = "id"
 iterationTag = "iteration"
-
-groundtruthAttrib = {'type':'groundTruth'}
-estimateAttrib = {'type':'estimate'}
+typeTag = "type"
+estimateTag = "estimate"
+pdTag = "Pd"
+sigmaqTag = "sigmaQ"
+seedTag = "seed"
+lengthTag = "length"
 
 timeLogPrecision = 6

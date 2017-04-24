@@ -1273,8 +1273,11 @@ class Tracker():
             print("Cluster ", clusterIndex, " contains target(s):\t", cluster,
                   sep="", end="\n")
 
-    def getScenarioElement(self):
+    def getScenarioElement(self, **kwargs):
         scenarioElement = ET.Element(scenarioTag)
+
+        for k,v in kwargs.items():
+            scenarioElement.attrib[str(k)] = str(v)
 
         trackerSettingElement = ET.SubElement(scenarioElement, trackerSettingsTag)
         ET.SubElement(trackerSettingElement,'M_required').text = str(self.M_required)
@@ -1303,6 +1306,9 @@ class Tracker():
         else:
             iteration = len(scenarioElement.findall(runTag))
         runElement.attrib[iterationTag] = str(iteration)
+
+        if seedTag in kwargs:
+            runElement.attrib[seedTag] = str(kwargs.get(seedTag))
 
         runtimeElement = ET.SubElement(runElement,
                                        runtimeTag,
@@ -1336,13 +1342,17 @@ class Tracker():
         nTargets = len(self.groundTruth[0])
         groundtruthElement = ET.SubElement(scenarioElement, groundtruthTag)
         for i in range(nTargets):
-            trackElement = ET.SubElement(groundtruthElement,trackTag,attrib=groundtruthAttrib)
-            statesElement = ET.SubElement(trackElement, statesTag)
+            trackElement = ET.SubElement(groundtruthElement,
+                                         trackTag,
+                                         attrib={typeTag:groundtruthTag})
+            statesElement = ET.SubElement(trackElement,
+                                          statesTag)
             for j in range(nSamples):
                 simTarget = self.groundTruth[j][i]
                 stateElement = ET.SubElement(statesElement,
                                              stateTag,
-                                             attrib={timeTag:str(simTarget.time)})
+                                             attrib={timeTag:str(simTarget.time),
+                                                     pdTag:str(simTarget.P_d)})
                 eastPos, northPos, eastVel, northVel = simTarget.getXmlStateStrings()
                 positionElement = ET.SubElement(stateElement,positionTag)
                 ET.SubElement(positionElement,northTag).text = northPos
@@ -1352,7 +1362,7 @@ class Tracker():
                 ET.SubElement(velocityElement, eastTag).text = eastVel
                 if simTarget.mmsi is not None:
                     trackElement.attrib[mmsiTag] = str(simTarget.mmsi)
-
+                statesElement.attrib[sigmaqTag] = str(simTarget.sigma_Q)
 
 if __name__ == '__main__':
     pass
