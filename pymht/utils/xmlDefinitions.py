@@ -1,3 +1,5 @@
+scenarioTag = "Scenario"
+groundtruthTag = "Groundtruth"
 simulationTag = "Simulation"
 trackTag = "Track"
 statesTag = "States"
@@ -11,6 +13,7 @@ timeTag = "time"
 unsmoothedTag = "unsmoothed"
 smoothedTag = "smoothed"
 idTag = "ID"
+iterationTag = "iteration"
 
 groundtruthAttrib = {'type':'groundTruth'}
 estimateAttrib = {'type':'estimate'}
