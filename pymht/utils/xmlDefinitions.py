@@ -1,6 +1,9 @@
 scenarioTag = "Scenario"
 groundtruthTag = "Groundtruth"
 simulationTag = "Simulation"
+trackerSettingsTag = "Tracker-settings"
+runTag = "Run"
+runtimeTag = "Runtime"
 trackTag = "Track"
 statesTag = "States"
 stateTag = "State"
@@ -10,10 +13,17 @@ northTag = "North"
 eastTag = "East"
 mmsiTag = "mmsi"
 timeTag = "time"
+meanTag = "mean"
+minTag = "min"
+maxTag = "max"
+precisionTag = "precision"
+descriptionTag = "Description"
 unsmoothedTag = "unsmoothed"
 smoothedTag = "smoothed"
-idTag = "ID"
+idTag = "id"
 iterationTag = "iteration"
 
 groundtruthAttrib = {'type':'groundTruth'}
 estimateAttrib = {'type':'estimate'}
+
+timeLogPrecision = 6

@@ -115,15 +115,15 @@ class Tracker():
         self.default_P_d = 0.8
 
         # Timing and logging
-        self.runtimeLog = {'Total': np.array([0.0, 0]),
-                           'Process': np.array([0.0, 0]),
-                           'Cluster': np.array([0.0, 0]),
-                           'Optim': np.array([0.0, 0]),
-                           'ILP-Prune': np.array([0.0, 0]),
-                           'DynN': np.array([0.0, 0]),
-                           'N-Prune': np.array([0.0, 0]),
-                           'Terminate': np.array([0.0, 0]),
-                           'Init': np.array([0.0, 0]),
+        self.runtimeLog = {'Total': [],
+                           'Process': [],
+                           'Cluster': [],
+                           'Optim': [],
+                           'ILP-Prune': [],
+                           'DynN': [],
+                           'N-Prune': [],
+                           'Terminate': [],
+                           'Init': [],
                            }
         self.tic = {}
         self.toc = {}
@@ -361,7 +361,7 @@ class Tracker():
 
         for k, v in self.runtimeLog.items():
             if k in self.toc:
-                v += np.array([self.toc[k], 1])
+                v.append(self.toc[k])
 
         if kwargs.get("printInfo", False):
             print("Added scan number:", len(self.__scanHistory__),
@@ -752,8 +752,7 @@ class Tracker():
             for targetIndex, target in enumerate(self.__trackNodes__)]
 
     def getRuntimeAverage(self, **kwargs):
-        p = kwargs.get("precision", 3)
-        return {k: v[0] / v[1] for k, v in self.runtimeLog.items()}
+        return {k: np.mean(np.array(v)) for k, v in self.runtimeLog.items()}
 
     def _findClustersFromSets(self):
         self.superSet = set()
@@ -1276,38 +1275,59 @@ class Tracker():
 
     def getScenarioElement(self):
         scenarioElement = ET.Element(scenarioTag)
-        scenarioElement.attrib['M_required'] = str(self.M_required)
-        scenarioElement.attrib['N_checks'] = str(self.N_checks)
-        scenarioElement.attrib['mergeThreshold'] = str(self.mergeThreshold)
-        scenarioElement.attrib['ownPosition'] = str(self.position)
-        scenarioElement.attrib['radarRange'] = str(self.radarRange)
-        scenarioElement.attrib['radarPeriod'] = str(self.radarPeriod)
-        scenarioElement.attrib['lambdaPhi'] = str(self.lambda_phi)
-        scenarioElement.attrib['lambdaNu'] = str(self.lambda_nu)
-        scenarioElement.attrib['lambdaEx'] = str(self.lambda_ex)
-        scenarioElement.attrib['eta2'] = str(self.eta2)
-        scenarioElement.attrib['N_max'] = str(self.N_max)
-        scenarioElement.attrib['NLLR_upperLimit'] = str(self.NLLR_UPPER_LIMIT)
-        scenarioElement.attrib['pruneThreshold'] = str(self.pruneThreshold)
-        scenarioElement.attrib['targetSizeLimit'] = str(self.targetSizeLimit)
+
+        trackerSettingElement = ET.SubElement(scenarioElement, trackerSettingsTag)
+        ET.SubElement(trackerSettingElement,'M_required').text = str(self.M_required)
+        ET.SubElement(trackerSettingElement,'N_checks').text = str(self.N_checks)
+        ET.SubElement(trackerSettingElement,'mergeThreshold').text = str(self.mergeThreshold)
+        ET.SubElement(trackerSettingElement,'ownPosition').text = str(self.position)
+        ET.SubElement(trackerSettingElement,'radarRange').text = str(self.radarRange)
+        ET.SubElement(trackerSettingElement,'radarPeriod').text = str(self.radarPeriod)
+        ET.SubElement(trackerSettingElement,'lambdaPhi').text = str(self.lambda_phi)
+        ET.SubElement(trackerSettingElement,'lambdaNu').text = str(self.lambda_nu)
+        ET.SubElement(trackerSettingElement,'lambdaEx').text = str(self.lambda_ex)
+        ET.SubElement(trackerSettingElement,'eta2').text = str(self.eta2)
+        ET.SubElement(trackerSettingElement,'N_max').text = str(self.N_max)
+        ET.SubElement(trackerSettingElement,'NLLR_upperLimit').text = str(self.NLLR_UPPER_LIMIT)
+        ET.SubElement(trackerSettingElement,'pruneThreshold').text = str(self.pruneThreshold)
+        ET.SubElement(trackerSettingElement,'targetSizeLimit').text = str(self.targetSizeLimit)
 
         self._storeGroundTruth(scenarioElement)
         return scenarioElement
 
-    def _storeEstimatedTracks(self, scenarioElement, **kwargs):
-        simulationElement = ET.SubElement(scenarioElement, simulationTag)
+    def _storeRun(self, scenarioElement, **kwargs):
+        runElement = ET.SubElement(scenarioElement, runTag)
 
         if iterationTag in kwargs:
             iteration = kwargs.get(iterationTag)
         else:
-            iteration = len(scenarioElement.findall(simulationTag))
-        simulationElement.attrib[iterationTag] = str(iteration)
+            iteration = len(scenarioElement.findall(runTag))
+        runElement.attrib[iterationTag] = str(iteration)
+
+        runtimeElement = ET.SubElement(runElement,
+                                       runtimeTag,
+                                       attrib={descriptionTag:"Per iteration",
+                                               precisionTag:str(timeLogPrecision)})
+        for k,v in self.runtimeLog.items():
+            array = np.array(v)
+            mean = np.mean(array)
+            min = np.min(array)
+            max = np.max(array)
+            meanString = str(round(mean,timeLogPrecision))
+            minString = str(round(min,timeLogPrecision))
+            maxString = str(round(max,timeLogPrecision))
+            ET.SubElement(runtimeElement,
+                          str(k),
+                          attrib={meanTag:meanString,
+                                  minTag:minString,
+                                  maxTag:maxString}
+            ).text = np.array_str(array, precision=timeLogPrecision)
 
         for target in self.__trackNodes__:
-            target._storeNode(simulationElement, self.radarPeriod)
+            target._storeNode(runElement, self.radarPeriod)
 
         for target in self.__terminatedTargets__:
-            target._storeNode(simulationElement, self.radarPeriod, terminated=True)
+            target._storeNode(runElement, self.radarPeriod, terminated=True)
 
     def _storeGroundTruth(self, scenarioElement, **kwargs):
         if self.groundTruth is None:
