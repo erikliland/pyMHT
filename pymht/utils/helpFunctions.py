@@ -1,7 +1,6 @@
 from __future__ import print_function
 import matplotlib.pyplot as plt
 import numpy as np
-import copy
 import logging
 
 # ----------------------------------------------------------------------------
@@ -55,14 +54,15 @@ def plotVelocityArrowFromNode(nodes, **kwargs):
 def plotRadarOutline(centerPosition, radarRange, **kwargs):
     from matplotlib.patches import Ellipse
     if kwargs.get("markCenter", True):
-        plt.plot(centerPosition.x(), centerPosition.y(), "bo")
+        plt.plot(centerPosition[0], centerPosition[0], "bo")
     ax = plt.subplot(111)
-    circle = Ellipse((centerPosition.x(), centerPosition.y()), radarRange * 2, radarRange * 2,
+    circle = Ellipse((centerPosition[0], centerPosition[1]), radarRange * 2, radarRange * 2,
                      edgecolor="black", linestyle="dotted", facecolor="none")
     ax.add_artist(circle)
 
 
 def plotTrueTrack(simList, **kwargs):
+    import copy
     colors = kwargs.get("colors")
     newArgs = copy.copy(kwargs)
     if "colors" in newArgs:
@@ -185,3 +185,11 @@ def solverIsAvailable(solverString):
         return pulp.GUROBI_CMD().available() != False
     return False
 
+def writeElementToFile(path, element):
+    import xml.etree.ElementTree as ET
+    import os
+    (head, tail) = os.path.split(path)
+    if not os.path.isdir(head):
+        os.makedirs(head)
+    tree = ET.ElementTree(element)
+    tree.write(path)

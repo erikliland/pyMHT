@@ -95,7 +95,7 @@ def simulateScans(simList, radarPeriod, H, R, lambda_phi=0,
         for target in sim:
             visible = np.random.uniform() <= target.P_d
             if (rRange is not None) and (p0 is not None):
-                distance = np.linalg.norm(target.state[0:2] - p0.array)
+                distance = np.linalg.norm(target.state[0:2] - p0)
                 inRange = distance <= rRange
             else:
                 inRange = True
@@ -244,7 +244,7 @@ def _generateRadialClutter(centerPosition, radarRange):
     heading = np.random.uniform(0, 360)
     distance = np.random.uniform(0, radarRange)
     px, py = _pol2cart(heading, distance)
-    return centerPosition.array + np.array([px, py])
+    return centerPosition + np.array([px, py])
 
 
 def _generateCartesianClutter(centerPosition, radarRange):
@@ -253,7 +253,7 @@ def _generateCartesianClutter(centerPosition, radarRange):
         y = np.random.uniform(-radarRange, radarRange)
         pos = np.array([x, y], dtype=np.float32)
         if np.linalg.norm(pos) <= radarRange:
-            return centerPosition.array + pos
+            return centerPosition + pos
 
 
 def _pol2cart(bearingDEG, distance):
@@ -262,3 +262,4 @@ def _pol2cart(bearingDEG, distance):
     x = distance * np.cos(angleRAD)
     y = distance * np.sin(angleRAD)
     return [x, y]
+
