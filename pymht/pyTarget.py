@@ -6,6 +6,8 @@ import numpy as np
 import copy
 import datetime
 import matplotlib.pyplot as plt
+import xml.etree.ElementTree as ET
+from pymht.utils.xmlDefinitions import *
 
 class Target():
     def __init__(self, time, scanNumber, x_0, P_0, ID=None, **kwargs):
@@ -622,6 +624,54 @@ class Target():
             for hyp in self.trackHypotheses:
                 hyp.recDownPlotStates(**kwargs)
 
+    def _storeNode(self, simulationElement, radarPeriod, **kwargs):
+        trackElement = ET.SubElement(simulationElement,
+                                     trackTag,
+                                     attrib=estimateAttrib)
+        unSmoothedStates = ET.SubElement(trackElement,
+                                         statesTag,
+                                         attrib={'type': unsmoothedTag})
+        smoothedStateElement = ET.SubElement(trackElement,
+                                             statesTag,
+                                             attrib={'type': smoothedTag})
+        mmsi = self._getHistoricalMmsi()
+        if mmsi is not None:
+            trackElement.attrib[mmsiTag] = str(mmsi)
+        trackElement.attrib[idTag] = str(self.ID)
+        for k,v in kwargs.items():
+            trackElement.attrib[str(k)] = str(v)
+
+        unSmoothedNodes = self.backtrackNodes()
+        smoothedPositions, smoothedVelocities = self.getSmoothTrack(radarPeriod)
+
+        assert len(unSmoothedNodes) == len(smoothedPositions)
+
+        for node, sPos, sVel in zip(unSmoothedNodes, smoothedPositions, smoothedVelocities):
+            stateElement = ET.SubElement(unSmoothedStates,
+                                         stateTag,
+                                         attrib={timeTag: str(node.time)})
+            positionElement = ET.SubElement(stateElement, positionTag)
+            eastPos, northPos, eastVel, northVel = node.getXmlStateStrings()
+            ET.SubElement(positionElement, northTag).text = northPos
+            ET.SubElement(positionElement, eastTag).text = eastPos
+            velocityElement = ET.SubElement(stateElement, velocityTag)
+            ET.SubElement(velocityElement, northTag).text = northVel
+            ET.SubElement(velocityElement, eastTag).text = eastVel
+
+            sStateElement = ET.SubElement(smoothedStateElement,
+                                          stateTag,
+                                          attrib={timeTag: str(node.time)})
+            sPositionElement = ET.SubElement(sStateElement, positionTag)
+            sEastPos = str(round(sPos[0], 2))
+            sNorthPos = str(round(sPos[1], 2))
+            ET.SubElement(sPositionElement, northTag).text = sNorthPos
+            ET.SubElement(sPositionElement, eastTag).text = sEastPos
+
+            sVelocityElement = ET.SubElement(sStateElement, velocityTag)
+            sEastVel = str(round(sVel[0], 2))
+            sNorthVel = str(round(sVel[1], 2))
+            ET.SubElement(sVelocityElement, northTag).text = sNorthVel
+            ET.SubElement(sVelocityElement, eastTag).text = sEastVel
 
 if __name__ == '__main__':
     pass
