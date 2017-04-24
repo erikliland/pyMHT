@@ -18,6 +18,7 @@ DEAD = -1
 
 np.set_printoptions(precision=1, suppress=True)
 
+log = logging.getLogger(__name__)
 
 def _solve_global_nearest_neighbour(delta_matrix, gate_distance=np.Inf, **kwargs):
     try:
@@ -132,6 +133,7 @@ def _merge_similar_targets(initial_targets, threshold):
             distance_to_targets = np.array([np.linalg.norm(target.x_0[0:2] - t.x_0[0:2]) for t in initial_targets])
             close_targets = distance_to_targets < threshold
             close_targets_indices = np.where(close_targets)[0]
+            log.debug("Merging " + str(len(close_targets)) + " initial targets to 1")
             selected_targets = [initial_targets[i] for i in close_targets_indices if i not in used_targets]
             merged_target = _merge_targets(selected_targets)
             for i in close_targets_indices:
@@ -198,30 +200,29 @@ class Initiator():
         self.gamma = tracking_parameters['gamma']
         self.last_timestamp = None
         self.merge_threshold = mergeThreshold  # meter
-        self.log = logging.getLogger(__name__)
-        self.log.info("Initiator ready")
+        log.info("Initiator ready")
 
     def getPreliminaryTracksString(self):
         return " ".join([str(e) for e in self.preliminary_tracks])
 
     def processMeasurements(self, measurement_list):
         tic = time.time()
-        self.log.info("processMeasurements " + str(measurement_list.measurements.shape[0]))
+        log.info("processMeasurements " + str(measurement_list.measurements.shape[0]))
         unused_indices, initial_targets = self._processPreliminaryTracks(measurement_list)
         unused_indices = self._processInitiators(unused_indices, measurement_list)
         self._spawnInitiators(unused_indices, measurement_list)
         self.last_timestamp = measurement_list.time
         initial_targets = _merge_similar_targets(initial_targets, self.merge_threshold)
-        self.log.info("new initial targets " + str(len(initial_targets)))
+        log.info("new initial targets " + str(len(initial_targets)))
         toc = time.time() - tic
-        self.log.info("processMeasurements runtime: {:.1f}ms".format(toc * 1000))
+        log.info("processMeasurements runtime: {:.1f}ms".format(toc * 1000))
         return initial_targets
 
     def _processPreliminaryTracks(self, measurement_list):
         newInitialTargets = []
         time = measurement_list.time
         measurement_array = measurement_list.measurements
-        self.log.info("_processPreliminaryTracks " + str(len(self.preliminary_tracks)))
+        log.info("_processPreliminaryTracks " + str(len(self.preliminary_tracks)))
 
         # Check for something to work on
         n1 = len(self.preliminary_tracks)
@@ -255,8 +256,8 @@ class Initiator():
                 inside_gate = nis < self.gamma
                 delta_matrix[i, j] = distance if inside_gate else np.Inf
 
-        # self.log.debug("Gamma: " + str(self.gamma))
-        # self.log.debug("delta_matrix\n" + str(delta_matrix))
+        # log.debug("Gamma: " + str(self.gamma))
+        # log.debug("delta_matrix\n" + str(delta_matrix))
 
         # Assign measurements
         assignments = _solve_global_nearest_neighbour(delta_matrix)
@@ -286,15 +287,15 @@ class Initiator():
         for track in self.preliminary_tracks:
             track.n += 1
 
-        self.log.debug(self.getPreliminaryTracksString())
+        log.debug(self.getPreliminaryTracksString())
         removeIndices = []
         for track_index, track in enumerate(self.preliminary_tracks):
             track_status = track.mn_analysis(self.M, self.N)
             if track_status == DEAD:
-                self.log.debug("Removing DEAD track " + str(track_index))
+                log.debug("Removing DEAD track " + str(track_index))
                 removeIndices.append(track_index)
             elif track_status == CONFIRMED:
-                self.log.debug("Removing CONFIRMED track " + str(track_index))
+                log.debug("Removing CONFIRMED track " + str(track_index))
                 # assert len(track.estimates) == self.N + 1
                 new_target = Target(time,
                                     None,
@@ -302,13 +303,13 @@ class Initiator():
                                     track.covariance,
                                     measurementNumber=track.measurement_index + 1,
                                     measurement=measurement_array[track.measurement_index])
-                self.log.debug("Spawning new (initial) Target: " + str(new_target)
+                log.debug("Spawning new (initial) Target: " + str(new_target)
                                + " Covariance:\n" + np.array_str(track.covariance))
                 newInitialTargets.append(new_target)
                 removeIndices.append(track_index)
         for i in reversed(removeIndices):
             self.preliminary_tracks.pop(i)
-        if removeIndices: self.log.debug(self.getPreliminaryTracksString())
+        if removeIndices: log.debug(self.getPreliminaryTracksString())
 
         used_indices = [assignment[1] for assignment in assignments]
         unused_indices = [index
@@ -317,7 +318,7 @@ class Initiator():
         return unused_indices, newInitialTargets
 
     def _processInitiators(self, unused_indices, measurement_list):
-        self.log.debug("_processInitiators " + str(len(self.initiators)))
+        log.debug("_processInitiators " + str(len(self.initiators)))
         time = measurement_list.time
         measurementArray = measurement_list.measurements
         n1 = len(self.initiators)
@@ -333,10 +334,10 @@ class Initiator():
 
         dt = time - self.initiators[0].timestamp
         gate_distance = self.v_max * dt
-        # self.log.debug("dt " + str(dt))
-        # self.log.debug("v_max " + str(self.v_max))
-        # self.log.debug("gate_distance " + str(gate_distance))
-        # self.log.debug("delta_matrix\n" + str(delta_matrix))
+        # log.debug("dt " + str(dt))
+        # log.debug("v_max " + str(self.v_max))
+        # log.debug("gate_distance " + str(gate_distance))
+        # log.debug("delta_matrix\n" + str(delta_matrix))
         assignments = _solve_global_nearest_neighbour(delta_matrix, gate_distance)
         assigned_local_indices = [assignment[1] for assignment in assignments]
         used_indices = [unused_indices[j] for j in assigned_local_indices]
@@ -347,7 +348,7 @@ class Initiator():
         return unused_indices
 
     def _spawnInitiators(self, unused_indices, measurement_list):
-        self.log.debug("_spawnInitiators " + str(len(unused_indices)))
+        log.debug("_spawnInitiators " + str(len(unused_indices)))
         time = measurement_list.time
         measurement_array = measurement_list.measurements
         self.initiators = [Measurement(measurement_array[index], time)
@@ -356,8 +357,8 @@ class Initiator():
     def __spawn_preliminary_tracks(self, measurement_list, assignments):
         time = measurement_list.time
         measurements = measurement_list.measurements
-        self.log.info("__spawn_preliminary_tracks " + str(len(assignments)))
-        self.log.debug("New preliminary tracks:" +  ("\n" + "\n".join(
+        log.info("__spawn_preliminary_tracks " + str(len(assignments)))
+        log.debug("New preliminary tracks:" +  ("\n" + "\n".join(
                 ['{0:17} -> {1:17}'.format(str(self.initiators[old_index].value), str(measurements[new_index]))
                  for old_index, new_index in assignments]) if assignments else ""))
 
@@ -371,7 +372,7 @@ class Initiator():
         used_initiator_indices = {e[0] for e in assignments}
         unused_initiator_indices = set(range(len(self.initiators))).difference(used_initiator_indices)
         if unused_initiator_indices:
-            self.log.debug("discarded initiators:\n" +
+            log.debug("discarded initiators:\n" +
                            "\n".join([str(self.initiators[i].value)
                                       for i in unused_initiator_indices]))
 
