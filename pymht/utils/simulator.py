@@ -60,7 +60,7 @@ def generateInitialTargets(numOfTargets, centerPosition,
     return initialList
 
 
-def simulateTargets(initialTargets, simTime, timeStep, model):
+def simulateTargets(initialTargets, simTime, timeStep, model, **kwargs):
     Phi = model.Phi(timeStep)
     Gamma = model.Gamma
     simList = list()
@@ -71,7 +71,8 @@ def simulateTargets(initialTargets, simTime, timeStep, model):
         targetList = [calculateNextState(target, timeStep, Phi, Gamma, model)
                       for target in simList[-1]]
         simList.append(targetList)
-    simList.pop(0)
+    if not kwargs.get('includeInitialTime', True):
+        simList.pop(0)
     return simList
 
 
@@ -125,20 +126,30 @@ def simulateScans(simList, radarPeriod, H, R, lambda_phi=0,
     return scanList
 
 
-def simulateAIS(sim_list, Phi_func, C, R, P_0, **kwargs):
+def simulateAIS(sim_list, Phi_func, C, R, P_0, radarPeriod, **kwargs):
     ais_measurements = AIS_messageList()
     integerTime = kwargs.get('integerTime', True)
-    P_r = kwargs.get('probabilityOfReceive', 1.0)
     for i, sim in enumerate(sim_list[1:]):
         tempList = []
-        for j, target in enumerate(t for t in sim if t.mmsi is not None):
+        for j, target in ((j,t) for j, t in enumerate(sim) if t.mmsi is not None):
             timeSinceLastAisMessage = target.time - target.timeOfLastAisMessage
             speedMS = np.linalg.norm(target.state[2:4])
             reportingInterval = _aisReportInterval(speedMS, target.aisClass)
-            shouldSendAisMessage = timeSinceLastAisMessage >= reportingInterval
-            if not shouldSendAisMessage: continue
+            shouldSendAisMessage = ((timeSinceLastAisMessage >= reportingInterval) and
+                                    (target.time % radarPeriod != 0))
+            # print("MMSI",target.mmsi,
+            #       "Time",target.time,"\t",
+            #       "Time of last AIS message", target.timeOfLastAisMessage,"\t",
+            #       "Reporting Interval", reportingInterval,
+            #       "Should send AIS message", shouldSendAisMessage)
+            if not shouldSendAisMessage:
+                try:
+                    sim_list[i + 2][j].timeOfLastAisMessage = target.timeOfLastAisMessage
+                except IndexError:
+                    pass
+                continue
             try:
-                sim_list[i+1][j].timeOfLastAisMessage = target.time
+                sim_list[i+2][j].timeOfLastAisMessage = target.time
             except IndexError:
                 pass
             if integerTime:
@@ -160,7 +171,7 @@ def simulateAIS(sim_list, Phi_func, C, R, P_0, **kwargs):
                                      state=state,
                                      covariance=P_0,
                                      mmsi=mmsi)
-            if np.random.uniform() <= P_r:
+            if np.random.uniform() <= target.P_r:
                 tempList.append(prediction)
         if tempList:
             ais_measurements.append(tempList)
