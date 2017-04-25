@@ -37,12 +37,7 @@ logging.basicConfig(level=logging.DEBUG,
                     datefmt='%Y-%m-%d %H:%M:%S',
                     filename=os.path.join(logDir, 'myapp.log'),
                     filemode='w')
-# console = logging.StreamHandler()
-# console.setLevel(logging.INFO)
-# formatter = logging.Formatter('%(name)-12s: %(levelname)-8s %(message)s')
-# console.setFormatter(formatter)
 log = logging.getLogger(__name__)
-# log.addHandler(console)
 
 class Tracker():
 
@@ -112,7 +107,7 @@ class Tracker():
         self.radarRange = radarRange
         self.radarPeriod = kwargs.get('radarPeriod')
         self.fixedPeriod = 'radarPeriod' in kwargs
-        self.default_P_d = 0.8
+        self.default_P_d = P_d
 
         # Timing and logging
         self.runtimeLog = {'Total': [],
@@ -1294,6 +1289,7 @@ class Tracker():
         ET.SubElement(trackerSettingElement,'NLLR_upperLimit').text = str(self.NLLR_UPPER_LIMIT)
         ET.SubElement(trackerSettingElement,'pruneThreshold').text = str(self.pruneThreshold)
         ET.SubElement(trackerSettingElement,'targetSizeLimit').text = str(self.targetSizeLimit)
+        ET.SubElement(trackerSettingElement,'maxSpeed').text = str(self.maxSpeed)
 
         self._storeGroundTruth(scenarioElement)
         return scenarioElement
@@ -1362,6 +1358,8 @@ class Tracker():
                 ET.SubElement(velocityElement, eastTag).text = eastVel
                 if simTarget.mmsi is not None:
                     trackElement.attrib[mmsiTag] = str(simTarget.mmsi)
+                    trackElement.attrib[aisclassTag] = str(simTarget.aisClass)
+                    trackElement.attrib[prTag] = str(simTarget.P_r)
                 statesElement.attrib[sigmaqTag] = str(simTarget.sigma_Q)
 
 if __name__ == '__main__':

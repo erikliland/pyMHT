@@ -28,5 +28,7 @@ pdTag = "Pd"
 sigmaqTag = "sigmaQ"
 seedTag = "seed"
 lengthTag = "length"
+aisclassTag = "aisClass"
+prTag = "Pr"
 
 timeLogPrecision = 6
