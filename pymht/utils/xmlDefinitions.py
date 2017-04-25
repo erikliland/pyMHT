@@ -1,6 +1,9 @@
 scenarioTag = "Scenario"
 groundtruthTag = "groundtruth"
 simulationTag = "Simulation"
+variationsTag = "Variations"
+variationTag = "Variation"
+scenariosettingsTag = "Scenario-settings"
 trackerSettingsTag = "Tracker-settings"
 runTag = "Run"
 runtimeTag = "Runtime"
@@ -30,5 +33,6 @@ seedTag = "seed"
 lengthTag = "length"
 aisclassTag = "aisClass"
 prTag = "Pr"
+nameTag = "name"
 
 timeLogPrecision = 6
