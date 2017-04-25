@@ -489,7 +489,9 @@ class Target():
                 measurements[i] = np.ma.masked
         assert measurements.shape[1] == 2, str(measurements.shape)
         if depth < 2:
-            pos, vel =  (measurements, np.empty_like(measurements)*np.nan)
+            pos =  measurements.filled(np.nan)
+            vel = np.empty_like(pos)*np.nan
+            return pos, vel
         kf = KalmanFilter(transition_matrices=model.Phi(radarPeriod),
                           observation_matrices=model.C_RADAR,
                           initial_state_mean=initialState)
