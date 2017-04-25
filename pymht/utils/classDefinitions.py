@@ -7,14 +7,15 @@ log = logging.getLogger(__name__)
 
 class SimTarget:
     def __init__(self, state, time, P_d, sigma_Q, **kwargs):
-        assert state.ndim == 1
-        self.state = state
+        self.state = np.array(state, dtype=np.double)
+        assert self.state.ndim == 1
         self.time = time
         self.P_d = P_d
         self.sigma_Q = sigma_Q
         self.mmsi = kwargs.get('mmsi')
         self.aisClass = kwargs.get('aisClass', 'B')
-        self.timeOfLastAisMessage = 0
+        self.timeOfLastAisMessage = -float('inf')
+        self.P_r = kwargs.get('P_r', 1.)
 
     def __str__(self):
         timeString = datetime.datetime.fromtimestamp(self.time).strftime("%H:%M:%S.%f")
@@ -233,7 +234,8 @@ class AIS_messageList:
 
     def print(self):
         print("aisMeasurements:")
-        print(*self._list, sep="\n", end="\n\n")
+        for aisTimeList in self._list:
+            print(*aisTimeList, sep="\n", end="\n\n")
 
     def getMeasurements(self, scanTime):
         if self._iterator is None:
@@ -241,7 +243,7 @@ class AIS_messageList:
             self._nextAisMeasurements = next(self._iterator, None)
 
         if self._nextAisMeasurements is not None:
-            if all((m.time <= scanTime) for m in self._nextAisMeasurements):
+            if all((m.time < scanTime) for m in self._nextAisMeasurements):
                 self._lastExtractedTime = scanTime
                 res = self.predictAisMeasurements(scanTime, self._nextAisMeasurements)
                 self._nextAisMeasurements = next(self._iterator, None)
