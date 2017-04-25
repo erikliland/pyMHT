@@ -10,14 +10,12 @@ import pymht.utils.kalman as kalman
 import pymht.initiators.m_of_n as m_of_n
 import pymht.models.pv as model
 import time
-import signal
 import logging
 import datetime
 import copy
 import itertools
 import matplotlib.pyplot as plt
 import numpy as np
-import multiprocessing as mp
 from scipy.sparse.csgraph import connected_components
 from ortools.linear_solver import pywraplp
 from termcolor import cprint
@@ -41,49 +39,35 @@ log = logging.getLogger(__name__)
 
 class Tracker():
 
-    def __init__(self, Phi, C, Gamma, P_d, P_0, R_RADAR, R_AIS, Q, lambda_phi,
-                 lambda_nu, eta2, N, p0, radarRange, **kwargs):
+    def __init__(self, model, radarPeriod, lambda_phi, lambda_nu, **kwargs):
 
-        if 'logLevel' in kwargs:
-            log.setLevel(kwargs.get('logLevel'))
-        log.info('Running base main')
+        log.info('Initializing MHT tracker')
 
-        self.logTime = kwargs.get("logTime", False)
-        self.parallelize = kwargs.get("w", 1) > 1
-        self.kwargs = kwargs
+        # Radar parameters
+        self.position = kwargs.get('position', np.array([0.,0.]))
+        self.radarRange = kwargs.get('radarRange', float('inf'))
+        self.radarPeriod = radarPeriod
+        self.fixedPeriod = True
+        self.default_P_d = kwargs.get('P_d', 0.8)
 
-        if self.parallelize:
-            def initWorker():
-                signal.signal(signal.SIGINT, signal.SIG_IGN)
-
-            self.nWorkers = max(kwargs.get("w") - 1, 1)
-            self.workers = mp.Pool(self.nWorkers, initWorker)
-        else:
-            self.nWorkers = 0
-
-        log.debug("Using " +
-                  str(self.nWorkers + 1) +
-                  " process(es) with " +
-                  str(os.cpu_count()) +
-                  " cores")
 
         # State space model
-        self.A = Phi
-        self.C = C
-        self.Gamma = Gamma
-        self.P_0 = P_0
-        self.R_RADAR = R_RADAR
-        self.R_AIS = R_AIS
-        self.Q = Q
+        self.A = model.Phi(radarPeriod)
+        self.C = model.C_RADAR
+        self.Gamma = model.Gamma
+        self.P_0 = model.P0
+        self.R_RADAR = model.R_RADAR()
+        self.R_AIS = model.R_AIS()
+        self.Q = model.Q(radarPeriod)
 
         # Target initiator
-        self.maxSpeed = kwargs.get('maxSpeed', 20)
+        self.maxSpeedMS = kwargs.get('maxSpeedMS', 20)
         self.M_required = kwargs.get('M_required', 2)
         self.N_checks = kwargs.get('N_checks', 3)
         self.mergeThreshold = 4 * (model.sigmaR_RADAR_tracker ** 2)
         self.initiator = m_of_n.Initiator(self.M_required,
                                           self.N_checks,
-                                          self.maxSpeed,
+                                          self.maxSpeedMS,
                                           self.C,
                                           self.R_RADAR,
                                           self.mergeThreshold,
@@ -101,13 +85,6 @@ class Tracker():
         self.__aisHistory__ = []
         self.trackIdCounter = 0
         self.groundTruth = kwargs.get('groundTruth')
-
-        # Radar parameters
-        self.position = p0
-        self.radarRange = radarRange
-        self.radarPeriod = kwargs.get('radarPeriod')
-        self.fixedPeriod = 'radarPeriod' in kwargs
-        self.default_P_d = P_d
 
         # Timing and logging
         self.runtimeLog = {'Total': [],
@@ -127,10 +104,12 @@ class Tracker():
         self.createComputationTime = None
 
         # Tracker parameters
+        self.pruneSimilar = kwargs.get('pruneSimilar', False)
         self.lambda_phi = lambda_phi
         self.lambda_nu = lambda_nu
         self.lambda_ex = lambda_phi + lambda_nu
-        self.eta2 = eta2
+        self.eta2 = kwargs.get('eta2',5.99)
+        N = kwargs.get('N', 5)
         self.N_max = copy.copy(N)
         self.N = copy.copy(N)
         self.NLLR_UPPER_LIMIT = -(np.log(1 - 0.7)) * 7
@@ -149,10 +128,6 @@ class Tracker():
     def __enter__(self):
         return self
 
-    def __exit__(self, exeType, exeValue, traceback):
-        if self.parallelize:
-            self.workers.terminate()
-            self.workers.join()
 
     def setHighPriority(self):
         import psutil
@@ -227,8 +202,7 @@ class Tracker():
                              unused_measurement_indices, scanTime, scanNumber, targetProcessTimes)
 
         self.toc['Process'] = time.time() - self.tic['Process']
-        if self.parallelize:
-            log.debug(str([round(e) for e in self.leafNodeTimeList]))
+
         if kwargs.get("printAssociation", False):
             print(*self.__associatedMeasurements__, sep="\n", end="\n\n")
 
@@ -247,7 +221,7 @@ class Tracker():
         self.nOptimSolved = 0
         for cluster in self.__clusterList__:
             if len(cluster) == 1:
-                if self.kwargs.get('pruneSimilar', False):
+                if self.pruneSimilar:
                     self._pruneSimilarState(cluster, self.pruneThreshold)
                 self.__trackNodes__[cluster] = self.__targetList__[
                     cluster[0]]._selectBestHypothesis()
@@ -1269,8 +1243,9 @@ class Tracker():
                   sep="", end="\n")
 
     def getScenarioElement(self, **kwargs):
-        scenarioElement = ET.Element(scenarioTag)
+        return ET.Element(scenarioTag)
 
+    def _storeTrackerArgs(self, scenarioElement, **kwargs):
         for k,v in kwargs.items():
             scenarioElement.attrib[str(k)] = str(v)
 
@@ -1289,10 +1264,7 @@ class Tracker():
         ET.SubElement(trackerSettingElement,'NLLR_upperLimit').text = str(self.NLLR_UPPER_LIMIT)
         ET.SubElement(trackerSettingElement,'pruneThreshold').text = str(self.pruneThreshold)
         ET.SubElement(trackerSettingElement,'targetSizeLimit').text = str(self.targetSizeLimit)
-        ET.SubElement(trackerSettingElement,'maxSpeed').text = str(self.maxSpeed)
-
-        self._storeGroundTruth(scenarioElement)
-        return scenarioElement
+        ET.SubElement(trackerSettingElement,'maxSpeedMS').text = str(self.maxSpeedMS)
 
     def _storeRun(self, scenarioElement, **kwargs):
         runElement = ET.SubElement(scenarioElement, runTag)
@@ -1330,37 +1302,6 @@ class Tracker():
 
         for target in self.__terminatedTargets__:
             target._storeNode(runElement, self.radarPeriod, terminated=True)
-
-    def _storeGroundTruth(self, scenarioElement, **kwargs):
-        if self.groundTruth is None:
-            return
-        nSamples = len(self.groundTruth)
-        nTargets = len(self.groundTruth[0])
-        groundtruthElement = ET.SubElement(scenarioElement, groundtruthTag)
-        for i in range(nTargets):
-            trackElement = ET.SubElement(groundtruthElement,
-                                         trackTag,
-                                         attrib={typeTag:groundtruthTag})
-            statesElement = ET.SubElement(trackElement,
-                                          statesTag)
-            for j in range(nSamples):
-                simTarget = self.groundTruth[j][i]
-                stateElement = ET.SubElement(statesElement,
-                                             stateTag,
-                                             attrib={timeTag:str(simTarget.time),
-                                                     pdTag:str(simTarget.P_d)})
-                eastPos, northPos, eastVel, northVel = simTarget.getXmlStateStrings()
-                positionElement = ET.SubElement(stateElement,positionTag)
-                ET.SubElement(positionElement,northTag).text = northPos
-                ET.SubElement(positionElement,eastTag).text = eastPos
-                velocityElement = ET.SubElement(stateElement, velocityTag)
-                ET.SubElement(velocityElement, northTag).text = northVel
-                ET.SubElement(velocityElement, eastTag).text = eastVel
-                if simTarget.mmsi is not None:
-                    trackElement.attrib[mmsiTag] = str(simTarget.mmsi)
-                    trackElement.attrib[aisclassTag] = str(simTarget.aisClass)
-                    trackElement.attrib[prTag] = str(simTarget.P_r)
-                statesElement.attrib[sigmaqTag] = str(simTarget.sigma_Q)
 
 if __name__ == '__main__':
     pass
