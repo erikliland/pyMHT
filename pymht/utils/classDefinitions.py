@@ -2,6 +2,8 @@ import numpy as np
 import datetime
 import matplotlib.pyplot as plt
 import logging
+import xml.etree.ElementTree as ET
+from pymht.utils.xmlDefinitions import *
 log = logging.getLogger(__name__)
 
 
@@ -158,6 +160,41 @@ class Velocity:
     def y(self):
         return self.velocity[1]
 
+class SimList(list):
+    def __init__(self, *args):
+        list.__init__(self,*args)
+
+    def storeGroundTruth(self, scenarioElement, **kwargs):
+        if self is None:
+            return
+        nSamples = len(self)
+        nTargets = len(self[0])
+        groundtruthElement = ET.SubElement(scenarioElement, groundtruthTag)
+        for i in range(nTargets):
+            trackElement = ET.SubElement(groundtruthElement,
+                                         trackTag,
+                                         attrib={typeTag:groundtruthTag,
+                                                 idTag:str(i)})
+            statesElement = ET.SubElement(trackElement,
+                                          statesTag)
+            for j in range(nSamples):
+                simTarget = self[j][i]
+                stateElement = ET.SubElement(statesElement,
+                                             stateTag,
+                                             attrib={timeTag:str(simTarget.time),
+                                                     pdTag:str(simTarget.P_d)})
+                eastPos, northPos, eastVel, northVel = simTarget.getXmlStateStrings()
+                positionElement = ET.SubElement(stateElement,positionTag)
+                ET.SubElement(positionElement,northTag).text = northPos
+                ET.SubElement(positionElement,eastTag).text = eastPos
+                velocityElement = ET.SubElement(stateElement, velocityTag)
+                ET.SubElement(velocityElement, northTag).text = northVel
+                ET.SubElement(velocityElement, eastTag).text = eastVel
+                if simTarget.mmsi is not None:
+                    trackElement.attrib[mmsiTag] = str(simTarget.mmsi)
+                    trackElement.attrib[aisclassTag] = str(simTarget.aisClass)
+                    trackElement.attrib[prTag] = str(simTarget.P_r)
+                statesElement.attrib[sigmaqTag] = str(simTarget.sigma_Q)
 
 class AIS_message:
     def __init__(self, time, state, covariance, mmsi):
