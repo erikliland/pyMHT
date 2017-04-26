@@ -6,6 +6,8 @@ Trondheim, Norway
 Spring 2017
 ========================================================================================
 """
+from pymht.utils.xmlDefinitions import *
+from pymht.pyTarget import Target
 import pymht.utils.kalman as kalman
 import pymht.initiators.m_of_n as m_of_n
 import pymht.models.pv as model
@@ -21,7 +23,6 @@ from ortools.linear_solver import pywraplp
 from termcolor import cprint
 import xml.etree.ElementTree as ET
 import os
-from pymht.utils.xmlDefinitions import *
 
 # ----------------------------------------------------------------------------
 # Instantiate logging object
@@ -84,7 +85,6 @@ class Tracker():
         self.__clusterList__ = []
         self.__aisHistory__ = []
         self.trackIdCounter = 0
-        self.groundTruth = kwargs.get('groundTruth')
 
         # Timing and logging
         self.runtimeLog = {'Total': [],
@@ -139,6 +139,13 @@ class Tracker():
         elif OS == "Windows":
             p.nice(psutil.HIGH_PRIORITY_CLASS)
 
+    def preInitialize(self, simList):
+        for iT in simList[0]:
+            self.initiateTarget(Target(iT.time,
+                                       None,
+                                       iT.state,
+                                       model.P0,))
+
     def initiateTarget(self, newTarget):
         if newTarget.haveNoNeightbours(self.__targetList__, self.mergeThreshold):
             target = copy.copy(newTarget)
@@ -148,7 +155,7 @@ class Tracker():
             self.trackIdCounter += 1
             # target.P_0 = self.P_0
             # assert target.measurementNumber is not None
-            assert target.measurement is not None
+            # assert target.measurement is not None
             self.__targetList__.append(target)
             self.__associatedMeasurements__.append(set())
             self.__trackNodes__ = np.append(self.__trackNodes__, target)
@@ -286,6 +293,7 @@ class Tracker():
         for trackIndex, trackNode in enumerate(self.__trackNodes__):
             # Check outside radarRange
             if trackNode.isOutsideRange(self.position, self.radarRange):
+                trackNode.status = outofrangeTag
                 deadTracks.append(trackIndex)
                 log.info("Terminating track {0:} at {1:} since it is out of radarRange".format(
                     trackIndex,np.array_str(self.__trackNodes__[trackIndex].x_0[0:2])))
@@ -1105,6 +1113,9 @@ class Tracker():
         colors = kwargs.get("colors", self._getColorCycle())
         for track in self.__terminatedTargets__:
             track.plotTrack(c=next(colors), markInitial=True, markEnd=True, terminated = True, **kwargs)
+            if kwargs.get('markStates', False):
+                defaults = {'labels': False, 'dummy': True, 'real': True, 'ais': True}
+                track.plotStates(float('inf'), **{**defaults, **kwargs})
 
     def plotMeasurementsFromTracks(self, stepsBack=float('inf'), **kwargs):
         for node in self.__trackNodes__:

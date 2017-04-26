@@ -27,6 +27,7 @@ class Target():
         self.cumulativeNLLR = copy.copy(kwargs.get("cumulativeNLLR", 0))
         self.trackHypotheses = None
         self.mmsi = kwargs.get('mmsi')
+        self.status = "Active"
         assert self.P_d >= 0
         assert self.P_d <= 1
         assert (type(self.parent) == type(self) or self.parent is None)
@@ -686,6 +687,10 @@ class Target():
             sNorthVel = str(round(sVel[1], 2))
             ET.SubElement(sVelocityElement, northTag).text = sNorthVel
             ET.SubElement(sVelocityElement, eastTag).text = sEastVel
+
+            if node.status == outofrangeTag:
+                stateElement.attrib[stateTag] = node.status
+                sStateElement.attrib[stateTag] = node.status
 
 if __name__ == '__main__':
     pass
