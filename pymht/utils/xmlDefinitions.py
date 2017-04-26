@@ -34,5 +34,8 @@ lengthTag = "length"
 aisclassTag = "aisClass"
 prTag = "Pr"
 nameTag = "name"
+preinitializedTag = "preinitialized"
+outofrangeTag = "OutOfRange"
+statusTag = "status"
 
 timeLogPrecision = 6
