@@ -126,7 +126,6 @@ class Tracker():
     def __enter__(self):
         return self
 
-
     def setHighPriority(self):
         import psutil
         import platform
