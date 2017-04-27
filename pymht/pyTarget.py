@@ -106,7 +106,6 @@ class Target():
     def __sub__(self, other):
         return self.x_0 - other.x_0
 
-
     def getXmlStateStrings(self, precision=2):
         return (str(round(self.x_0[0],precision)),
                 str(round(self.x_0[1],precision)),
@@ -503,7 +502,7 @@ class Target():
         if depth < 2:
             pos =  measurements.filled(np.nan)
             vel = np.empty_like(pos)*np.nan
-            return pos, vel
+            return pos, vel, False
         kf = KalmanFilter(transition_matrices=model.Phi(radarPeriod),
                           observation_matrices=model.C_RADAR,
                           initial_state_mean=initialState)
@@ -515,7 +514,7 @@ class Target():
             str(smoothedPositions.shape) + str(measurements.shape)
         assert smoothedVelocities.shape == measurements.shape, \
             str(smoothedVelocities.shape) + str(measurements.shape)
-        return smoothedPositions, smoothedVelocities
+        return smoothedPositions, smoothedVelocities, True
 
     def plotTrack(self, root=None, stepsBack=float('inf'), **kwargs):
         if kwargs.get('markInitial', False) and stepsBack == float('inf'):
@@ -528,8 +527,10 @@ class Target():
             self.markEnd(**kwargs)
         if kwargs.get('smooth', False) and self.getInitial().depth()>1:
             radarPeriod = kwargs.get('radarPeriod', self._estimateRadarPeriod())
-            track,_ = self.getSmoothTrack(radarPeriod)
+            track,_, smoothingGood = self.getSmoothTrack(radarPeriod)
             linestyle = 'dashed'
+            if not smoothingGood:
+                return
         else:
             track = self.backtrackPosition(stepsBack)
             linestyle = 'solid'
@@ -655,9 +656,7 @@ class Target():
         unSmoothedStates = ET.SubElement(trackElement,
                                          statesTag,
                                          attrib={smoothedTag: falseTag})
-        smoothedStateElement = ET.SubElement(trackElement,
-                                             statesTag,
-                                             attrib={smoothedTag: trueTag})
+
         mmsi = self._getHistoricalMmsi()
         if mmsi is not None:
             trackElement.attrib[mmsiTag] = str(mmsi)
@@ -666,11 +665,17 @@ class Target():
             trackElement.attrib[str(k)] = str(v)
 
         unSmoothedNodes = self.backtrackNodes()
-        smoothedPositions, smoothedVelocities = self.getSmoothTrack(radarPeriod)
+        smoothedPositions, smoothedVelocities, smoothingGood = self.getSmoothTrack(radarPeriod)
 
         trackElement.attrib[lengthTag] = str(len(unSmoothedNodes))
 
         assert len(unSmoothedNodes) == len(smoothedPositions)
+
+        if smoothingGood:
+            smoothedStateElement = ET.SubElement(trackElement,
+                                                 statesTag,
+                                                 attrib={smoothedTag: trueTag})
+
 
         for node, sPos, sVel in zip(unSmoothedNodes, smoothedPositions, smoothedVelocities):
             stateElement = ET.SubElement(unSmoothedStates,
@@ -684,24 +689,26 @@ class Target():
             ET.SubElement(velocityElement, northTag).text = northVel
             ET.SubElement(velocityElement, eastTag).text = eastVel
 
-            sStateElement = ET.SubElement(smoothedStateElement,
-                                          stateTag,
-                                          attrib={timeTag: str(node.time)})
-            sPositionElement = ET.SubElement(sStateElement, positionTag)
-            sEastPos = str(round(sPos[0], 2))
-            sNorthPos = str(round(sPos[1], 2))
-            ET.SubElement(sPositionElement, northTag).text = sNorthPos
-            ET.SubElement(sPositionElement, eastTag).text = sEastPos
+            if smoothingGood:
+                sStateElement = ET.SubElement(smoothedStateElement,
+                                              stateTag,
+                                              attrib={timeTag: str(node.time)})
+                sPositionElement = ET.SubElement(sStateElement, positionTag)
+                sEastPos = str(round(sPos[0], 2))
+                sNorthPos = str(round(sPos[1], 2))
+                ET.SubElement(sPositionElement, northTag).text = sNorthPos
+                ET.SubElement(sPositionElement, eastTag).text = sEastPos
 
-            sVelocityElement = ET.SubElement(sStateElement, velocityTag)
-            sEastVel = str(round(sVel[0], 2))
-            sNorthVel = str(round(sVel[1], 2))
-            ET.SubElement(sVelocityElement, northTag).text = sNorthVel
-            ET.SubElement(sVelocityElement, eastTag).text = sEastVel
+                sVelocityElement = ET.SubElement(sStateElement, velocityTag)
+                sEastVel = str(round(sVel[0], 2))
+                sNorthVel = str(round(sVel[1], 2))
+                ET.SubElement(sVelocityElement, northTag).text = sNorthVel
+                ET.SubElement(sVelocityElement, eastTag).text = sEastVel
 
             if node.status == outofrangeTag:
                 stateElement.attrib[stateTag] = node.status
-                sStateElement.attrib[stateTag] = node.status
+                if smoothingGood:
+                    sStateElement.attrib[stateTag] = node.status
 
 if __name__ == '__main__':
     pass
