@@ -39,6 +39,10 @@ class SimTarget:
         if self.Q != other.Q: return False
         return True
 
+    def inRange(self, p0, rRange):
+        distance = np.linalg.norm(self.state[0:2] - p0)
+        return distance <= rRange
+
     def storeString(self):
         return ',{0:.2f},{1:.2f}'.format(*self.state[0:2])
 
@@ -164,11 +168,15 @@ class SimList(list):
     def __init__(self, *args):
         list.__init__(self,*args)
 
-    def storeGroundTruth(self, scenarioElement, **kwargs):
+    def storeGroundTruth(self, scenarioElement, scenario, **kwargs):
         if self is None:
             return
         nSamples = len(self)
         nTargets = len(self[0])
+        p0 = scenario.p0
+        radarRange = scenario.radarRange
+        radarPeriod = scenario.radarPeriod
+        initialTime = scenario.initTime
         groundtruthElement = ET.SubElement(scenarioElement, groundtruthTag)
         for i in range(nTargets):
             trackElement = ET.SubElement(groundtruthElement,
@@ -179,6 +187,10 @@ class SimList(list):
                                           statesTag)
             for j in range(nSamples):
                 simTarget = self[j][i]
+                inRange = simTarget.inRange(p0, radarRange)
+                radarTime = ((simTarget.time-initialTime)%radarPeriod) == 0.
+                if (not inRange) or (not radarTime):
+                    continue
                 stateElement = ET.SubElement(statesElement,
                                              stateTag,
                                              attrib={timeTag:str(simTarget.time),
@@ -195,6 +207,8 @@ class SimList(list):
                     trackElement.attrib[aisclassTag] = str(simTarget.aisClass)
                     trackElement.attrib[prTag] = str(simTarget.P_r)
                 statesElement.attrib[sigmaqTag] = str(simTarget.sigma_Q)
+
+
 
 class AIS_message:
     def __init__(self, time, state, covariance, mmsi):
@@ -295,7 +309,7 @@ class AIS_messageList:
         scanTimeString = datetime.datetime.fromtimestamp(scanTime).strftime("%H:%M:%S.%f")
         for measurement in aisMeasurements:
             aisTimeString = datetime.datetime.fromtimestamp(measurement.time).strftime("%H:%M:%S.%f")
-            log.debug("Predicting AIS from " + aisTimeString + " to " + scanTimeString)
+            log.debug("Predicting AIS ("+str(measurement.mmsi)+") from " + aisTimeString + " to " + scanTimeString)
             dT = scanTime - measurement.time
             assert dT > 0
             state = measurement.state
