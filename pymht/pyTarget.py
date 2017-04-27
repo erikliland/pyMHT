@@ -190,7 +190,7 @@ class Target():
         self.trackHypotheses.extend(newNodes)
         return usedMeasurementIndices
 
-    def spawnNewNodes(self, scanTime, scanNumber, x_bar, P_bar, measurementsIndices,
+    def spawnNewNodes(self, associatedMeasurements, scanTime, scanNumber, x_bar, P_bar, measurementsIndices,
                       measurements, states, covariance, nllrList, fusedAisData=None):
         assert scanTime > self.time
         assert self.scanNumber == scanNumber - 1, str(self.scanNumber) + "->" + str(scanNumber)
@@ -218,6 +218,10 @@ class Target():
                     parent=self
                     ) for i in range(nNewStates)]
         )
+        for measurementIndex in measurementsIndices:
+            associatedMeasurements.update(
+                {(scanNumber, measurementIndex + 1)}
+            )
 
         if fusedAisData is None: return
         (fusedStates,
@@ -226,21 +230,28 @@ class Target():
          fusedNllr,
          fusedMMSI) = fusedAisData
         historicalMmsi = self._getHistoricalMmsi()
-        self.trackHypotheses.extend(
-            [Target(time=scanTime,
-                    scanNumber=scanNumber,
-                    x_0=fusedStates[i],
-                    P_0=fusedCovariance,
-                    ID=self.ID,
-                    measurementNumber=fusedMeasurementIndices[i] + 1,
-                    measurement=measurements[fusedMeasurementIndices[i]],
-                    cumulativeNLLR=self.cumulativeNLLR + fusedNllr[i],
-                    mmsi=fusedMMSI[i],
-                    P_d=self.P_d,
-                    parent=self)
-             for i in range(len(fusedMeasurementIndices))
-             if (historicalMmsi is None) or (fusedMMSI[i] == historicalMmsi)
-             ])
+        acceptedMMSI = []
+        for i in range(len(fusedMeasurementIndices)):
+            if (historicalMmsi is None) or (fusedMMSI[i] == historicalMmsi):
+                self.trackHypotheses.append(
+                    Target(time=scanTime,
+                            scanNumber=scanNumber,
+                            x_0=fusedStates[i],
+                            P_0=fusedCovariance,
+                            ID=self.ID,
+                            measurementNumber=fusedMeasurementIndices[i] + 1,
+                            measurement=measurements[fusedMeasurementIndices[i]],
+                            cumulativeNLLR=self.cumulativeNLLR + fusedNllr[i],
+                            mmsi=fusedMMSI[i],
+                            P_d=self.P_d,
+                            parent=self)
+                )
+                acceptedMMSI.append(fusedMMSI[i])
+
+        for mmsi in acceptedMMSI:
+            associatedMeasurements.update(
+                {(scanNumber, mmsi)}
+            )
 
     def _getHistoricalMmsi(self):
         if self.mmsi is not None:
@@ -643,10 +654,10 @@ class Target():
                                      attrib={typeTag:estimateTag})
         unSmoothedStates = ET.SubElement(trackElement,
                                          statesTag,
-                                         attrib={'type': unsmoothedTag})
+                                         attrib={smoothedTag: falseTag})
         smoothedStateElement = ET.SubElement(trackElement,
                                              statesTag,
-                                             attrib={'type': smoothedTag})
+                                             attrib={smoothedTag: trueTag})
         mmsi = self._getHistoricalMmsi()
         if mmsi is not None:
             trackElement.attrib[mmsiTag] = str(mmsi)

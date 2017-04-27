@@ -27,10 +27,8 @@ import os
 # ----------------------------------------------------------------------------
 # Instantiate logging object
 # ----------------------------------------------------------------------------
-cwd = os.getcwd()
-logDir = os.path.join(cwd, 'logs')
-if not os.path.exists(logDir):
-    os.makedirs(logDir)
+logDir = os.path.join(os.getcwd(), 'logs')
+if not os.path.exists(logDir): os.makedirs(logDir)
 logging.basicConfig(level=logging.DEBUG,
                     format='%(asctime)s %(name)-25s %(levelname)-8s %(message)s',
                     datefmt='%Y-%m-%d %H:%M:%S',
@@ -300,6 +298,7 @@ class Tracker():
 
             # Check if track is to insecure
             elif trackNode.cumulativeNLLR > self.NLLR_UPPER_LIMIT:
+                trackNode.status = toolowscoreTag
                 deadTracks.append(trackIndex)
                 log.info("Terminating track {0:} at {1:} since its cost is above the threshold ({2:.1f}>{3:.1f})".format(
                     trackIndex, np.array_str(self.__trackNodes__[trackIndex].x_0[0:2]),
@@ -360,7 +359,6 @@ class Tracker():
 
     def _growTarget(self,targetIndex, nTargetNodes, scanList, aisList, measDim,unused_measurement_indices,
                     scanTime, scanNumber, targetProcessTimes):
-        # print("Growing target index", targetIndex)
         tic = time.time()
         target = self.__targetList__[targetIndex]
         targetNodes = target.getLeafNodes()
@@ -385,7 +383,8 @@ class Tracker():
             unused_measurement_indices[gated_index] = False
 
         for i, node in enumerate(targetNodes):
-            node.spawnNewNodes(scanTime,
+            node.spawnNewNodes(self.__associatedMeasurements__[targetIndex],
+                               scanTime,
                                scanNumber,
                                x_bar_list[i],
                                P_bar_list[i],
@@ -400,15 +399,6 @@ class Tracker():
                                 fused_nllr_list[i],
                                 fused_mmsi_list[i]))
 
-        for i in range(nNodes):
-            for measurementIndex in gatedIndicesList[i]:
-                self.__associatedMeasurements__[targetIndex].update(
-                    {(scanNumber, measurementIndex + 1)}
-                )
-            for mmsi in fused_mmsi_list[i]:
-                self.__associatedMeasurements__[targetIndex].update(
-                    {(scanNumber, mmsi)}
-                )
         targetProcessTimes[targetIndex] = time.time() - tic
 
     def _terminateTracks(self, deadTracks):
@@ -728,7 +718,7 @@ class Tracker():
             (target.filteredStateMean - xTrue[targetIndex].state))
             for targetIndex, target in enumerate(self.__trackNodes__)]
 
-    def getRuntimeAverage(self, **kwargs):
+    def getRuntimeAverage(self):
         return {k: np.mean(np.array(v)) for k, v in self.runtimeLog.items()}
 
     def _findClustersFromSets(self):
@@ -750,21 +740,20 @@ class Tracker():
         return self.__trackNodes__
 
     def _solveOptimumAssociation(self, cluster):
-        log.debug("nTargetsInCluster {:}".format(len(cluster)))
+        log.debug("Cluster {0:} Sum = {1:}".format(cluster,len(cluster)))
         nHypInClusterArray = self._getHypInCluster(cluster)
         log.debug("nHypInClusterArray {0:} => Sum = {1:}".format(nHypInClusterArray,sum(nHypInClusterArray)))
 
-
+        for i in cluster:
+            log.debug("AssociatedMeasurements[{0:}] {1:}".format(i,self.__associatedMeasurements__[i]))
         uniqueMeasurementSet = set.union(*[self.__associatedMeasurements__[i] for i in cluster])
         nRealMeasurementsInCluster = len(uniqueMeasurementSet)
-        log.debug("nRealMeasurementsInCluster {:}".format(nRealMeasurementsInCluster))
-        log.debug("Measurement set: {:}".format(uniqueMeasurementSet))
+        log.debug("Cluster Measurement set: {0:} Sum={1:}".format(
+            uniqueMeasurementSet, nRealMeasurementsInCluster))
 
         (A1, measurementList) = self._createA1(
             nRealMeasurementsInCluster, sum(nHypInClusterArray), cluster)
-        log.debug("size(A1) " + str(A1.shape) + "\t=>\t" + str(nRealMeasurementsInCluster * sum(nHypInClusterArray)))
-        log.debug("A1 \n" + np.array_str(A1.astype(np.int), max_line_width=200))
-        log.debug("measurementList" + str(measurementList))
+
         assert len(measurementList) == nRealMeasurementsInCluster
         A2 = self._createA2(len(cluster), nHypInClusterArray)
         log.debug("A2 \n" + np.array_str(A2.astype(np.int),max_line_width=200))
@@ -775,21 +764,17 @@ class Tracker():
                        str(cluster) + ",   \t" +
                        str(sum(nHypInClusterArray)) + " hypotheses and " +
                        str(nRealMeasurementsInCluster) + " real measurements.")
-        selectedHypotheses = self._solveBLP_OR_TOOLS(A1, A2, C, len(cluster))
+        selectedHypotheses = self._solveBLP_OR_TOOLS(A1, A2, C)
         log.debug("selectedHypotheses" + str(selectedHypotheses))
-        # selectedHypotheses = self._solveBLP_PULP(A1, A2, C_RADAR, len(cluster))
-        # assert selectedHypotheses0 == selectedHypotheses
         selectedNodes = self._hypotheses2Nodes(selectedHypotheses, cluster)
         selectedNodesArray = np.array(selectedNodes)
-        # log.debug("selectedNodes" +  str(*selectedNodes))
-        # log.debug("selectedNodesArray" + str(*selectedNodesArray))
 
         assert len(selectedHypotheses) == len(cluster), \
             "__solveOptimumAssociation did not find the correct number of hypotheses"
         assert len(selectedNodes) == len(cluster), \
             "did not find the correct number of nodes"
         assert len(selectedHypotheses) == len(set(selectedHypotheses)), \
-            "selected two or more equal hyptheses"
+            "selected two or more equal hypotheses"
         assert len(selectedNodes) == len(set(selectedNodes)), \
             "found same node in more than one track in selectedNodes"
         assert len(selectedNodesArray) == len(set(selectedNodesArray)), \
@@ -873,6 +858,10 @@ class Tracker():
                                  measurementList,
                                  activeMeasurements,
                                  hypothesisIndex)
+        log.debug("measurementList" + str(measurementList) + "Sum="+str(len(measurementList)))
+        log.debug("size(A1) " + str(A1.shape))
+        log.debug("A1 \n" + 'V: Measurements, LeafNodes ---->\n' + np.array_str(A1.astype(np.int), max_line_width=200))
+        assert len(measurementList) == A1.shape[0]
         return A1, measurementList
 
     def _createA2(self, nTargetsInCluster, nHypInClusterArray):
@@ -914,7 +903,7 @@ class Tracker():
                    selectedHypotheses, nodeList, counter)
         return nodeList
 
-    def _solveBLP_OR_TOOLS(self, A1, A2, f, nHyp):
+    def _solveBLP_OR_TOOLS(self, A1, A2, f):
 
         tic0 = time.time()
         nScores = len(f)
@@ -969,56 +958,6 @@ class Tracker():
         toc3 = time.time() - tic3
 
         log.debug('_solveBLP_OR_TOOLS ({0:4.0f}|{1:4.0f}|{2:4.0f}|{3:4.0f}) ms = {4:4.0f}'.format(
-            toc0 * 1000, toc1 * 1000, toc2 * 1000, toc3 * 1000, (toc0 + toc1 + toc2 + toc3) * 1000))
-        return selectedHypotheses
-
-    def _solveBLP_PULP(self, A1, A2, f, nHyp):
-        def _getSelectedHyp2(p, threshold=0):
-            hyp = [int(v[0][2:]) for v in p.variablesDict().items()
-                   if abs(v[1].varValue - 1) <= threshold]
-            hyp.sort()
-            return hyp
-
-        tic0 = time.time()
-        nScores = len(f)
-        (nMeas, nHyp) = A1.shape
-        (nTargets, _) = A2.shape
-
-        # Check matrix and vector dimension
-        assert nScores == nHyp
-        assert A1.shape[1] == A2.shape[1]
-
-        # Initialize solver
-        prob = pulp.LpProblem("Association problem", pulp.LpMinimize)
-        x = pulp.LpVariable.dicts("x", range(nHyp), 0, 1, pulp.LpBinary)
-        c = pulp.LpVariable.dicts("c", range(nHyp))
-        for i in range(len(f)):
-            c[i] = f[i]
-        prob += pulp.lpSum(c[i] * x[i] for i in range(nHyp))
-        toc0 = time.time() - tic0
-
-        tic1 = time.time()
-        for row in range(nMeas):
-            prob += pulp.lpSum([A1[row, col] * x[col]
-                                for col in range(nHyp) if A1[row, col]]) <= 1
-        for row in range(nTargets):
-            prob += pulp.lpSum([A2[row, col] * x[col]
-                                for col in range(nHyp) if A2[row, col]]) == 1
-        toc1 = time.time() - tic1
-
-        tic2 = time.time()
-        sol = prob.solve(self.solver)
-        toc2 = time.time() - tic2
-
-        tic3 = time.time()
-
-        for threshold in [0, 1e-10, 1e-8, 1e-6, 1e-4, 1e-2]:
-            selectedHypotheses = _getSelectedHyp2(prob, threshold)
-            if len(selectedHypotheses) == nHyp:
-                break
-        toc3 = time.time() - tic3
-
-        log.debug('_solveBLP_PULP     ({0:4.0f}|{1:4.0f}|{2:4.0f}|{3:4.0f})ms = {4:4.0f}'.format(
             toc0 * 1000, toc1 * 1000, toc2 * 1000, toc3 * 1000, (toc0 + toc1 + toc2 + toc3) * 1000))
         return selectedHypotheses
 
