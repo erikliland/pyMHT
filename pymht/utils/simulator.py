@@ -1,5 +1,5 @@
 import numpy as np
-from pymht.utils.classDefinitions import SimTarget as Target
+from pymht.utils.classDefinitions import SimTarget
 from pymht.utils.classDefinitions import MeasurementList, AIS_message, Position, AIS_messageList, SimList
 import time
 import copy
@@ -29,7 +29,7 @@ def calculateNextState(target, timeStep, Phi, Gamma, model):
     w = np.random.multivariate_normal(np.zeros(Gamma.shape[1]), Q)
     nextState = Phi.dot(target.state) + Gamma.dot(w.T)
     newVar = {'state': nextState, 'time': target.time + timeStep}
-    return Target(**{**target.__dict__, **newVar})
+    return SimTarget(**{**target.__dict__, **newVar})
 
 
 def generateInitialTargets(numOfTargets, centerPosition,
@@ -55,7 +55,7 @@ def generateInitialTargets(numOfTargets, centerPosition,
                     break
         else:
             mmsi = None
-        target = Target(np.array([px, py, vx, vy], dtype=np.float32), initialTime, P_d, mmsi = mmsi)
+        target = SimTarget(np.array([px, py, vx, vy], dtype=np.float32), initialTime, P_d, mmsi = mmsi)
         initialList.append(target)
     return initialList
 
@@ -64,7 +64,7 @@ def simulateTargets(initialTargets, simTime, timeStep, model, **kwargs):
     Phi = model.Phi(timeStep)
     Gamma = model.Gamma
     simList = SimList()
-    assert all([type(initialTarget) == Target for initialTarget in initialTargets])
+    assert all([type(initialTarget) == SimTarget for initialTarget in initialTargets])
     simList.append(initialTargets)
     nTimeSteps = int(simTime / timeStep)
     for i in range(nTimeSteps):
@@ -99,7 +99,8 @@ def simulateScans(simList, radarPeriod, H, R, lambda_phi=0,
             visible = np.random.uniform() <= kwargs.get('P_d',target.P_d)
             if (rRange is not None) and (p0 is not None):
                 distance = np.linalg.norm(target.state[0:2] - p0)
-                inRange = distance <= rRange
+                inRange =  distance <= rRange
+                inRange = target.inRange(p0, rRange)
             else:
                 inRange = True
 
@@ -242,16 +243,16 @@ def importFromFile(filename, **kwargs):
             if lineIndex == 1:
                 for i, initPos in enumerate(firstPositions):
                     initialTargets.append(
-                        Target(time=firstTime,
-                               position=initPos,
-                               velocity=(Position(elements[2 * i + 1], elements[2 * i + 2]) - initPos) * (
+                        SimTarget(time=firstTime,
+                                  position=initPos,
+                                  velocity=(Position(elements[2 * i + 1], elements[2 * i + 2]) - initPos) * (
                                    1 / (localTime - firstTime))))
 
             if localTime.is_integer():
-                targetList = [Target(time=localTime,
-                                     position=Position(elements[i], elements[i + 1]),
-                                     velocity=Velocity(0, 0)
-                                     ) for i in range(1, len(elements), 2)
+                targetList = [SimTarget(time=localTime,
+                                        position=Position(elements[i], elements[i + 1]),
+                                        velocity=Velocity(0, 0)
+                                        ) for i in range(1, len(elements), 2)
                               ]
 
                 simList.append(targetList)
