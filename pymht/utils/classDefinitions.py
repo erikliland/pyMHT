@@ -36,7 +36,8 @@ class SimTarget:
         if self.time != other.time: return False
         if self.P_d != other.P_d: return False
         if self.mmsi != other.mmsi: return False
-        if self.Q != other.Q: return False
+        if self.sigma_Q != other.sigma_Q: return False
+        if self.P_r != other.P_r: return False
         return True
 
     def inRange(self, p0, rRange):

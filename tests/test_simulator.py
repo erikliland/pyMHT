@@ -2,7 +2,7 @@
 import pymht.utils.simulator as sim
 import numpy as np
 import pymht.models.pv as model
-from pymht.utils.classDefinitions import Position, AIS_message
+from pymht.utils.classDefinitions import AIS_message
 
 seed = 172362
 nTargets = 10
@@ -25,7 +25,7 @@ sim.seed_simulator(seed)
 
 def test_initial_target_generation():
     global initialTargets
-    initialTargets = sim.generateInitialTargets(nTargets, p0, radarRange, P_d, assignMMSI = True)
+    initialTargets = sim.generateInitialTargets(nTargets, p0, radarRange, P_d,model.sigmaQ_true, assignMMSI = True)
 
 def test_simulation_seed_consistency():
     global simLists
@@ -33,12 +33,9 @@ def test_simulation_seed_consistency():
     for i in range(nTests):
         sim.seed_simulator(seed)
         simLists.append(sim.simulateTargets(initialTargets,
-                                  simTime,
-                                  simulationTimeStep,
-                                  model.Phi(simulationTimeStep),
-                                  model.Q(simulationTimeStep, model.sigmaQ_true),
-                                  model.Gamma)
-                        )
+                                              simTime,
+                                              simulationTimeStep,
+                                              model))
 
     for i in range(nTests-1):
         for simListA, simListB in zip(simLists[i],simLists[i+1]):
@@ -56,7 +53,7 @@ def test_scan_simulation_consistency():
                                      model.R_RADAR(model.sigmaR_RADAR_true),
                                      lambda_phi,
                                      radarRange,
-                                     Position(p0),
+                                     p0,
                                      shuffle=True,
                                      localClutter=True,
                                      globalClutter=True)
@@ -83,6 +80,7 @@ def test_ais_simulation_consistency():
                           model.C_AIS,
                           model.R_AIS(model.sigmaR_AIS_true),
                           model.GPS_COVARIANCE_PRECISE,
+                          radarPeriod,
                           integerTime=True,
                           noise=True,
                           idScrambling = False,

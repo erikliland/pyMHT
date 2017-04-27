@@ -33,7 +33,7 @@ def calculateNextState(target, timeStep, Phi, Gamma, model):
 
 
 def generateInitialTargets(numOfTargets, centerPosition,
-                           radarRange, P_d, **kwargs):
+                           radarRange, P_d, sigma_Q, **kwargs):
     usedMMSI = []
     initialTime = time.time()
     initialList = []
@@ -55,7 +55,7 @@ def generateInitialTargets(numOfTargets, centerPosition,
                     break
         else:
             mmsi = None
-        target = SimTarget(np.array([px, py, vx, vy], dtype=np.float32), initialTime, P_d, mmsi = mmsi)
+        target = SimTarget(np.array([px, py, vx, vy], dtype=np.float32), initialTime, P_d, sigma_Q, mmsi = mmsi)
         initialList.append(target)
     return initialList
 
