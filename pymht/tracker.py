@@ -141,7 +141,8 @@ class Tracker():
             self.initiateTarget(Target(iT.time,
                                        None,
                                        iT.state,
-                                       model.P0,))
+                                       model.P0,
+                                       status=preinitializedTag))
 
     def initiateTarget(self, newTarget):
         if newTarget.haveNoNeightbours(self.__targetList__, self.mergeThreshold):
@@ -242,37 +243,38 @@ class Tracker():
         # 5 -- Dynamic window size
         self.tic['DynN'] = time.time()
 
-        totalGrowTime = sum(targetProcessTimes)
-        growTimeLimit = self.radarPeriod * 0.5
-        tooSlowTotal = totalGrowTime > growTimeLimit
-        targetProcessTimeLimit = growTimeLimit / len(self.__targetList__) if tooSlowTotal else 200e-3
-        for targetIndex, target in enumerate(self.__targetList__):
-            targetProcessTime = targetProcessTimes[targetIndex]
-            targetSize = target.getNumOfNodes()
-            tooSlow = targetProcessTime > targetProcessTimeLimit
-            tooLarge = targetSize > self.targetSizeLimit
-            if tooSlow or tooLarge:
-                target = self.__targetList__[targetIndex]
-                targetDepth = target.depth()
-                assert targetDepth <= self.__targetWindowSize__[targetIndex] + 1
-                infoString = "\tTarget {:2} ".format(targetIndex + 1)
-                if tooSlow:
-                    infoString += "Too slow {:.1f}ms. ".format(targetProcessTime * 1000)
-                if tooLarge:
-                    infoString += "To large {:}. ".format(targetSize)
-                oldN = self.__targetWindowSize__[targetIndex]
-                self.__targetWindowSize__[targetIndex] -= 1
-                newN = self.__targetWindowSize__[targetIndex]
-                infoString += "Reducing window from {0:} to {1:}".format(oldN, newN)
-                log.debug(infoString)
+        if kwargs.get('dynamicWindow', True):
+            totalGrowTime = sum(targetProcessTimes)
+            growTimeLimit = self.radarPeriod * 0.5
+            tooSlowTotal = totalGrowTime > growTimeLimit
+            targetProcessTimeLimit = growTimeLimit / len(self.__targetList__) if tooSlowTotal else 200e-3
+            for targetIndex, target in enumerate(self.__targetList__):
+                targetProcessTime = targetProcessTimes[targetIndex]
+                targetSize = target.getNumOfNodes()
+                tooSlow = targetProcessTime > targetProcessTimeLimit
+                tooLarge = targetSize > self.targetSizeLimit
+                if tooSlow or tooLarge:
+                    target = self.__targetList__[targetIndex]
+                    targetDepth = target.depth()
+                    assert targetDepth <= self.__targetWindowSize__[targetIndex] + 1
+                    infoString = "\tTarget {:2} ".format(targetIndex + 1)
+                    if tooSlow:
+                        infoString += "Too slow {:.1f}ms. ".format(targetProcessTime * 1000)
+                    if tooLarge:
+                        infoString += "To large {:}. ".format(targetSize)
+                    oldN = self.__targetWindowSize__[targetIndex]
+                    self.__targetWindowSize__[targetIndex] -= 1
+                    newN = self.__targetWindowSize__[targetIndex]
+                    infoString += "Reducing window from {0:} to {1:}".format(oldN, newN)
+                    log.debug(infoString)
 
-        tempTotalTime = time.time() - self.tic['Total']
-        if tempTotalTime > (self.radarPeriod * 0.8):
-            self.N = max(1, self.N - 1)
-            log.warning(
-                'Iteration took to long time ({0:.1f}ms), reducing window size roof from {1:} to  {2:}'.format(
-                    tempTotalTime * 1000, self.N + 1, self.N))
-            self.__targetWindowSize__ = [min(e, self.N) for e in self.__targetWindowSize__]
+            tempTotalTime = time.time() - self.tic['Total']
+            if tempTotalTime > (self.radarPeriod * 0.8):
+                self.N = max(1, self.N - 1)
+                log.warning(
+                    'Iteration took to long time ({0:.1f}ms), reducing window size roof from {1:} to  {2:}'.format(
+                        tempTotalTime * 1000, self.N + 1, self.N))
+                self.__targetWindowSize__ = [min(e, self.N) for e in self.__targetWindowSize__]
 
         self.toc['DynN'] = time.time() - self.tic['DynN']
 
@@ -1042,7 +1044,7 @@ class Tracker():
     def plotActiveTracks(self, **kwargs):
         colors = kwargs.get("colors", self._getColorCycle())
         for i, track in enumerate(self.__trackNodes__):
-            track.plotTrack(root=self.__targetList__[i], index=i, c=next(colors), period=self.radarPeriod, **kwargs)
+            track.plotTrack(root=self.__targetList__[i], c=next(colors), period=self.radarPeriod, **kwargs)
         if kwargs.get('markStates', True):
             defaults = {'labels': False, 'dummy': True, 'real': True, 'ais': True}
             self.plotStatesFromTracks(**{**defaults, **kwargs})
