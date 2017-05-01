@@ -27,7 +27,7 @@ class Target():
         self.cumulativeNLLR = copy.copy(kwargs.get("cumulativeNLLR", 0))
         self.trackHypotheses = None
         self.mmsi = kwargs.get('mmsi')
-        self.status = "Active"
+        self.status = kwargs.get('status',activeTag)
         assert self.P_d >= 0
         assert self.P_d <= 1
         assert (type(self.parent) == type(self) or self.parent is None)
@@ -592,7 +592,7 @@ class Target():
                  markeredgecolor='black')
 
     def markID(self,**kwargs):
-        index = kwargs.get("index", self.ID)
+        index = self.ID
         if (index is not None):
             ax = plt.subplot(111)
             normVelocity = (self.x_0[2:4] /
@@ -651,11 +651,9 @@ class Target():
 
     def _storeNode(self, simulationElement, radarPeriod, **kwargs):
         trackElement = ET.SubElement(simulationElement,
-                                     trackTag,
-                                     attrib={typeTag:estimateTag})
+                                     trackTag)
         unSmoothedStates = ET.SubElement(trackElement,
-                                         statesTag,
-                                         attrib={smoothedTag: falseTag})
+                                         statesTag)
 
         mmsi = self._getHistoricalMmsi()
         if mmsi is not None:
@@ -671,10 +669,8 @@ class Target():
 
         assert len(unSmoothedNodes) == len(smoothedPositions)
 
-        if smoothingGood:
-            smoothedStateElement = ET.SubElement(trackElement,
-                                                 statesTag,
-                                                 attrib={smoothedTag: trueTag})
+        smoothedStateElement = ET.SubElement(trackElement,
+                                             smoothedstatesTag)
 
 
         for node, sPos, sVel in zip(unSmoothedNodes, smoothedPositions, smoothedVelocities):
@@ -688,6 +684,8 @@ class Target():
             velocityElement = ET.SubElement(stateElement, velocityTag)
             ET.SubElement(velocityElement, northTag).text = northVel
             ET.SubElement(velocityElement, eastTag).text = eastVel
+            if node.status != activeTag:
+                stateElement.attrib[stateTag] = node.status
 
             if smoothingGood:
                 sStateElement = ET.SubElement(smoothedStateElement,
@@ -704,10 +702,7 @@ class Target():
                 sNorthVel = str(round(sVel[1], 2))
                 ET.SubElement(sVelocityElement, northTag).text = sNorthVel
                 ET.SubElement(sVelocityElement, eastTag).text = sEastVel
-
-            if node.status == outofrangeTag:
-                stateElement.attrib[stateTag] = node.status
-                if smoothingGood:
+                if node.status != activeTag:
                     sStateElement.attrib[stateTag] = node.status
 
 if __name__ == '__main__':
