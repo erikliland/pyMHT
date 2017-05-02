@@ -182,7 +182,7 @@ class SimList(list):
         for i in range(nTargets):
             trackElement = ET.SubElement(groundtruthElement,
                                          trackTag,
-                                         attrib={typeTag:groundtruthTag,idTag:str(i)})
+                                         attrib={idTag:str(i)})
             statesElement = ET.SubElement(trackElement,
                                           statesTag)
             for j in range(nSamples):
