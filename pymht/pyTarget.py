@@ -40,6 +40,11 @@ class Target():
         else:
             predStateStr = ""
 
+        if self.ID is not None:
+            idStr = " \tID: {:2}".format(self.ID)
+        else:
+            idStr = ""
+
         if (self.measurementNumber is not None) and (self.scanNumber is not None):
             measStr = (" \tMeasurement(" +
                        str(self.scanNumber) +
@@ -76,6 +81,7 @@ class Target():
         return ("Time: " + timeString +
                 "\t" + str(self.getPosition()) +
                 " \t" + str(self.getVelocity()) +
+                idStr +
                 nllrStr +
                 measStr +
                 predStateStr +
@@ -232,14 +238,16 @@ class Target():
         acceptedMMSI = []
         for i in range(len(fusedMeasurementIndices)):
             if (historicalMmsi is None) or (fusedMMSI[i] == historicalMmsi):
+                measurementNumber = fusedMeasurementIndices[i] + 1 if fusedMeasurementIndices[i] is not None else None
+                measurement = measurements[fusedMeasurementIndices[i]] if fusedMeasurementIndices[i] is not None else None
                 self.trackHypotheses.append(
-                    Target(time=scanTime,
-                            scanNumber=scanNumber,
-                            x_0=fusedStates[i],
-                            P_0=fusedCovariance,
-                            ID=self.ID,
-                            measurementNumber=fusedMeasurementIndices[i] + 1,
-                            measurement=measurements[fusedMeasurementIndices[i]],
+                    Target(scanTime,
+                            scanNumber,
+                            fusedStates[i],
+                            fusedCovariance,
+                            self.ID,
+                            measurementNumber=measurementNumber,
+                            measurement=measurement,
                             cumulativeNLLR=self.cumulativeNLLR + fusedNllr[i],
                             mmsi=fusedMMSI[i],
                             P_d=self.P_d,
@@ -275,16 +283,15 @@ class Target():
         return measRes.T.dot(self.invResidualCovariance).dot(measRes) <= eta2
 
     def createZeroHypothesis(self, time, scanNumber, x_0, P_0):
-        return Target(time=time,
-                      scanNumber=scanNumber,
-                      x_0=x_0,
-                      P_0=P_0,
-                      ID=self.ID,
+        return Target(time,
+                      scanNumber,
+                      x_0,
+                      P_0,
+                      self.ID,
                       measurementNumber=0,
                       cumulativeNLLR=self.cumulativeNLLR - np.log(1 - self.P_d),
                       P_d=self.P_d,
-                      parent=self
-                      )
+                      parent=self)
 
     def _pruneAllHypothesisExceptThis(self, keep, backtrack=False):
         keepIndex= self.trackHypotheses.index(keep)
@@ -303,7 +310,7 @@ class Target():
         if stepsLeft <= 0:
             if self.parent is not None:
                 self.parent._pruneAllHypothesisExceptThis(self, backtrack=True)
-                self.recursiveSubtractScore(self.cumulativeNLLR)
+                # self.recursiveSubtractScore(self.cumulativeNLLR)
                 assert self.parent.scanNumber == self.scanNumber - 1, \
                     "nScanPruning2: from scanNumber" + str(self.parent.scanNumber) + "->" + str(self.scanNumber)
                 return self
@@ -329,12 +336,14 @@ class Target():
         if (self.measurementNumber == 0) or (root):
             return subSet
         else:
-            radarMeasurement = (self.scanNumber, self.measurementNumber)
+            tempSet = set()
+            if self.measurementNumber is not None:
+                radarMeasurement = (self.scanNumber, self.measurementNumber)
+                tempSet.add(radarMeasurement)
             if self.mmsi is not None:
                 aisMeasurement = (self.scanNumber, self.mmsi)
-                tempSet = {radarMeasurement, aisMeasurement}
-            else:
-                tempSet = {radarMeasurement}
+                tempSet.add(aisMeasurement)
+
             return tempSet | subSet
 
     def processNewMeasurementRec(self, measurementList, usedMeasurementSet,
@@ -555,11 +564,11 @@ class Target():
                                     self.scanNumber,
                                     self.mmsi,
                                     **kwargs)
-        elif (self.measurementNumber == 0) and kwargs.get("dummy", True):
+        elif (self.measurementNumber is not None) and (self.measurementNumber == 0) and kwargs.get("dummy", True):
             Position(self.x_0).plot(self.measurementNumber,
                                     self.scanNumber,
                                     **kwargs)
-        elif (self.measurementNumber > 0) and kwargs.get('real', True):
+        elif (self.measurementNumber is not None) and(self.measurementNumber > 0) and kwargs.get('real', True):
             Position(self.x_0).plot(self.measurementNumber,
                                     self.scanNumber,
                                     **kwargs)
