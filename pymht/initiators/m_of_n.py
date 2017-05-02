@@ -157,7 +157,7 @@ class PreliminaryTrack():
 
     def predict(self, F, Q):
         self.predicted_state = F.dot(self.estimates[-1])
-        self.covariance = F.dot(self.covariance).dot(F.T) + pv.Gamma.dot(Q).dot(pv.Gamma.T)
+        self.covariance = F.dot(self.covariance).dot(F.T) + Q
 
     def mn_analysis(self, M, N):
         m = self.m
@@ -255,7 +255,7 @@ class Initiator():
             nis_vector = np.sum(np.matmul(delta_vector, S_inv) * delta_vector, axis=1)
             inside_gate_vector = nis_vector < self.gamma
             delta_matrix[i,inside_gate_vector] = distance_vector[inside_gate_vector]
-        # log.debug("Gamma: " + str(self.gamma))
+        # log.debug("gamma: " + str(self.gamma))
         # log.debug("delta_matrix\n" + str(delta_matrix))
 
         # Assign measurements

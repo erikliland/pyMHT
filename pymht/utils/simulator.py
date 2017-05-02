@@ -24,10 +24,10 @@ def positionWithNoise(state, H, R):
     return H.dot(state) + v
 
 
-def calculateNextState(target, timeStep, Phi, Gamma, model):
+def calculateNextState(target, timeStep, Phi, model):
     Q = model.Q(timeStep, target.sigma_Q)
-    w = np.random.multivariate_normal(np.zeros(Gamma.shape[1]), Q)
-    nextState = Phi.dot(target.state) + Gamma.dot(w.T)
+    w = np.random.multivariate_normal(np.zeros(4), Q)
+    nextState = Phi.dot(target.state) + w.T
     newVar = {'state': nextState, 'time': target.time + timeStep}
     return SimTarget(**{**target.__dict__, **newVar})
 
@@ -62,13 +62,12 @@ def generateInitialTargets(numOfTargets, centerPosition,
 
 def simulateTargets(initialTargets, simTime, timeStep, model, **kwargs):
     Phi = model.Phi(timeStep)
-    Gamma = model.Gamma
     simList = SimList()
     assert all([type(initialTarget) == SimTarget for initialTarget in initialTargets])
     simList.append(initialTargets)
     nTimeSteps = int(simTime / timeStep)
     for i in range(nTimeSteps):
-        targetList = [calculateNextState(target, timeStep, Phi, Gamma, model)
+        targetList = [calculateNextState(target, timeStep, Phi, model)
                       for target in simList[-1]]
         simList.append(targetList)
     if not kwargs.get('includeInitialTime', True):
@@ -127,22 +126,29 @@ def simulateScans(simList, radarPeriod, H, R, lambda_phi=0,
     return scanList
 
 
-def simulateAIS(sim_list, Phi_func, C, R, P_0, radarPeriod, **kwargs):
+def simulateAIS(sim_list, Phi_func, C, R, P_0, radarPeriod, initTime, **kwargs):
     ais_measurements = AIS_messageList()
     integerTime = kwargs.get('integerTime', True)
     for i, sim in enumerate(sim_list[1:]):
         tempList = []
         for j, target in ((j,t) for j, t in enumerate(sim) if t.mmsi is not None):
+            if integerTime:
+                messageTime = math.floor(target.time)
+                dT = messageTime - target.time
+                state = Phi_func(dT).dot(target.state)
+            else:
+                messageTime = target.time
+                state = target.state
             timeSinceLastAisMessage = target.time - target.timeOfLastAisMessage
             speedMS = np.linalg.norm(target.state[2:4])
             reportingInterval = _aisReportInterval(speedMS, target.aisClass)
             shouldSendAisMessage = ((timeSinceLastAisMessage >= reportingInterval) and
-                                    (target.time % radarPeriod != 0))
-            # print("MMSI",target.mmsi,
-            #       "Time",target.time,"\t",
-            #       "Time of last AIS message", target.timeOfLastAisMessage,"\t",
-            #       "Reporting Interval", reportingInterval,
-            #       "Should send AIS message", shouldSendAisMessage)
+                                    ((messageTime-initTime) % radarPeriod != 0))
+            log.debug("MMSI " + str(target.mmsi) +
+                  "Time " + str(target.time) + " \t" +
+                  "Time of last AIS message " + str(target.timeOfLastAisMessage) + " \t" +
+                  "Reporting Interval " + str(reportingInterval) +
+                  "Should send AIS message " + str(shouldSendAisMessage))
             if not shouldSendAisMessage:
                 try:
                     sim_list[i + 2][j].timeOfLastAisMessage = target.timeOfLastAisMessage
@@ -153,22 +159,16 @@ def simulateAIS(sim_list, Phi_func, C, R, P_0, radarPeriod, **kwargs):
                 sim_list[i+2][j].timeOfLastAisMessage = target.time
             except IndexError:
                 pass
-            if integerTime:
-                time = math.floor(target.time)
-                dT = time - target.time
-                state = Phi_func(dT).dot(target.state)
-            else:
-                time = target.time
-                state = target.state
+
             if kwargs.get('noise', True):
                 state = positionWithNoise(state, C, R)
             if kwargs.get('idScrambling',False) and np.random.uniform() > 0.5:
                 mmsi = target.mmsi + 10
-                log.info("Scrambling MMSI {0:} to {1:} at {2:}".format(target.mmsi,mmsi, time))
+                log.info("Scrambling MMSI {0:} to {1:} at {2:}".format(target.mmsi,mmsi, messageTime))
             else:
                 mmsi = target.mmsi
 
-            prediction = AIS_message(time=time,
+            prediction = AIS_message(time=messageTime,
                                      state=state,
                                      covariance=P_0,
                                      mmsi=mmsi)

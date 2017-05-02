@@ -53,7 +53,6 @@ class Tracker():
         # State space model
         self.A = model.Phi(radarPeriod)
         self.C = model.C_RADAR
-        self.Gamma = model.Gamma
         self.P_0 = model.P0
         self.R_RADAR = model.R_RADAR()
         self.R_AIS = model.R_AIS()
@@ -525,12 +524,12 @@ class Tracker():
                     x_0 = targetNodes[i].x_0
                     P_0 = targetNodes[i].P_0
                     dT1 = aisList.aisMessages[aisMeasurementIndex].time - targetNodes[i].time
-                    x_bar1, P_bar1 = kalman.predict_single(model.Phi(dT1),model.Q(dT1),model.Gamma,x_0, P_0)
+                    x_bar1, P_bar1 = kalman.predict_single(model.Phi(dT1),model.Q(dT1),x_0, P_0)
                     z1 = aisList.aisMessages[aisMeasurementIndex].state[0:2]
                     x_hat1, P_hat1,S1, z_tilde_1 = kalman.filter_single(z1, x_bar1, P_bar1, model.H_radar,
                                                                         model.C_RADAR.dot(self.R_AIS).dot(model.C_RADAR.T))
                     dT2 = aisList.time - aisList.aisMessages[aisMeasurementIndex].time
-                    x_bar2, P_bar2 = kalman.predict_single(model.Phi(dT2),model.Q(dT2),model.Gamma,x_hat1, P_hat1)
+                    x_bar2, P_bar2 = kalman.predict_single(model.Phi(dT2),model.Q(dT2),x_hat1, P_hat1)
                     z2 = self.__scanHistory__[-1].measurements[radarMeasurementIndex]
                     x_hat2, P_hat2,  S2, z_tilde_2 = kalman.filter_single(z2, x_bar2, P_bar2, model.H_radar, self.R_RADAR)
                     nis1 = kalman.nis_single(z_tilde_1, S1)
@@ -590,12 +589,12 @@ class Tracker():
                     x_0 = targetNodes[i].x_0
                     P_0 = targetNodes[i].P_0
                     dT1 = aisList.aisMessages[aisMeasurementIndex].time - targetNodes[i].time
-                    x_bar1, P_bar1 = kalman.predict_single(model.Phi(dT1),model.Q(dT1),model.Gamma,x_0, P_0)
+                    x_bar1, P_bar1 = kalman.predict_single(model.Phi(dT1),model.Q(dT1),x_0, P_0)
                     z1 = aisList.aisMessages[aisMeasurementIndex].state[0:2]
                     x_hat1, P_hat1,S1, z_tilde_1 = kalman.filter_single(z1, x_bar1, P_bar1, model.H_radar,
                                                                         model.C_RADAR.dot(self.R_AIS).dot(model.C_RADAR.T))
                     dT2 = aisList.time - aisList.aisMessages[aisMeasurementIndex].time
-                    x_bar2, P_bar2 = kalman.predict_single(model.Phi(dT2),model.Q(dT2),model.Gamma,x_hat1, P_hat1)
+                    x_bar2, P_bar2 = kalman.predict_single(model.Phi(dT2),model.Q(dT2),x_hat1, P_hat1)
                     nis1 = kalman.nis_single(z_tilde_1, S1)
                     ais_nllr = kalman.nllr(self.lambda_nu,1.0, S1, nis1)
                     fusedNLLR = ais_nllr
@@ -708,7 +707,7 @@ class Tracker():
         assert P_0_list.shape == (nNodes, nStates, nStates)
 
         x_bar_list, P_bar_list = kalman.predict(
-            self.A, self.Q, self.Gamma, x_0_list, P_0_list)
+            self.A, self.Q, x_0_list, P_0_list)
         return x_bar_list, P_bar_list
 
     def __predictPrecalcBulk(self, targetNodes, C, R, dummyNodesData):
@@ -717,7 +716,7 @@ class Tracker():
         x_bar_list, P_bar_list = dummyNodesData
 
         z_hat_list, S_list, S_inv_list, K_list, P_hat_list = kalman.precalc(
-            self.A, C, self.Q, R, self.Gamma, x_bar_list, P_bar_list)
+            self.A, C, self.Q, R, x_bar_list, P_bar_list)
 
         assert S_list.shape == (nNodes, measDim, measDim)
         assert S_inv_list.shape == (nNodes, measDim, measDim)
@@ -1061,7 +1060,8 @@ class Tracker():
         for target in self.__targetList__:
             recPlotHypothesesTrack(target, c=next(colors))
         if kwargs.get('markStates', False):
-            self.plotStatesFromRoot(dummy=True, real=True, ais=True, includeHistory=False)
+            defaults = {'dummy':True, 'real':True, 'ais':True, 'includeHistory':False, 'color':'red'}
+            self.plotStatesFromRoot(**{**defaults, **kwargs})
             # tracker.plotValidationRegionFromRoot() # TODO: Does not work
 
     def plotActiveTracks(self, **kwargs):
@@ -1069,7 +1069,7 @@ class Tracker():
         for i, track in enumerate(self.__trackNodes__):
             track.plotTrack(root=self.__targetList__[i], c=next(colors), period=self.radarPeriod, **kwargs)
         if kwargs.get('markStates', True):
-            defaults = {'labels': False, 'dummy': True, 'real': True, 'ais': True}
+            defaults = {'labels': False, 'dummy': True, 'real': True, 'ais': True, 'color':'red'}
             self.plotStatesFromTracks(**{**defaults, **kwargs})
 
     def plotTerminatedTracks(self, **kwargs):
@@ -1125,8 +1125,10 @@ class Tracker():
         for scan in self.__scanHistory__[:stepsBack:-1]:
             scan.plot(**kwargs)
 
-    def plotAllAisUpdates(self, **kwargs):
-        for update in self.__aisHistory__:
+    def plotAllAisUpdates(self, stepsBack = None, **kwargs):
+        if stepsBack is not None:
+            stepsBack = -(stepsBack+1)
+        for update in self.__aisHistory__[:stepsBack:-1]:
             if update is not None:
                 update.plot(markeredgewidth=2,**kwargs)
 

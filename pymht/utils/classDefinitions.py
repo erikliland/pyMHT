@@ -110,13 +110,14 @@ class Position:
             marker = 'h' if kwargs.get('original',False) else 'D'
             plt.plot(self.array[0], self.array[1],
                      marker=marker, markerfacecolor='None',
-                     markeredgewidth=kwargs.get('markeredgewidth',1)
-                     )
+                     markeredgewidth=kwargs.get('markeredgewidth',1),
+                     markeredgecolor = kwargs.get('color','black'))
         elif measurementNumber > 0:
-            plt.plot(self.array[0], self.array[1], 'kx')
+            plt.plot(self.array[0], self.array[1], 'kx',
+                     markeredgecolor=kwargs.get('color', 'black'))
         elif measurementNumber == 0:
-            plt.plot(self.array[0], self.array[1],
-                     color="black", fillstyle="none", marker="o")
+            plt.plot(self.array[0], self.array[1], fillstyle="none", marker="o",
+                     markeredgecolor=kwargs.get('color', 'black'))
         else:
             raise ValueError("Not a valid measurement number")
 
@@ -224,6 +225,8 @@ class AIS_message:
         else:
             timeFormat = "%H:%M:%S.%f"
         timeString = datetime.datetime.fromtimestamp(self.time).strftime(timeFormat)
+        if self.time < 1e6:
+            timeString = str(self.time)
         mmsiString = 'MMSI: ' + str(self.mmsi) if self.mmsi is not None else ""
         return ('Time: ' + timeString + " " +
                 'State: ({0: 7.1f},{1: 7.1f},{2: 7.1f},{3: 7.1f})'.format(
@@ -316,7 +319,7 @@ class AIS_messageList:
             state = measurement.state
             A = model.Phi(dT)
             Q = model.Q(dT)
-            x_bar, P_bar = kalman.predict(A, Q, model.Gamma, np.array(state, ndmin=2),
+            x_bar, P_bar = kalman.predict(A, Q, np.array(state, ndmin=2),
                                           np.array(measurement.covariance, ndmin=3))
             aisPredictions.measurements.append(
                 AIS_prediction(model.C_RADAR.dot(x_bar[0]),
