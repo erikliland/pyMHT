@@ -221,7 +221,7 @@ class Initiator():
     def _processPreliminaryTracks(self, measurement_list):
         newInitialTargets = []
         measTime = measurement_list.time
-        measurement_array = measurement_list.measurements
+        measurement_array = np.array(measurement_list.measurements, dtype=np.float32)
         log.info("_processPreliminaryTracks " + str(len(self.preliminary_tracks)))
 
         # Check for something to work on
@@ -237,32 +237,29 @@ class Initiator():
         Q = pv.Q(dt)
         for track in self.preliminary_tracks:
             track.predict(F, Q)
-        predicted_states = [track.get_predicted_state_and_clear()
-                            for track in self.preliminary_tracks]
+        predicted_states = np.array([track.get_predicted_state_and_clear()
+                                     for track in self.preliminary_tracks],
+                                    ndmin=2, dtype=np.float32)
 
         # Calculate delta matrix
-        # TODO: Improve the runtime of this section. It takes about 33% of m/n-iteration runtime
-        delta_matrix = np.zeros((n1, n2), dtype=np.float32)
+        delta_matrix = np.ones((n1, n2), dtype=np.float32) * np.Inf
         for i, predicted_state in enumerate(predicted_states):
-            for j, measurement in enumerate(measurement_array):
-                predicted_measurement = self.C.dot(predicted_state)
-                delta_vector = measurement - predicted_measurement
-                distance = np.linalg.norm(delta_vector)
-                P_bar = self.preliminary_tracks[i].covariance
-                S = self.C.dot(P_bar).dot(self.C.T) + self.R
-                S_inv = np.linalg.inv(S)
-                K = P_bar.dot(self.C.T).dot(S_inv)
-                self.preliminary_tracks[i].K = K
-                nis = delta_vector.T.dot(S_inv).dot(delta_vector)
-                inside_gate = nis < self.gamma
-                delta_matrix[i, j] = distance if inside_gate else np.Inf
-
+            predicted_measurement = self.C.dot(predicted_state)
+            delta_vector = measurement_array - predicted_measurement
+            distance_vector = np.linalg.norm(delta_vector, axis=1)
+            P_bar = self.preliminary_tracks[i].covariance
+            S = self.C.dot(P_bar).dot(self.C.T) + self.R
+            S_inv = np.linalg.inv(S)
+            K = P_bar.dot(self.C.T).dot(S_inv)
+            self.preliminary_tracks[i].K = K
+            nis_vector = np.sum(np.matmul(delta_vector, S_inv) * delta_vector, axis=1)
+            inside_gate_vector = nis_vector < self.gamma
+            delta_matrix[i,inside_gate_vector] = distance_vector[inside_gate_vector]
         # log.debug("Gamma: " + str(self.gamma))
         # log.debug("delta_matrix\n" + str(delta_matrix))
 
         # Assign measurements
         assignments = _solve_global_nearest_neighbour(delta_matrix)
-
 
         # Update tracks
         for track_index, meas_index in assignments:
@@ -323,26 +320,41 @@ class Initiator():
 
     def _processInitiators(self, unused_indices, measurement_list):
         log.debug("_processInitiators " + str(len(self.initiators)))
-        time = measurement_list.time
-        measurementArray = measurement_list.measurements
+        measTime = measurement_list.time
+        measurementArray = np.array(measurement_list.measurements, ndmin=2, dtype=np.float32)
         n1 = len(self.initiators)
         n2 = len(unused_indices)
         if n1 == 0 or n2 == 0:
             return unused_indices
+        # print("n1, n2", n1, n2)
 
-        delta_matrix = np.zeros((n1, n2), dtype=np.float32)
-        for i, initiator in enumerate(self.initiators):
-            for j, meas_index in enumerate(unused_indices):
-                delta_vector = measurementArray[meas_index] - initiator.value
-                delta_matrix[i, j] = np.linalg.norm(delta_vector)
+        #TODO: Improve runtime of this module. It takes about 97% of m/n runtime
+        # tic = time.time()
+        unusedMeasurementArray = measurementArray[unused_indices]
+        initiatorArray = np.array([i.value for i in self.initiators], ndmin=2, dtype=np.float32)
+        # print("InitArray", initiatorArray.shape)
+        # deltaTensor = np.tile(unusedMeasurementArray, (n1,1,1)) - initiatorArray
+        deltaTensor = np.empty((n1, n2, 2))
+        for i in range(n1):
+            deltaTensor[i] = unusedMeasurementArray - initiatorArray[i]
+        distance_matrix = np.linalg.norm(deltaTensor, axis=2)
+        # toc = time.time() - tic
+        # print("Runtime: {:.1f}".format(toc*1000))
 
-        dt = time - self.initiators[0].timestamp
+        # distance_matrix = np.zeros((n1, n2), dtype=np.float32)
+        # for i, initiator in enumerate(self.initiators):
+        #     for j, meas_index in enumerate(unused_indices):
+        #         delta_vector = measurementArray[meas_index] - initiator.value
+        #         distance_matrix[i, j] = np.linalg.norm(delta_vector)
+        # assert np.allclose(distance_matrix, distance_matrix2)
+
+        dt = measTime - self.initiators[0].timestamp
         gate_distance = self.v_max * dt
         # log.debug("dt " + str(dt))
         # log.debug("v_max " + str(self.v_max))
         # log.debug("gate_distance " + str(gate_distance))
         # log.debug("delta_matrix\n" + str(delta_matrix))
-        assignments = _solve_global_nearest_neighbour(delta_matrix, gate_distance)
+        assignments = _solve_global_nearest_neighbour(distance_matrix, gate_distance)
         assigned_local_indices = [assignment[1] for assignment in assignments]
         used_indices = [unused_indices[j] for j in assigned_local_indices]
         unused_indices = [i for i in unused_indices if i not in used_indices]
@@ -387,11 +399,11 @@ if __name__ == "__main__":
 
     np.set_printoptions(precision=1, suppress=True)
 
-    print("Test 1")
-    deltaMatrix = np.array([[5., 2.], [np.Inf, np.Inf]])
-    print("test deltaMatrix\n", deltaMatrix)
-    assignment = _solve_global_nearest_neighbour(deltaMatrix, debug=True)
-    print("test assignment", assignment)
+    # print("Test 1")
+    # deltaMatrix = np.array([[5., 2.], [np.Inf, np.Inf]])
+    # print("test deltaMatrix\n", deltaMatrix)
+    # assignment = _solve_global_nearest_neighbour(deltaMatrix, debug=True)
+    # print("test assignment", assignment)
 
     print("Test 2")
     seed = 1254
@@ -399,14 +411,14 @@ if __name__ == "__main__":
     p0 = np.array([0., 0.])
     radarRange = 5500  # meters
     meanSpeed = 10  # gausian distribution
-    P_d = 0.8
+    P_d = 1.0
     sigma_Q = pv.sigmaQ_true
 
     sim.seed_simulator(seed)
 
     initialTargets = sim.generateInitialTargets(nTargets, p0, radarRange, P_d, sigma_Q)
 
-    nScans = 7
+    nScans = 4
     timeStep = 0.7
     simTime = nScans * timeStep
     simList = sim.simulateTargets(initialTargets, simTime, timeStep, model)
@@ -422,13 +434,14 @@ if __name__ == "__main__":
     initiator = Initiator(M_required, N_checks, v_max, pv.C_RADAR, pv.R_RADAR(), debug=False)
 
     for scanIndex, measurementList in enumerate(scanList):
-        print(measurementList)
+        print("Scan index", scanIndex)
+        # print(measurementList)
         initialTargets = initiator.processMeasurements(measurementList)
         if initialTargets:
-            print(scanIndex, end="\t")
+        # print(scanIndex, end="\t")
             print(*initialTargets, sep="\n", end="\n\n")
-            # print(*initialTargets, se)
-        else:
-            print(scanIndex, [], sep="\t")
+        # print(*initialTargets, se)
+        # else:
+        # print(scanIndex, [], sep="\t")
 
         print("-" * 50)
