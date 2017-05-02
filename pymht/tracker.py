@@ -110,7 +110,7 @@ class Tracker():
         N = kwargs.get('N', 5)
         self.N_max = copy.copy(N)
         self.N = copy.copy(N)
-        self.NLLR_UPPER_LIMIT = -(np.log(1 - 0.7)) * 7
+        self.NLLR_UPPER_LIMIT = -(np.log(1 - self.default_P_d)) * 4
         self.pruneThreshold = kwargs.get("pruneThreshold")
         self.targetSizeLimit = 3000
 
@@ -325,6 +325,7 @@ class Tracker():
             self.initiateTarget(initial_target)
         self.toc['Init'] = time.time() - self.tic['Init']
 
+        # Logging critical time constraints
         self.toc['Total'] = time.time() - self.tic['Total']
         if self.toc['Total'] > self.radarPeriod:
             log.critical("Did not pass real time demand! Used {0:.0f}ms of {1:.0f}ms".format(
@@ -495,9 +496,7 @@ class Tracker():
          S_ais_list,
          ais_nis,
          ais_nllr_list) = gatedAisData
-
         #NICE TO KNOW: nNodes == len(gated_radar_indices_list) == len(gated_ais_indices_list)
-
 
         # print("Processing nodes:", *targetNodes, sep="\n")
         # print("gated_radar_indices_list", gated_radar_indices_list)
@@ -509,7 +508,6 @@ class Tracker():
         # print("S_ais_list\n", S_ais_list)
         # print("ais_nis", ais_nis)
         # print("ais_nllr_list", ais_nllr_list)
-
         fused_x_hat_list = []
         fused_P_hat_list = []
         fused_radar_indices_list = []
@@ -523,17 +521,14 @@ class Tracker():
             mmsi_list = []
             fusedCovariance = None #P_ais_hat_list[i]
             for j, radarMeasurementIndex in enumerate(gated_radar_indices_list[i]):
-                # assert gated_x_ais_hat_list[i].shape[0] == gated_radar_indices_list[i].shape[0], \
-                #     str(gated_x_ais_hat_list[i].shape) + str(gated_radar_indices_list[i].shape)
                 for k, aisMeasurementIndex in enumerate(gated_ais_indices_list[i]):
-
                     x_0 = targetNodes[i].x_0
                     P_0 = targetNodes[i].P_0
                     dT1 = aisList.aisMessages[aisMeasurementIndex].time - targetNodes[i].time
                     x_bar1, P_bar1 = kalman.predict_single(model.Phi(dT1),model.Q(dT1),model.Gamma,x_0, P_0)
                     z1 = aisList.aisMessages[aisMeasurementIndex].state[0:2]
                     x_hat1, P_hat1,S1, z_tilde_1 = kalman.filter_single(z1, x_bar1, P_bar1, model.H_radar,
-                                                                model.C_RADAR.dot(self.R_AIS).dot(model.C_RADAR.T))
+                                                                        model.C_RADAR.dot(self.R_AIS).dot(model.C_RADAR.T))
                     dT2 = aisList.time - aisList.aisMessages[aisMeasurementIndex].time
                     x_bar2, P_bar2 = kalman.predict_single(model.Phi(dT2),model.Q(dT2),model.Gamma,x_hat1, P_hat1)
                     z2 = self.__scanHistory__[-1].measurements[radarMeasurementIndex]
@@ -543,10 +538,6 @@ class Tracker():
                     ais_nllr = kalman.nllr(self.lambda_nu,1.0, S1, nis1)
                     radar_nllr = kalman.nllr(self.lambda_ex, targetNodes[i].P_d, S2, nis2)
                     fusedNLLR = ais_nllr + radar_nllr
-                    # fusedNLLR = ais_nllr_list[i][k] + radar_nllr_list[i][k]
-                    # fusedState = gated_x_ais_hat_list[i][k]
-
-
                     # print("i", i)
                     # print("j", j)
                     # print("k", k)
@@ -587,13 +578,36 @@ class Tracker():
                     # print("Old AIS NLLR       ", ais_nllr_list[i])
                     # print("Fused NLLR         ", fusedNLLR)
                     # # print()
-
                     mmsi = self.__aisHistory__[-1].measurements[aisMeasurementIndex].mmsi
                     x_hat_list.append(x_hat2)
                     radar_indices_list.append(radarMeasurementIndex)
                     nllr_list.append(fusedNLLR)
                     mmsi_list.append(mmsi)
                     fusedCovariance = P_hat2
+
+            if False: #len(gated_radar_indices_list[i]) == 0:
+                for k, aisMeasurementIndex in enumerate(gated_ais_indices_list[i]):
+                    x_0 = targetNodes[i].x_0
+                    P_0 = targetNodes[i].P_0
+                    dT1 = aisList.aisMessages[aisMeasurementIndex].time - targetNodes[i].time
+                    x_bar1, P_bar1 = kalman.predict_single(model.Phi(dT1),model.Q(dT1),model.Gamma,x_0, P_0)
+                    z1 = aisList.aisMessages[aisMeasurementIndex].state[0:2]
+                    x_hat1, P_hat1,S1, z_tilde_1 = kalman.filter_single(z1, x_bar1, P_bar1, model.H_radar,
+                                                                        model.C_RADAR.dot(self.R_AIS).dot(model.C_RADAR.T))
+                    dT2 = aisList.time - aisList.aisMessages[aisMeasurementIndex].time
+                    x_bar2, P_bar2 = kalman.predict_single(model.Phi(dT2),model.Q(dT2),model.Gamma,x_hat1, P_hat1)
+                    nis1 = kalman.nis_single(z_tilde_1, S1)
+                    ais_nllr = kalman.nllr(self.lambda_nu,1.0, S1, nis1)
+                    fusedNLLR = ais_nllr
+                    mmsi = self.__aisHistory__[-1].measurements[aisMeasurementIndex].mmsi
+                    x_hat_list.append(x_bar2)
+                    radar_indices_list.append(None)
+                    nllr_list.append(fusedNLLR)
+                    mmsi_list.append(mmsi)
+                    fusedCovariance = P_bar2
+                    log.debug("Adding pure AIS node: {0:} to ID {1:}".format(mmsi, targetNodes[i].ID))
+
+
             fused_x_hat_list.append(np.array(x_hat_list, ndmin=2))
             fused_P_hat_list.append(fusedCovariance)
             fused_radar_indices_list.append(np.array(radar_indices_list))
@@ -754,6 +768,9 @@ class Tracker():
 
         (A1, measurementList) = self._createA1(
             nRealMeasurementsInCluster, sum(nHypInClusterArray), cluster)
+        log.debug("Difference: {:}".format(uniqueMeasurementSet.symmetric_difference(set(measurementList))))
+
+        assert len(measurementList) == A1.shape[0], str(len(measurementList)) + " vs " + str(A1.shape[0])
 
         assert len(measurementList) == nRealMeasurementsInCluster
         A2 = self._createA2(len(cluster), nHypInClusterArray)
@@ -835,14 +852,14 @@ class Tracker():
                             radarMeasurementIndex = len(measurementList) - 1
                         activeMeasurementsCpy[radarMeasurementIndex] = True
 
-                        if hyp.mmsi is not None:
-                            aisMeasurement = (hyp.scanNumber, hyp.mmsi)
-                            try:
-                                aisMeasurementIndex = measurementList.index(aisMeasurement)
-                            except ValueError:
-                                measurementList.append(aisMeasurement)
-                                aisMeasurementIndex = len(measurementList) - 1
-                            activeMeasurementsCpy[aisMeasurementIndex] = True
+                    if hyp.mmsi is not None:
+                        aisMeasurement = (hyp.scanNumber, hyp.mmsi)
+                        try:
+                            aisMeasurementIndex = measurementList.index(aisMeasurement)
+                        except ValueError:
+                            measurementList.append(aisMeasurement)
+                            aisMeasurementIndex = len(measurementList) - 1
+                        activeMeasurementsCpy[aisMeasurementIndex] = True
 
                     recActiveMeasurement(hyp, A1, measurementList,
                                          activeMeasurementsCpy, hypothesisIndex)
@@ -862,7 +879,7 @@ class Tracker():
         log.debug("measurementList" + str(measurementList) + "Sum="+str(len(measurementList)))
         log.debug("size(A1) " + str(A1.shape))
         log.debug("A1 \n" + 'V: Measurements, LeafNodes ---->\n' + np.array_str(A1.astype(np.int), max_line_width=200))
-        assert len(measurementList) == A1.shape[0]
+        # assert len(measurementList) == A1.shape[0], str(len(measurementList)) + " vs " + str(A1.shape[0])
         return A1, measurementList
 
     def _createA2(self, nTargetsInCluster, nHypInClusterArray):
@@ -1003,6 +1020,12 @@ class Tracker():
                                                               scanNumber,
                                                               targetIndex+1)
                 leafNode._checkMmsiIntegrity()
+        activeMmsiList = [target.mmsi
+                          for target in self.__trackNodes__
+                          if target.mmsi is not None]
+        activeMmsiSet = set(activeMmsiList)
+        assert len(activeMmsiList) == len(activeMmsiSet), "One or more MMSI is used multiple times"
+
 
     def getSmoothTracks(self):
         return [track.getSmoothTrack() for track in self.__trackNodes__]
@@ -1096,8 +1119,10 @@ class Tracker():
         if self.__aisHistory__[-1] is not None:
             self.__aisHistory__[-1].plot(**kwargs)
 
-    def plotAllScans(self, **kwargs):
-        for scan in self.__scanHistory__:
+    def plotAllScans(self, stepsBack=None, **kwargs):
+        if stepsBack is not None:
+            stepsBack = -(stepsBack+1)
+        for scan in self.__scanHistory__[:stepsBack:-1]:
             scan.plot(**kwargs)
 
     def plotAllAisUpdates(self, **kwargs):
