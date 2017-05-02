@@ -220,7 +220,7 @@ class Initiator():
 
     def _processPreliminaryTracks(self, measurement_list):
         newInitialTargets = []
-        time = measurement_list.time
+        measTime = measurement_list.time
         measurement_array = measurement_list.measurements
         log.info("_processPreliminaryTracks " + str(len(self.preliminary_tracks)))
 
@@ -232,7 +232,7 @@ class Initiator():
             return np.arange(n2).tolist(), newInitialTargets
 
         # Predict position
-        dt = time - self.last_timestamp
+        dt = measTime - self.last_timestamp
         F = pv.Phi(dt)
         Q = pv.Q(dt)
         for track in self.preliminary_tracks:
@@ -241,6 +241,7 @@ class Initiator():
                             for track in self.preliminary_tracks]
 
         # Calculate delta matrix
+        # TODO: Improve the runtime of this section. It takes about 33% of m/n-iteration runtime
         delta_matrix = np.zeros((n1, n2), dtype=np.float32)
         for i, predicted_state in enumerate(predicted_states):
             for j, measurement in enumerate(measurement_array):
@@ -261,6 +262,7 @@ class Initiator():
 
         # Assign measurements
         assignments = _solve_global_nearest_neighbour(delta_matrix)
+
 
         # Update tracks
         for track_index, meas_index in assignments:
@@ -297,19 +299,21 @@ class Initiator():
             elif track_status == CONFIRMED:
                 log.debug("Removing CONFIRMED track " + str(track_index))
                 # assert len(track.estimates) == self.N + 1
-                new_target = Target(time,
+                new_target = Target(measTime,
                                     None,
                                     np.array(track.estimates[-1]),
                                     track.covariance,
                                     measurementNumber=track.measurement_index + 1,
                                     measurement=measurement_array[track.measurement_index])
                 log.debug("Spawning new (initial) Target: " + str(new_target)
-                               + " Covariance:\n" + np.array_str(track.covariance))
+                          + " Covariance:\n" + np.array_str(track.covariance))
                 newInitialTargets.append(new_target)
                 removeIndices.append(track_index)
+
         for i in reversed(removeIndices):
             self.preliminary_tracks.pop(i)
-        if removeIndices: log.debug(self.getPreliminaryTracksString())
+        if removeIndices:
+            log.debug(self.getPreliminaryTracksString())
 
         used_indices = [assignment[1] for assignment in assignments]
         unused_indices = [index
@@ -358,9 +362,9 @@ class Initiator():
         time = measurement_list.time
         measurements = measurement_list.measurements
         log.info("__spawn_preliminary_tracks " + str(len(assignments)))
-        log.debug("New preliminary tracks:" +  ("\n" + "\n".join(
-                ['{0:17} -> {1:17}'.format(str(self.initiators[old_index].value), str(measurements[new_index]))
-                 for old_index, new_index in assignments]) if assignments else ""))
+        # log.debug("New preliminary tracks:" +  ("\n" + "\n".join(
+        #         ['{0:17} -> {1:17}'.format(str(self.initiators[old_index].value), str(measurements[new_index]))
+        #          for old_index, new_index in assignments]) if assignments else ""))
 
         for old_index, new_index in assignments:
             delta_vector = measurements[new_index] - self.initiators[old_index].value
@@ -371,14 +375,13 @@ class Initiator():
             self.preliminary_tracks.append(track)
         used_initiator_indices = {e[0] for e in assignments}
         unused_initiator_indices = set(range(len(self.initiators))).difference(used_initiator_indices)
-        if unused_initiator_indices:
-            log.debug("discarded initiators:\n" +
-                           "\n".join([str(self.initiators[i].value)
-                                      for i in unused_initiator_indices]))
+        # if unused_initiator_indices:
+        #     log.debug("discarded initiators:\n" +
+        #                    "\n".join([str(self.initiators[i].value)
+        #                               for i in unused_initiator_indices]))
 
 
 if __name__ == "__main__":
-    from pymht.utils.classDefinitions import Position
     import pymht.utils.simulator as sim
     import pymht.models.pv as model
 
@@ -393,27 +396,30 @@ if __name__ == "__main__":
     print("Test 2")
     seed = 1254
     nTargets = 2
-    p0 = Position(0, 0)
-    radarRange = 1000  # meters
+    p0 = np.array([0., 0.])
+    radarRange = 5500  # meters
     meanSpeed = 10  # gausian distribution
-    P_d = 1.0
-    initialTargets = sim.generateInitialTargets(
-        seed, nTargets, p0, radarRange, meanSpeed, P_d)
+    P_d = 0.8
+    sigma_Q = pv.sigmaQ_true
+
+    sim.seed_simulator(seed)
+
+    initialTargets = sim.generateInitialTargets(nTargets, p0, radarRange, P_d, sigma_Q)
+
     nScans = 7
     timeStep = 0.7
     simTime = nScans * timeStep
-    simList = sim.simulateTargets(seed, initialTargets, simTime, timeStep, model.Phi(
-        timeStep), model.Q(timeStep, 0), model.Gamma)
+    simList = sim.simulateTargets(initialTargets, simTime, timeStep, model)
 
-    lambda_phi = 1e-6
-    scanList = sim.simulateScans(seed, simList, timeStep, model.C_RADAR, model.R_RADAR(0),
-                                 lambda_phi, radarRange, p0, shuffle=True)
+    lambda_phi = 4e-6
+    scanList = sim.simulateScans(simList, timeStep, model.C_RADAR, model.R_RADAR(0),
+                                 lambda_phi, radarRange, p0)
 
-    N_checks = 3
+    N_checks = 4
     M_required = 2
 
     v_max = 17
-    initiator = Initiator(M_required, N_checks, v_max, debug=True)
+    initiator = Initiator(M_required, N_checks, v_max, pv.C_RADAR, pv.R_RADAR(), debug=False)
 
     for scanIndex, measurementList in enumerate(scanList):
         print(measurementList)
