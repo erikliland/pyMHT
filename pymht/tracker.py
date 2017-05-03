@@ -584,7 +584,7 @@ class Tracker():
                     mmsi_list.append(mmsi)
                     fusedCovariance = P_hat2
 
-            if False: #len(gated_radar_indices_list[i]) == 0:
+            if len(gated_radar_indices_list[i]) == 0:
                 for k, aisMeasurementIndex in enumerate(gated_ais_indices_list[i]):
                     x_0 = targetNodes[i].x_0
                     P_0 = targetNodes[i].P_0
@@ -1105,7 +1105,7 @@ class Tracker():
         for target in self.__targetList__:
             if kwargs.get("includeHistory", False):
                 target.getInitial().recDownPlotStates(**kwargs)
-            else:
+            elif target.trackHypotheses is not None:
                 for hyp in target.trackHypotheses:
                     hyp.recDownPlotStates(**kwargs)
 
