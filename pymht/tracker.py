@@ -1273,7 +1273,9 @@ class Tracker():
                           attrib={meanTag:meanString,
                                   minTag:minString,
                                   maxTag:maxString}
-            ).text = np.array_str(array, precision=timeLogPrecision)
+            ).text = np.array_str(array,
+                                  precision=timeLogPrecision,
+                                  max_line_width=999999)
 
         for target in self.__trackNodes__:
             target._storeNode(runElement, self.radarPeriod)
