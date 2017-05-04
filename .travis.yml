@@ -3,6 +3,7 @@ python:
 - '3.5'
 install:
 - pip install .
+- pip install -r preRequirements.txt
 - pip install -r requirements.txt
 script: pytest tests
 notifications:
