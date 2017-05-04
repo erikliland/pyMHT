@@ -7,6 +7,7 @@ from pymht.utils.classDefinitions import AIS_message
 seed = 172362
 nTargets = 10
 radarPeriod = 60./24.
+initTime = 0
 simTime = 10
 simulationTimeStep = radarPeriod/2
 p0 = np.array([0, 0])
@@ -81,6 +82,7 @@ def test_ais_simulation_consistency():
                           model.R_AIS(model.sigmaR_AIS_true),
                           model.GPS_COVARIANCE_PRECISE,
                           radarPeriod,
+                            initTime,
                           integerTime=True,
                           noise=True,
                           idScrambling = False,

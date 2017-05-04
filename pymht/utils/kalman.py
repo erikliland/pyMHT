@@ -103,7 +103,7 @@ class KalmanFilter():
     P_0 - Initial state covariance
     """
 
-    def __init__(self, x_0, P_0, A, C, Gamma, Q, R, **kwargs):
+    def __init__(self, x_0, P_0, A, C, Q, R, **kwargs):
         # Q = kwargs.get('Q')
         # R_RADAR = kwargs.get('R_RADAR')
         # x_0 = kwargs.get('x_0')
@@ -117,7 +117,6 @@ class KalmanFilter():
         self.C = C  # Observation matrix
         self.Q = Q  # Process noise covariance
         self.R = R  # Measurement noise covariance
-        self.Gamma = Gamma  # Process noise "observability"
         self.x_hat = np.copy(x_0)  # Filtered state
         self.P_hat = np.copy(P_0)  # Filtered state covariance
         self.x_bar = None  # Prediced state
@@ -139,7 +138,7 @@ class KalmanFilter():
         A = self.A  # self.A(dT) if callable(self.A) else self.A
         Q = self.Q  # self.Q(dT) if callable(self.Q) else self.Q
         x_bar = A.dot(self.x_hat)
-        P_bar = A.dot(self.P_hat).dot(A.T) + self.Gamma.dot(Q.dot(self.Gamma.T))
+        P_bar = A.dot(self.P_hat).dot(A.T) + Q
         if not kwargs.get('local', False):
             self.x_bar = x_bar
             self.P_bar = P_bar
@@ -193,4 +192,4 @@ class KalmanFilter():
             P_hat = self.P_bar - self.K.dot(self.C).dot(self.P_bar)
         else:
             raise ValueError("Invalid number of arguments")
-        return KalmanFilter(x_hat, P_hat, self.A, self.C, self.Gamma, self.Q, self.R)
+        return KalmanFilter(x_hat, P_hat, self.A, self.C, self.Q, self.R)
