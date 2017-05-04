@@ -8,4 +8,5 @@ pytest
 coveralls
 coverage
 pykalman
+Cython
 git+git://github.com/jfrelinger/cython-munkres-wrapper@master
