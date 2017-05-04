@@ -12,9 +12,8 @@ A = np.array([[1.0,  0.,   dT,  0.],
               [0.,   0.,   0., 1.0]])
 C = np.array([[1.0,  0.,  0., 0.],
               [0.,   1.0, 0., 0.]])
-Gamma = np.diag([1.0, 1.0], -2)[:, 0:2]
 sigmaQ = 1.0
-Q = np.eye(2) * np.power(sigmaQ, 2) * dT
+Q = pv.Q(dT)
 sigmaR = 1.0
 R = np.eye(2) * np.power(sigmaR, 2)
 n = 10
@@ -24,7 +23,7 @@ x_bar_list = np.copy(x_0_list)
 P_bar_list = np.copy(P_0_list)
 
 def test_KalmanFilter_class():
-    kf = kalman.KalmanFilter(x_0, P_0, A, C, Gamma, Q, R)
+    kf = kalman.KalmanFilter(x_0, P_0, A, C, Q, R)
     y = np.ones(2)
     kf.filter(y=y)
     kf2 = kf.filterAndCopy()
@@ -33,11 +32,11 @@ def test_KalmanFilter_class():
 
 
 def test_predict():
-    x_bar_list, P_bar_list = kalman.predict(A, Q, Gamma, x_0_list, P_0_list)
+    x_bar_list, P_bar_list = kalman.predict(A, Q, x_0_list, P_0_list)
 
 def test_numpyPredict():
     z_hat_list, S_list, S_inv_list, K_list, P_hat_list = kalman.precalc(
-        A, C, Q, R, Gamma, x_bar_list, P_bar_list)
+        A, C, Q, R, x_bar_list, P_bar_list)
 
     gated_z_tilde_list = np.random.random((n, 5, 2))
     gated_x_hat_list = [kalman.numpyFilter(x_bar_list[i],
