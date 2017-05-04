@@ -30,7 +30,7 @@ description = "A track oriented multi hypothesis tracker with integer linear pro
 license = "BSD"
 keywords = 'mht tomht radar tracking track-split track split multi target multitarget'
 url = 'http://autosea.github.io/sf/2016/04/15/radar_ais/'
-install_requires = ['matplotlib', 'numpy', 'scipy', 'psutil', 'termcolor']
+install_requires = ['matplotlib', 'numpy', 'scipy', 'psutil', 'termcolor','Cython']
 
 packages = find_packages(exclude=['examples', 'docs'])
 print("Packages", packages)
