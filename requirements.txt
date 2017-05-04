@@ -9,4 +9,3 @@ coveralls
 coverage
 pykalman
 git+git://github.com/jfrelinger/cython-munkres-wrapper@master
-git+git://github.com/google/or-tools@master

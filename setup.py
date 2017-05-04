@@ -23,7 +23,7 @@ else:
     extensions = None
 
 name = "pyMHT"
-version = "0.9.1"
+version = "1.0"
 author = "Erik Liland"
 author_email = "erik.liland@gmail.com"
 description = "A track oriented multi hypothesis tracker with integer linear programming"
