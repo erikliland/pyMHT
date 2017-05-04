@@ -1,6 +1,6 @@
 import numpy as np
-from pymht.utils.classDefinitions import SimTarget as Target
-from pymht.utils.classDefinitions import MeasurementList, AIS_message, Position
+from pymht.utils.classDefinitions import SimTarget
+from pymht.utils.classDefinitions import MeasurementList, AIS_message, Position, AIS_messageList, SimList
 import time
 import copy
 import math
@@ -24,16 +24,16 @@ def positionWithNoise(state, H, R):
     return H.dot(state) + v
 
 
-def calculateNextState(target, timeStep, Phi, Q, Gamma):
-    Q_matrix = target.Q if target.Q is not None else Q
-    w = np.random.multivariate_normal(np.zeros(2), Q_matrix)
-    nextState = Phi.dot(target.state) + Gamma.dot(w.T)
+def calculateNextState(target, timeStep, Phi, model):
+    Q = model.Q(timeStep, target.sigma_Q)
+    w = np.random.multivariate_normal(np.zeros(4), Q)
+    nextState = Phi.dot(target.state) + w.T
     newVar = {'state': nextState, 'time': target.time + timeStep}
-    return Target(**{**target.__dict__, **newVar})
+    return SimTarget(**{**target.__dict__, **newVar})
 
 
 def generateInitialTargets(numOfTargets, centerPosition,
-                           radarRange, P_d, **kwargs):
+                           radarRange, P_d, sigma_Q, **kwargs):
     usedMMSI = []
     initialTime = time.time()
     initialList = []
@@ -55,21 +55,23 @@ def generateInitialTargets(numOfTargets, centerPosition,
                     break
         else:
             mmsi = None
-        target = Target(np.array([px, py, vx, vy], dtype=np.float32), initialTime, P_d, mmsi = mmsi)
+        target = SimTarget(np.array([px, py, vx, vy], dtype=np.float32), initialTime, P_d, sigma_Q, mmsi = mmsi)
         initialList.append(target)
     return initialList
 
 
-def simulateTargets(initialTargets, simTime, timeStep, Phi, Q, Gamma):
-    simList = []
-    assert all([type(initialTarget) == Target for initialTarget in initialTargets])
+def simulateTargets(initialTargets, simTime, timeStep, model, **kwargs):
+    Phi = model.Phi(timeStep)
+    simList = SimList()
+    assert all([type(initialTarget) == SimTarget for initialTarget in initialTargets])
     simList.append(initialTargets)
     nTimeSteps = int(simTime / timeStep)
     for i in range(nTimeSteps):
-        targetList = [calculateNextState(target, timeStep, Phi, Q, Gamma)
+        targetList = [calculateNextState(target, timeStep, Phi, model)
                       for target in simList[-1]]
         simList.append(targetList)
-    simList.pop(0)
+    if not kwargs.get('includeInitialTime', True):
+        simList.pop(0)
     return simList
 
 
@@ -93,10 +95,11 @@ def simulateScans(simList, radarPeriod, H, R, lambda_phi=0,
 
         measurementList = MeasurementList(simTime)
         for target in sim:
-            visible = np.random.uniform() <= target.P_d
+            visible = np.random.uniform() <= kwargs.get('P_d',target.P_d)
             if (rRange is not None) and (p0 is not None):
-                distance = np.linalg.norm(target.state[0:2] - p0.array)
-                inRange = distance <= rRange
+                distance = np.linalg.norm(target.state[0:2] - p0)
+                inRange =  distance <= rRange
+                inRange = target.inRange(p0, rRange)
             else:
                 inRange = True
 
@@ -123,39 +126,83 @@ def simulateScans(simList, radarPeriod, H, R, lambda_phi=0,
     return scanList
 
 
-def simulateAIS(sim_list, Phi_func, C, R, P_0, **kwargs):
-    ais_measurements = []
+def simulateAIS(sim_list, Phi_func, C, R, P_0, radarPeriod, initTime, **kwargs):
+    ais_measurements = AIS_messageList()
     integerTime = kwargs.get('integerTime', True)
-    aisPeriod = kwargs.get('period', 5.0)
-    prevTime = sim_list[0][0].time
-    for sim in sim_list[1:]:
-        if not (sim[0].time - prevTime > aisPeriod): continue
+    for i, sim in enumerate(sim_list[1:]):
         tempList = []
-        for target in (t for t in sim if t.mmsi is not None):
+        for j, target in ((j,t) for j, t in enumerate(sim) if t.mmsi is not None):
             if integerTime:
-                time = math.floor(target.time)
-                dT = time - target.time
+                messageTime = math.floor(target.time)
+                dT = messageTime - target.time
                 state = Phi_func(dT).dot(target.state)
             else:
-                time = target.time
+                messageTime = target.time
                 state = target.state
+            timeSinceLastAisMessage = target.time - target.timeOfLastAisMessage
+            speedMS = np.linalg.norm(target.state[2:4])
+            reportingInterval = _aisReportInterval(speedMS, target.aisClass)
+            shouldSendAisMessage = ((timeSinceLastAisMessage >= reportingInterval) and
+                                    ((messageTime-initTime) % radarPeriod != 0))
+            log.debug("MMSI " + str(target.mmsi) +
+                  "Time " + str(target.time) + " \t" +
+                  "Time of last AIS message " + str(target.timeOfLastAisMessage) + " \t" +
+                  "Reporting Interval " + str(reportingInterval) +
+                  "Should send AIS message " + str(shouldSendAisMessage))
+            if not shouldSendAisMessage:
+                try:
+                    sim_list[i + 2][j].timeOfLastAisMessage = target.timeOfLastAisMessage
+                except IndexError:
+                    pass
+                continue
+            try:
+                sim_list[i+2][j].timeOfLastAisMessage = target.time
+            except IndexError:
+                pass
+
             if kwargs.get('noise', True):
                 state = positionWithNoise(state, C, R)
             if kwargs.get('idScrambling',False) and np.random.uniform() > 0.5:
                 mmsi = target.mmsi + 10
-                log.info("Scrambling MMSI {0:} to {1:} at {2:}".format(target.mmsi,mmsi, time))
+                log.info("Scrambling MMSI {0:} to {1:} at {2:}".format(target.mmsi,mmsi, messageTime))
             else:
                 mmsi = target.mmsi
 
-            prediction = AIS_message(time=time,
+            prediction = AIS_message(time=messageTime,
                                      state=state,
                                      covariance=P_0,
                                      mmsi=mmsi)
-            tempList.append(prediction)
+            if np.random.uniform() <= target.P_r:
+                tempList.append(prediction)
         if tempList:
             ais_measurements.append(tempList)
-        prevTime = sim[0].time
     return ais_measurements
+
+def _aisReportInterval(speedMS, aisClass):
+    from scipy.constants import knot
+    speedKnot = speedMS * knot
+    if aisClass.upper() == 'A':
+        if speedKnot > 23:
+            return 2
+        if speedKnot > 14:
+            return 4 #Should be 2 or 6, but are missing acceleration data
+        if speedKnot > 0:
+            return 6 #Should be 3.3 or 10, but are missing acceleration data
+        if speedKnot == 0:
+            return 60 #Should be 10s og 3min, but are missing mored status
+        raise ValueError("Speed must be positive")
+    elif aisClass.upper() == 'B':
+        if speedKnot > 23:
+            return 10
+        if speedKnot > 14:
+            return 5
+        if speedKnot > 2:
+            return 30
+        if speedKnot >= 0:
+            return 60*3
+        raise ValueError("Speed must be positive")
+    else:
+        raise ValueError("aisClass must be 'A' og 'B'")
 
 
 def writeSimList(initialTargets, simList, filename):
@@ -196,16 +243,16 @@ def importFromFile(filename, **kwargs):
             if lineIndex == 1:
                 for i, initPos in enumerate(firstPositions):
                     initialTargets.append(
-                        Target(time=firstTime,
-                               position=initPos,
-                               velocity=(Position(elements[2 * i + 1], elements[2 * i + 2]) - initPos) * (
+                        SimTarget(time=firstTime,
+                                  position=initPos,
+                                  velocity=(Position(elements[2 * i + 1], elements[2 * i + 2]) - initPos) * (
                                    1 / (localTime - firstTime))))
 
             if localTime.is_integer():
-                targetList = [Target(time=localTime,
-                                     position=Position(elements[i], elements[i + 1]),
-                                     velocity=Velocity(0, 0)
-                                     ) for i in range(1, len(elements), 2)
+                targetList = [SimTarget(time=localTime,
+                                        position=Position(elements[i], elements[i + 1]),
+                                        velocity=Velocity(0, 0)
+                                        ) for i in range(1, len(elements), 2)
                               ]
 
                 simList.append(targetList)
@@ -244,7 +291,7 @@ def _generateRadialClutter(centerPosition, radarRange):
     heading = np.random.uniform(0, 360)
     distance = np.random.uniform(0, radarRange)
     px, py = _pol2cart(heading, distance)
-    return centerPosition.array + np.array([px, py])
+    return centerPosition + np.array([px, py])
 
 
 def _generateCartesianClutter(centerPosition, radarRange):
@@ -253,7 +300,7 @@ def _generateCartesianClutter(centerPosition, radarRange):
         y = np.random.uniform(-radarRange, radarRange)
         pos = np.array([x, y], dtype=np.float32)
         if np.linalg.norm(pos) <= radarRange:
-            return centerPosition.array + pos
+            return centerPosition + pos
 
 
 def _pol2cart(bearingDEG, distance):
@@ -262,3 +309,4 @@ def _pol2cart(bearingDEG, distance):
     x = distance * np.cos(angleRAD)
     y = distance * np.sin(angleRAD)
     return [x, y]
+

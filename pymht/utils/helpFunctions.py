@@ -1,18 +1,12 @@
 from __future__ import print_function
 import matplotlib.pyplot as plt
 import numpy as np
-import copy
-from pymht.utils.classDefinitions import MeasurementList, AIS_prediction, PredictionList
-import pymht.utils.kalman as kalman
-import pymht.models.pv as model
 import logging
-import datetime
 
 # ----------------------------------------------------------------------------
 # Instantiate logging object
 # ----------------------------------------------------------------------------
 log = logging.getLogger(__name__)
-
 log.setLevel(logging.DEBUG)
 log.debug("Loaded helpFunctions")
 log.info("Loaded helpFunctions")
@@ -60,14 +54,15 @@ def plotVelocityArrowFromNode(nodes, **kwargs):
 def plotRadarOutline(centerPosition, radarRange, **kwargs):
     from matplotlib.patches import Ellipse
     if kwargs.get("markCenter", True):
-        plt.plot(centerPosition.x(), centerPosition.y(), "bo")
+        plt.plot(centerPosition[0], centerPosition[0], "bo")
     ax = plt.subplot(111)
-    circle = Ellipse((centerPosition.x(), centerPosition.y()), radarRange * 2, radarRange * 2,
+    circle = Ellipse((centerPosition[0], centerPosition[1]), radarRange * 2, radarRange * 2,
                      edgecolor="black", linestyle="dotted", facecolor="none")
     ax.add_artist(circle)
 
 
 def plotTrueTrack(simList, **kwargs):
+    import copy
     colors = kwargs.get("colors")
     newArgs = copy.copy(kwargs)
     if "colors" in newArgs:
@@ -92,13 +87,6 @@ def printScanList(scanList):
         measurement.print()
 
 
-def printClusterList(clusterList):
-    print("Clusters:")
-    for clusterIndex, cluster in enumerate(clusterList):
-        print("Cluster ", clusterIndex, " contains target(s):\t", cluster,
-              sep="", end="\n")
-
-
 def printHypothesesScore(targetList):
     def recPrint(target, targetIndex):
         if target.trackHypotheses is not None:
@@ -110,32 +98,6 @@ def printHypothesesScore(targetList):
               "\tInit", target.initial.position,
               "\tPred", target.predictedPosition(),
               "\tMeas", target.measurement, sep="")
-
-
-# def nllr(*args):
-#     if len(args) == 1:
-#         P_d = args[0]
-#         if P_d == 1:
-#             return -np.log(1e-6)
-#         return -np.log(1 - P_d)
-#     elif len(args) == 5:
-#         P_d = args[0]
-#         measurementResidual = args[1]
-#         lambda_ex = args[2]
-#         covariance = args[3]
-#         invCovariance = args[4]
-#         if (	(measurementResidual is not None) and
-#                 (lambda_ex is not None) and
-#                 (covariance is not None) and
-#                 (invCovariance is not None)):
-#             if lambda_ex == 0:
-#                 print("RuntimeError('lambda_ex' can not be zero.)")
-#                 lambda_ex += 1e-20
-#             return (0.5 * (measurementResidual.T.dot(invCovariance).dot(measurementResidual))
-#                     + np.log((lambda_ex * np.sqrt(np.linalg.det(2 * np.pi * covariance))) / P_d))
-#     else:
-#         raise ValueError("nllr() takes either 1 or 5 arguments (", len(args), ") given")
-
 
 def backtrackMeasurementNumbers(selectedNodes, steps=None):
     def recBacktrackNodeMeasurements(node, measurementBacktrack, stepsLeft=None):
@@ -223,25 +185,11 @@ def solverIsAvailable(solverString):
         return pulp.GUROBI_CMD().available() != False
     return False
 
-
-def predictAisMeasurements(scanTime, aisMeasurements):
-    assert len(aisMeasurements) > 0
-    aisPredictions = PredictionList(scanTime)
-    scanTimeString = datetime.datetime.fromtimestamp(scanTime).strftime("%H:%M:%S.%f")
-    for measurement in aisMeasurements:
-        aisTimeString = datetime.datetime.fromtimestamp(measurement.time).strftime("%H:%M:%S.%f")
-        log.debug("Predicting AIS from " + aisTimeString + " to " + scanTimeString)
-        dT = scanTime - measurement.time
-        assert dT > 0
-        state = measurement.state
-        A = model.Phi(dT)
-        Q = model.Q(dT)
-        x_bar, P_bar = kalman.predict(A, Q, model.Gamma, np.array(state, ndmin=2),
-                                      np.array(measurement.covariance, ndmin=3))
-        aisPredictions.measurements.append(
-            AIS_prediction(model.C_RADAR.dot(x_bar[0]),
-                           model.C_RADAR.dot(P_bar[0]).dot(model.C_RADAR.T), measurement.mmsi))
-        log.debug(np.array_str(state)+"=>"+np.array_str(x_bar[0]))
-        aisPredictions.aisMessages.append(measurement)
-    assert len(aisPredictions.measurements) == len(aisMeasurements)
-    return aisPredictions
+def writeElementToFile(path, element):
+    import xml.etree.ElementTree as ET
+    import os
+    (head, tail) = os.path.split(path)
+    if not os.path.isdir(head):
+        os.makedirs(head)
+    tree = ET.ElementTree(element)
+    tree.write(path)

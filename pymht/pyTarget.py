@@ -6,6 +6,8 @@ import numpy as np
 import copy
 import datetime
 import matplotlib.pyplot as plt
+import xml.etree.ElementTree as ET
+from pymht.utils.xmlDefinitions import *
 
 class Target():
     def __init__(self, time, scanNumber, x_0, P_0, ID=None, **kwargs):
@@ -25,6 +27,7 @@ class Target():
         self.cumulativeNLLR = copy.copy(kwargs.get("cumulativeNLLR", 0))
         self.trackHypotheses = None
         self.mmsi = kwargs.get('mmsi')
+        self.status = kwargs.get('status',activeTag)
         assert self.P_d >= 0
         assert self.P_d <= 1
         assert (type(self.parent) == type(self) or self.parent is None)
@@ -36,6 +39,11 @@ class Target():
             predStateStr = " \tPredState: " + str(self.kalmanFilter.x_bar)
         else:
             predStateStr = ""
+
+        if self.ID is not None:
+            idStr = " \tID: {:2}".format(self.ID)
+        else:
+            idStr = ""
 
         if (self.measurementNumber is not None) and (self.scanNumber is not None):
             measStr = (" \tMeasurement(" +
@@ -73,6 +81,7 @@ class Target():
         return ("Time: " + timeString +
                 "\t" + str(self.getPosition()) +
                 " \t" + str(self.getVelocity()) +
+                idStr +
                 nllrStr +
                 measStr +
                 predStateStr +
@@ -102,6 +111,13 @@ class Target():
 
     def __sub__(self, other):
         return self.x_0 - other.x_0
+
+    def getXmlStateStrings(self, precision=2):
+        return (str(round(self.x_0[0],precision)),
+                str(round(self.x_0[1],precision)),
+                str(round(self.x_0[2],precision)),
+                str(round(self.x_0[3],precision))
+                )
 
     def getPosition(self):
         return Position(self.x_0[0:2])
@@ -179,7 +195,7 @@ class Target():
         self.trackHypotheses.extend(newNodes)
         return usedMeasurementIndices
 
-    def spawnNewNodes(self, scanTime, scanNumber, x_bar, P_bar, measurementsIndices,
+    def spawnNewNodes(self, associatedMeasurements, scanTime, scanNumber, x_bar, P_bar, measurementsIndices,
                       measurements, states, covariance, nllrList, fusedAisData=None):
         assert scanTime > self.time
         assert self.scanNumber == scanNumber - 1, str(self.scanNumber) + "->" + str(scanNumber)
@@ -207,6 +223,10 @@ class Target():
                     parent=self
                     ) for i in range(nNewStates)]
         )
+        for measurementIndex in measurementsIndices:
+            associatedMeasurements.update(
+                {(scanNumber, measurementIndex + 1)}
+            )
 
         if fusedAisData is None: return
         (fusedStates,
@@ -215,21 +235,30 @@ class Target():
          fusedNllr,
          fusedMMSI) = fusedAisData
         historicalMmsi = self._getHistoricalMmsi()
-        self.trackHypotheses.extend(
-            [Target(time=scanTime,
-                    scanNumber=scanNumber,
-                    x_0=fusedStates[i],
-                    P_0=fusedCovariance,
-                    ID=self.ID,
-                    measurementNumber=fusedMeasurementIndices[i] + 1,
-                    measurement=measurements[fusedMeasurementIndices[i]],
-                    cumulativeNLLR=self.cumulativeNLLR + fusedNllr[i],
-                    mmsi=fusedMMSI[i],
-                    P_d=self.P_d,
-                    parent=self)
-             for i in range(len(fusedMeasurementIndices))
-             if (historicalMmsi is None) or (fusedMMSI[i] == historicalMmsi)
-             ])
+        acceptedMMSI = []
+        for i in range(len(fusedMeasurementIndices)):
+            if (historicalMmsi is None) or (fusedMMSI[i] == historicalMmsi):
+                measurementNumber = fusedMeasurementIndices[i] + 1 if fusedMeasurementIndices[i] is not None else None
+                measurement = measurements[fusedMeasurementIndices[i]] if fusedMeasurementIndices[i] is not None else None
+                self.trackHypotheses.append(
+                    Target(scanTime,
+                            scanNumber,
+                            fusedStates[i],
+                            fusedCovariance,
+                            self.ID,
+                            measurementNumber=measurementNumber,
+                            measurement=measurement,
+                            cumulativeNLLR=self.cumulativeNLLR + fusedNllr[i],
+                            mmsi=fusedMMSI[i],
+                            P_d=self.P_d,
+                            parent=self)
+                )
+                acceptedMMSI.append(fusedMMSI[i])
+
+        for mmsi in acceptedMMSI:
+            associatedMeasurements.update(
+                {(scanNumber, mmsi)}
+            )
 
     def _getHistoricalMmsi(self):
         if self.mmsi is not None:
@@ -254,20 +283,21 @@ class Target():
         return measRes.T.dot(self.invResidualCovariance).dot(measRes) <= eta2
 
     def createZeroHypothesis(self, time, scanNumber, x_0, P_0):
-        return Target(time=time,
-                      scanNumber=scanNumber,
-                      x_0=x_0,
-                      P_0=P_0,
-                      ID=self.ID,
+        return Target(time,
+                      scanNumber,
+                      x_0,
+                      P_0,
+                      self.ID,
                       measurementNumber=0,
                       cumulativeNLLR=self.cumulativeNLLR - np.log(1 - self.P_d),
                       P_d=self.P_d,
-                      parent=self
-                      )
+                      parent=self)
 
     def _pruneAllHypothesisExceptThis(self, keep, backtrack=False):
-        indices = np.where(self.trackHypotheses != keep)
-        self.trackHypotheses = np.delete(self.trackHypotheses, indices)
+        keepIndex= self.trackHypotheses.index(keep)
+        indices = np.delete(np.arange(len(self.trackHypotheses)),[keepIndex])
+        self.trackHypotheses = np.delete(self.trackHypotheses, indices).tolist()
+        assert len(self.trackHypotheses) == 1, "It should have been one node left."
 
         if backtrack and self.parent is not None:
             self.parent._pruneAllHypothesisExceptThis(self, backtrack=backtrack)
@@ -280,7 +310,7 @@ class Target():
         if stepsLeft <= 0:
             if self.parent is not None:
                 self.parent._pruneAllHypothesisExceptThis(self, backtrack=True)
-                self.recursiveSubtractScore(self.cumulativeNLLR)
+                # self.recursiveSubtractScore(self.cumulativeNLLR)
                 assert self.parent.scanNumber == self.scanNumber - 1, \
                     "nScanPruning2: from scanNumber" + str(self.parent.scanNumber) + "->" + str(self.scanNumber)
                 return self
@@ -306,12 +336,14 @@ class Target():
         if (self.measurementNumber == 0) or (root):
             return subSet
         else:
-            radarMeasurement = (self.scanNumber, self.measurementNumber)
+            tempSet = set()
+            if self.measurementNumber is not None:
+                radarMeasurement = (self.scanNumber, self.measurementNumber)
+                tempSet.add(radarMeasurement)
             if self.mmsi is not None:
                 aisMeasurement = (self.scanNumber, self.mmsi)
-                tempSet = {radarMeasurement, aisMeasurement}
-            else:
-                tempSet = {radarMeasurement}
+                tempSet.add(aisMeasurement)
+
             return tempSet | subSet
 
     def processNewMeasurementRec(self, measurementList, usedMeasurementSet,
@@ -444,16 +476,30 @@ class Target():
         else:
             return self.parent.backtrackPosition(stepsBack) + [self.x_0[0:2]]
 
-    def backtrackMeasurement(self):
+    def backtrackState(self, stepsBack=float('inf')):
+        if self.parent is None:
+            return [self.x_0]
+        else:
+            return self.parent.backtrackPosition(stepsBack) + [self.x_0]
+
+    def backtrackMeasurement(self, stepsBack=float('inf')):
         if self.parent is None:
             return [self.measurement]
         else:
-            return self.parent.backtrackMeasurement() + [self.measurement]
+            return self.parent.backtrackMeasurement(stepsBack) + [self.measurement]
+
+    def backtrackNodes(self, stepsBack=float('inf')):
+        if self.parent is None:
+            return [self]
+        else:
+            return self.parent.backtrackNodes(stepsBack) + [self]
 
     def getSmoothTrack(self, radarPeriod):
         from pykalman import KalmanFilter
         roughTrackArray = self.backtrackMeasurement()
-        initialState = self.getInitial().x_0
+        initialNode = self.getInitial()
+        depth = initialNode.depth()
+        initialState = initialNode.x_0
         for i, m in enumerate(roughTrackArray):
             if m is None:
                 roughTrackArray[i] = [np.NaN, np.NaN]
@@ -462,16 +508,22 @@ class Target():
             if np.isnan(np.sum(m)):
                 measurements[i] = np.ma.masked
         assert measurements.shape[1] == 2, str(measurements.shape)
+        if depth < 2:
+            pos =  measurements.filled(np.nan)
+            vel = np.empty_like(pos)*np.nan
+            return pos, vel, False
         kf = KalmanFilter(transition_matrices=model.Phi(radarPeriod),
                           observation_matrices=model.C_RADAR,
                           initial_state_mean=initialState)
-        print("measurements",measurements.shape,"\n", measurements)
         kf = kf.em(measurements, n_iter=5)
         (smoothed_state_means, _) = kf.smooth(measurements)
         smoothedPositions = smoothed_state_means[:, 0:2]
+        smoothedVelocities = smoothed_state_means[:, 2:4]
         assert smoothedPositions.shape == measurements.shape, \
             str(smoothedPositions.shape) + str(measurements.shape)
-        return smoothedPositions
+        assert smoothedVelocities.shape == measurements.shape, \
+            str(smoothedVelocities.shape) + str(measurements.shape)
+        return smoothedPositions, smoothedVelocities, True
 
     def plotTrack(self, root=None, stepsBack=float('inf'), **kwargs):
         if kwargs.get('markInitial', False) and stepsBack == float('inf'):
@@ -484,8 +536,10 @@ class Target():
             self.markEnd(**kwargs)
         if kwargs.get('smooth', False) and self.getInitial().depth()>1:
             radarPeriod = kwargs.get('radarPeriod', self._estimateRadarPeriod())
-            track = self.getSmoothTrack(radarPeriod)
+            track,_, smoothingGood = self.getSmoothTrack(radarPeriod)
             linestyle = 'dashed'
+            if not smoothingGood:
+                return
         else:
             track = self.backtrackPosition(stepsBack)
             linestyle = 'solid'
@@ -510,11 +564,11 @@ class Target():
                                     self.scanNumber,
                                     self.mmsi,
                                     **kwargs)
-        elif (self.measurementNumber == 0) and kwargs.get("dummy", True):
+        elif (self.measurementNumber is not None) and (self.measurementNumber == 0) and kwargs.get("dummy", True):
             Position(self.x_0).plot(self.measurementNumber,
                                     self.scanNumber,
                                     **kwargs)
-        elif (self.measurementNumber > 0) and kwargs.get('real', True):
+        elif (self.measurementNumber is not None) and(self.measurementNumber > 0) and kwargs.get('real', True):
             Position(self.x_0).plot(self.measurementNumber,
                                     self.scanNumber,
                                     **kwargs)
@@ -547,7 +601,7 @@ class Target():
                  markeredgecolor='black')
 
     def markID(self,**kwargs):
-        index = kwargs.get("index", self.ID)
+        index = self.ID
         if (index is not None):
             ax = plt.subplot(111)
             normVelocity = (self.x_0[2:4] /
@@ -604,6 +658,61 @@ class Target():
             for hyp in self.trackHypotheses:
                 hyp.recDownPlotStates(**kwargs)
 
+    def _storeNode(self, simulationElement, radarPeriod, **kwargs):
+        trackElement = ET.SubElement(simulationElement,
+                                     trackTag)
+        unSmoothedStates = ET.SubElement(trackElement,
+                                         statesTag)
+
+        mmsi = self._getHistoricalMmsi()
+        if mmsi is not None:
+            trackElement.attrib[mmsiTag] = str(mmsi)
+        trackElement.attrib[idTag] = str(self.ID)
+        for k,v in kwargs.items():
+            trackElement.attrib[str(k)] = str(v)
+
+        unSmoothedNodes = self.backtrackNodes()
+        smoothedPositions, smoothedVelocities, smoothingGood = self.getSmoothTrack(radarPeriod)
+
+        trackElement.attrib[lengthTag] = str(len(unSmoothedNodes))
+
+        assert len(unSmoothedNodes) == len(smoothedPositions)
+
+        smoothedStateElement = ET.SubElement(trackElement,
+                                             smoothedstatesTag)
+
+
+        for node, sPos, sVel in zip(unSmoothedNodes, smoothedPositions, smoothedVelocities):
+            stateElement = ET.SubElement(unSmoothedStates,
+                                         stateTag,
+                                         attrib={timeTag: str(node.time)})
+            positionElement = ET.SubElement(stateElement, positionTag)
+            eastPos, northPos, eastVel, northVel = node.getXmlStateStrings()
+            ET.SubElement(positionElement, northTag).text = northPos
+            ET.SubElement(positionElement, eastTag).text = eastPos
+            velocityElement = ET.SubElement(stateElement, velocityTag)
+            ET.SubElement(velocityElement, northTag).text = northVel
+            ET.SubElement(velocityElement, eastTag).text = eastVel
+            if node.status != activeTag:
+                stateElement.attrib[stateTag] = node.status
+
+            if smoothingGood:
+                sStateElement = ET.SubElement(smoothedStateElement,
+                                              stateTag,
+                                              attrib={timeTag: str(node.time)})
+                sPositionElement = ET.SubElement(sStateElement, positionTag)
+                sEastPos = str(round(sPos[0], 2))
+                sNorthPos = str(round(sPos[1], 2))
+                ET.SubElement(sPositionElement, northTag).text = sNorthPos
+                ET.SubElement(sPositionElement, eastTag).text = sEastPos
+
+                sVelocityElement = ET.SubElement(sStateElement, velocityTag)
+                sEastVel = str(round(sVel[0], 2))
+                sNorthVel = str(round(sVel[1], 2))
+                ET.SubElement(sVelocityElement, northTag).text = sNorthVel
+                ET.SubElement(sVelocityElement, eastTag).text = sEastVel
+                if node.status != activeTag:
+                    sStateElement.attrib[stateTag] = node.status
 
 if __name__ == '__main__':
     pass

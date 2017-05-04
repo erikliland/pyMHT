@@ -43,23 +43,21 @@ def numpyFilter(x_bar, K, z_tilde):
     return x_hat
 
 
-def predict(A, Q, Gamma, x_0_list, P_0_list):
+def predict(A, Q, x_0_list, P_0_list):
     assert A.ndim == 2
     assert Q.ndim == 2
-    assert Gamma.ndim == 2
     assert x_0_list.ndim == 2
     assert P_0_list.ndim == 3
     x_bar_list = A.dot(x_0_list.T).T
-    P_bar_list = (np.matmul(np.matmul(A, P_0_list), A.T) +
-                  np.matmul(np.matmul(Gamma, Q), Gamma.T))
+    P_bar_list = (np.matmul(np.matmul(A, P_0_list), A.T) + Q)
     assert x_bar_list.shape == x_0_list.shape, "x_bar ERROR"
     assert P_bar_list.shape == P_0_list.shape, "P_bar ERROR"
     return x_bar_list, P_bar_list
 
 
-def predict_single(A, Q, Gamma, x_hat, P_hat):
+def predict_single(A, Q, x_hat, P_hat):
     x_bar = A.dot(x_hat)
-    P_bar = A.dot(P_hat).dot(A.T) + Gamma.dot(Q.dot(Gamma.T))
+    P_bar = A.dot(P_hat).dot(A.T) + Q
     return x_bar, P_bar
 
 def filter_single(z, x_bar, P_bar, H, R):
@@ -70,12 +68,11 @@ def filter_single(z, x_bar, P_bar, H, R):
     P_hat = P_bar - K.dot(H).dot(P_bar)
     return x_hat, P_hat, S, y_tilde
 
-def precalc(A, C, Q, R, Gamma, x_bar_list, P_bar_list):
+def precalc(A, C, Q, R, x_bar_list, P_bar_list):
     assert A.ndim == 2
     assert C.ndim == 2
     assert Q.ndim == 2
     assert R.ndim == 2
-    assert Gamma.ndim == 2
 
     nMeasurement, nStates = x_bar_list.shape
     nObservableState = C.shape[0]
@@ -106,7 +103,7 @@ class KalmanFilter():
     P_0 - Initial state covariance
     """
 
-    def __init__(self, x_0, P_0, A, C, Gamma, Q, R, **kwargs):
+    def __init__(self, x_0, P_0, A, C, Q, R, **kwargs):
         # Q = kwargs.get('Q')
         # R_RADAR = kwargs.get('R_RADAR')
         # x_0 = kwargs.get('x_0')
@@ -120,7 +117,6 @@ class KalmanFilter():
         self.C = C  # Observation matrix
         self.Q = Q  # Process noise covariance
         self.R = R  # Measurement noise covariance
-        self.Gamma = Gamma  # Process noise "observability"
         self.x_hat = np.copy(x_0)  # Filtered state
         self.P_hat = np.copy(P_0)  # Filtered state covariance
         self.x_bar = None  # Prediced state
@@ -142,7 +138,7 @@ class KalmanFilter():
         A = self.A  # self.A(dT) if callable(self.A) else self.A
         Q = self.Q  # self.Q(dT) if callable(self.Q) else self.Q
         x_bar = A.dot(self.x_hat)
-        P_bar = A.dot(self.P_hat).dot(A.T) + self.Gamma.dot(Q.dot(self.Gamma.T))
+        P_bar = A.dot(self.P_hat).dot(A.T) + Q
         if not kwargs.get('local', False):
             self.x_bar = x_bar
             self.P_bar = P_bar
@@ -196,4 +192,4 @@ class KalmanFilter():
             P_hat = self.P_bar - self.K.dot(self.C).dot(self.P_bar)
         else:
             raise ValueError("Invalid number of arguments")
-        return KalmanFilter(x_hat, P_hat, self.A, self.C, self.Gamma, self.Q, self.R)
+        return KalmanFilter(x_hat, P_hat, self.A, self.C, self.Q, self.R)

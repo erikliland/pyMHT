@@ -1,16 +1,23 @@
 import numpy as np
 import datetime
 import matplotlib.pyplot as plt
+import logging
+import xml.etree.ElementTree as ET
+from pymht.utils.xmlDefinitions import *
+log = logging.getLogger(__name__)
 
 
 class SimTarget:
-    def __init__(self, state, time, P_d, **kwargs):
-        assert state.ndim == 1
-        self.state = state
+    def __init__(self, state, time, P_d, sigma_Q, **kwargs):
+        self.state = np.array(state, dtype=np.double)
+        assert self.state.ndim == 1
         self.time = time
         self.P_d = P_d
+        self.sigma_Q = sigma_Q
         self.mmsi = kwargs.get('mmsi')
-        self.Q = kwargs.get('Q')
+        self.aisClass = kwargs.get('aisClass', 'B')
+        self.timeOfLastAisMessage = -float('inf')
+        self.P_r = kwargs.get('P_r', 1.)
 
     def __str__(self):
         timeString = datetime.datetime.fromtimestamp(self.time).strftime("%H:%M:%S.%f")
@@ -29,11 +36,22 @@ class SimTarget:
         if self.time != other.time: return False
         if self.P_d != other.P_d: return False
         if self.mmsi != other.mmsi: return False
-        if self.Q != other.Q: return False
+        if self.sigma_Q != other.sigma_Q: return False
+        if self.P_r != other.P_r: return False
         return True
+
+    def inRange(self, p0, rRange):
+        distance = np.linalg.norm(self.state[0:2] - p0)
+        return distance <= rRange
 
     def storeString(self):
         return ',{0:.2f},{1:.2f}'.format(*self.state[0:2])
+
+    def getXmlStateStrings(self, precision=2):
+        return (str(round(self.state[0],precision)),
+                str(round(self.state[1],precision)),
+                str(round(self.state[2],precision)),
+                str(round(self.state[3],precision)))
 
     def position(self):
         return Position(self.state[0], self.state[1])
@@ -92,13 +110,14 @@ class Position:
             marker = 'h' if kwargs.get('original',False) else 'D'
             plt.plot(self.array[0], self.array[1],
                      marker=marker, markerfacecolor='None',
-                     markeredgewidth=kwargs.get('markeredgewidth',1)
-                     )
+                     markeredgewidth=kwargs.get('markeredgewidth',1),
+                     markeredgecolor = kwargs.get('color','black'))
         elif measurementNumber > 0:
-            plt.plot(self.array[0], self.array[1], 'kx')
+            plt.plot(self.array[0], self.array[1], 'kx',
+                     markeredgecolor=kwargs.get('color', 'black'))
         elif measurementNumber == 0:
-            plt.plot(self.array[0], self.array[1],
-                     color="black", fillstyle="none", marker="o")
+            plt.plot(self.array[0], self.array[1], fillstyle="none", marker="o",
+                     markeredgecolor=kwargs.get('color', 'black'))
         else:
             raise ValueError("Not a valid measurement number")
 
@@ -147,6 +166,51 @@ class Velocity:
     def y(self):
         return self.velocity[1]
 
+class SimList(list):
+    def __init__(self, *args):
+        list.__init__(self,*args)
+
+    def storeGroundTruth(self, scenarioElement, scenario, **kwargs):
+        if self is None:
+            return
+        nSamples = len(self)
+        nTargets = len(self[0])
+        p0 = scenario.p0
+        radarRange = scenario.radarRange
+        radarPeriod = scenario.radarPeriod
+        initialTime = scenario.initTime
+        groundtruthElement = ET.SubElement(scenarioElement, groundtruthTag)
+        for i in range(nTargets):
+            trackElement = ET.SubElement(groundtruthElement,
+                                         trackTag,
+                                         attrib={idTag:str(i)})
+            statesElement = ET.SubElement(trackElement,
+                                          statesTag)
+            for j in range(nSamples):
+                simTarget = self[j][i]
+                inRange = simTarget.inRange(p0, radarRange)
+                radarTime = ((simTarget.time-initialTime)%radarPeriod) == 0.
+                if (not inRange) or (not radarTime):
+                    continue
+                stateElement = ET.SubElement(statesElement,
+                                             stateTag,
+                                             attrib={timeTag:str(simTarget.time),
+                                                     pdTag:str(simTarget.P_d)})
+                eastPos, northPos, eastVel, northVel = simTarget.getXmlStateStrings()
+                positionElement = ET.SubElement(stateElement,positionTag)
+                ET.SubElement(positionElement,northTag).text = northPos
+                ET.SubElement(positionElement,eastTag).text = eastPos
+                velocityElement = ET.SubElement(stateElement, velocityTag)
+                ET.SubElement(velocityElement, northTag).text = northVel
+                ET.SubElement(velocityElement, eastTag).text = eastVel
+                if simTarget.mmsi is not None:
+                    trackElement.attrib[mmsiTag] = str(simTarget.mmsi)
+                    trackElement.attrib[aisclassTag] = str(simTarget.aisClass)
+                    trackElement.attrib[prTag] = str(simTarget.P_r)
+                statesElement.attrib[sigmaqTag] = str(simTarget.sigma_Q)
+                trackElement.attrib[lengthTag] = str(j+1)
+
+
 
 class AIS_message:
     def __init__(self, time, state, covariance, mmsi):
@@ -161,6 +225,8 @@ class AIS_message:
         else:
             timeFormat = "%H:%M:%S.%f"
         timeString = datetime.datetime.fromtimestamp(self.time).strftime(timeFormat)
+        if self.time < 1e6:
+            timeString = str(self.time)
         mmsiString = 'MMSI: ' + str(self.mmsi) if self.mmsi is not None else ""
         return ('Time: ' + timeString + " " +
                 'State: ({0: 7.1f},{1: 7.1f},{2: 7.1f},{3: 7.1f})'.format(
@@ -201,6 +267,67 @@ class AIS_prediction:
 
     __repr__ = __str__
 
+
+class AIS_messageList:
+    def __init__(self,*args):
+        self._list = list(*args)
+        self._lastExtractedTime = None
+        self._iterator = None
+        self._nextAisMeasurements = None
+
+    def __getitem__(self, item):
+        return self._list.__getitem__(item)
+
+    def __iter__(self):
+        return self._list.__iter__()
+
+    def append(self,*args):
+        self._list.append(*args)
+
+    def pop(self,*args):
+        self._list.pop(*args)
+
+    def print(self):
+        print("aisMeasurements:")
+        for aisTimeList in self._list:
+            print(*aisTimeList, sep="\n", end="\n\n")
+
+    def getMeasurements(self, scanTime):
+        if self._iterator is None:
+            self._iterator = (m for m in self._list)
+            self._nextAisMeasurements = next(self._iterator, None)
+
+        if self._nextAisMeasurements is not None:
+            if all((m.time < scanTime) for m in self._nextAisMeasurements):
+                self._lastExtractedTime = scanTime
+                res = self.predictAisMeasurements(scanTime, self._nextAisMeasurements)
+                self._nextAisMeasurements = next(self._iterator, None)
+                return res
+        return None
+
+    def predictAisMeasurements(self,scanTime, aisMeasurements):
+        import pymht.models.pv as model
+        import pymht.utils.kalman as kalman
+        assert len(aisMeasurements) > 0
+        aisPredictions = PredictionList(scanTime)
+        scanTimeString = datetime.datetime.fromtimestamp(scanTime).strftime("%H:%M:%S.%f")
+        for measurement in aisMeasurements:
+            aisTimeString = datetime.datetime.fromtimestamp(measurement.time).strftime("%H:%M:%S.%f")
+            log.debug("Predicting AIS ("+str(measurement.mmsi)+") from " + aisTimeString + " to " + scanTimeString)
+            dT = scanTime - measurement.time
+            assert dT > 0
+            state = measurement.state
+            A = model.Phi(dT)
+            Q = model.Q(dT)
+            x_bar, P_bar = kalman.predict(A, Q, np.array(state, ndmin=2),
+                                          np.array(measurement.covariance, ndmin=3))
+            aisPredictions.measurements.append(
+                AIS_prediction(model.C_RADAR.dot(x_bar[0]),
+                               model.C_RADAR.dot(P_bar[0]).dot(model.C_RADAR.T), measurement.mmsi))
+            log.debug(np.array_str(state) + "=>" + np.array_str(x_bar[0]))
+            aisPredictions.aisMessages.append(measurement)
+        assert len(aisPredictions.measurements) == len(aisMeasurements)
+        return aisPredictions
 
 class MeasurementList:
     def __init__(self, time, measurements=None):
