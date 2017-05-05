@@ -10,7 +10,7 @@ import xml.etree.ElementTree as ET
 from pymht.utils.xmlDefinitions import *
 
 class Target():
-    def __init__(self, time, scanNumber, x_0, P_0, ID=None, **kwargs):
+    def __init__(self, time, scanNumber, x_0, P_0, ID=None, S_inv=None, **kwargs):
         assert (scanNumber is None) or (scanNumber == int(scanNumber))
         assert x_0.ndim == 1
         assert P_0.ndim == 2, str(P_0.shape)
@@ -20,6 +20,7 @@ class Target():
         self.scanNumber = scanNumber
         self.x_0 = x_0
         self.P_0 = P_0
+        self.S_inv = S_inv
         self.P_d = copy.copy(kwargs.get('P_d', 0.8))
         self.parent = kwargs.get("parent")
         self.measurementNumber = kwargs.get("measurementNumber", 0)
@@ -695,6 +696,10 @@ class Target():
             ET.SubElement(velocityElement, eastTag).text = eastVel
             if node.status != activeTag:
                 stateElement.attrib[stateTag] = node.status
+            if node.S_inv is not None:
+                ET.SubElement(stateElement,
+                              inverseResidualCovarianceTag).text = np.array_str(node.S_inv,
+                                                                                max_line_width=9999)
 
             if smoothingGood:
                 sStateElement = ET.SubElement(smoothedStateElement,
