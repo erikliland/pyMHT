@@ -55,7 +55,9 @@ trackpercentTag = "trackPercent"
 timematchlengthTag = "timeMatchLength"
 goodtimematchlengthTag = "goodTimeMatchLength"
 initializationLogTag = "initializationLog"
-initialtargetTag = "initialTarget"
+correctInitialTargetsTag = "correctTargets"
+falseTargetsTag = "falseTargets"
 inverseResidualCovarianceTag = "S_inv"
+terminatedTag = "terminated"
 
 timeLogPrecision = 6
