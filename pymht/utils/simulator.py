@@ -105,7 +105,7 @@ def simulateScans(simList, radarPeriod, H, R, lambda_phi=0,
 
             if visible and inRange:
                 measurementList.measurements.append(positionWithNoise(target.state, H, R))
-                if kwargs.get('localClutter'):
+                if kwargs.get('localClutter', True):
                     nClutter = np.random.poisson(lClutter)
                     log.debug("nLocalClutter {:}".format(nClutter))
                     measurementList.measurements.extend([positionWithNoise(target.state, H, R * 5)
