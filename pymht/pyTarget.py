@@ -323,11 +323,61 @@ class Target():
             return self
 
     def pruneSimilarState(self, threshold):
-        for hyp in self.trackHypotheses[1:]:
-            deltaPos = np.linalg.norm(self.trackHypotheses[0] - hyp)
-            if deltaPos <= threshold:
-                self.trackHypotheses.pop(0)
-                break
+        if len(self.trackHypotheses) == 1:
+            return
+        p0 = np.array(self.trackHypotheses[0].x_0[0:2], dtype=np.float32)
+        hypPos = np.array([n.x_0[0:2] for n in self.trackHypotheses[1:]], ndmin=2, dtype=np.float32)
+        deltaPos = hypPos - p0
+        distArray = np.linalg.norm(deltaPos, axis=1)
+        # print("distArray",distArray)
+        gatedDistArray = distArray < threshold
+        # print("gatedDistArray",gatedDistArray)
+        tempFuseIndices = np.where(gatedDistArray)[0] +1
+        if tempFuseIndices.size == 0:
+            return
+        fuseIndices = []
+        for i in tempFuseIndices:
+            if self.trackHypotheses[i].mmsi is not None:
+                continue
+            fuseIndices.append(i)
+        if len(fuseIndices) == 0:
+            return
+        # print("fuseIndices",fuseIndices)
+
+        # Create merged state
+        fuseStates = np.array([self.trackHypotheses[i].x_0 for i in fuseIndices])
+        # print("fuseStates",fuseStates)
+        meanState = np.mean(fuseStates, axis=0)
+        assert meanState.shape == self.trackHypotheses[0].x_0.shape
+
+        fuseCovariances = np.array([self.trackHypotheses[i].P_0 for i in fuseIndices])
+        meanCovariance = np.mean(fuseCovariances, axis=0)
+        assert meanCovariance.shape == self.trackHypotheses[0].P_0.shape
+
+        cnllrList = np.array([self.trackHypotheses[i].cumulativeNLLR for i in fuseIndices])
+        meanCNLLR = np.mean(cnllrList)
+
+        newNode = Target(self.trackHypotheses[0].time,
+                         self.trackHypotheses[0].scanNumber,
+                         meanState,
+                         meanCovariance,
+                         self.trackHypotheses[0].ID,
+                         P_d=self.trackHypotheses[0].P_d,
+                         parent=self,
+                         cumulativeNLLR=meanCNLLR)
+
+        # Remove "old" nodes
+        preLength = len(self.trackHypotheses)
+        for i in sorted(fuseIndices, reverse=True):
+            # print("i", i)
+            del self.trackHypotheses[i]
+        postLength = len(self.trackHypotheses)
+        assert postLength < preLength
+
+        # Add new node
+        # print("Replacing 0-node")
+        self.trackHypotheses[0] = newNode
+
 
     def getMeasurementSet(self, root=True):
         subSet = set()
@@ -718,6 +768,32 @@ class Target():
                 ET.SubElement(sVelocityElement, eastTag).text = sEastVel
                 if node.status != activeTag:
                     sStateElement.attrib[stateTag] = node.status
+
+    def _storeNodeSparse(self, simulationElement, **kwargs):
+        trackElement = ET.SubElement(simulationElement,trackTag)
+        unSmoothedStates = ET.SubElement(trackElement,statesTag)
+        mmsi = self._getHistoricalMmsi()
+        if mmsi is not None:
+            trackElement.attrib[mmsiTag] = str(mmsi)
+        trackElement.attrib[idTag] = str(self.ID)
+        for k,v in kwargs.items():
+            trackElement.attrib[str(k)] = str(v)
+
+        unSmoothedNodes = self.backtrackNodes()
+
+        for node in unSmoothedNodes:
+            stateElement = ET.SubElement(unSmoothedStates,
+                                         stateTag,
+                                         attrib={timeTag: str(node.time)})
+            positionElement = ET.SubElement(stateElement, positionTag)
+            eastPos, northPos, eastVel, northVel = node.getXmlStateStrings()
+            ET.SubElement(positionElement, northTag).text = northPos
+            ET.SubElement(positionElement, eastTag).text = eastPos
+            velocityElement = ET.SubElement(stateElement, velocityTag)
+            ET.SubElement(velocityElement, northTag).text = northVel
+            ET.SubElement(velocityElement, eastTag).text = eastVel
+            if node.status != activeTag:
+                stateElement.attrib[stateTag] = node.status
 
 if __name__ == '__main__':
     pass
