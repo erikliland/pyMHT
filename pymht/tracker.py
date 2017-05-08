@@ -110,7 +110,7 @@ class Tracker():
         self.N_max = copy.copy(N)
         self.N = copy.copy(N)
         self.NLLR_UPPER_LIMIT = -(np.log(1 - self.default_P_d)) * 4
-        self.pruneThreshold = kwargs.get("pruneThreshold")
+        self.pruneThreshold = kwargs.get("pruneThreshold", 4)
         self.targetSizeLimit = 3000
 
         if ((kwargs.get("realTime") is not None) and
@@ -225,10 +225,9 @@ class Tracker():
         self.nOptimSolved = 0
         for cluster in self.__clusterList__:
             if len(cluster) == 1:
-                if self.pruneSimilar:
-                    self._pruneSimilarState(cluster, self.pruneThreshold)
-                self.__trackNodes__[cluster] = self.__targetList__[
-                    cluster[0]]._selectBestHypothesis()
+                if kwargs.get('pruneSimilar', False):
+                    self._pruneSimilarState(cluster, self.pruneThreshold) ##TODO: Remove when done with testing
+                self.__trackNodes__[cluster] = self.__targetList__[cluster[0]]._selectBestHypothesis()
             else:
                 self.__trackNodes__[cluster] = self._solveOptimumAssociation(cluster)
                 self.nOptimSolved += 1
@@ -995,6 +994,8 @@ class Tracker():
             leafParents = self.__targetList__[targetIndex].getLeafParents()
             for node in leafParents:
                 node.pruneSimilarState(threshold)
+            self.__associatedMeasurements__[targetIndex] = self.__targetList__[
+                targetIndex].getMeasurementSet()
 
     def _checkTrackerIntegrity(self):
         log.debug("Checking tracker integrity")
@@ -1244,7 +1245,7 @@ class Tracker():
         ET.SubElement(trackerSettingElement,'targetSizeLimit').text = str(self.targetSizeLimit)
         ET.SubElement(trackerSettingElement,'maxSpeedMS').text = str(self.maxSpeedMS)
 
-    def _storeRun(self, scenarioElement, **kwargs):
+    def _storeRun(self, scenarioElement, preInitialized=True, **kwargs):
         runElement = ET.SubElement(scenarioElement, runTag)
 
         if iterationTag in kwargs:
@@ -1278,10 +1279,16 @@ class Tracker():
                                   max_line_width=999999)
 
         for target in self.__trackNodes__:
-            target._storeNode(runElement, self.radarPeriod)
+            if preInitialized:
+                target._storeNode(runElement, self.radarPeriod)
+            else:
+                target._storeNodeSparse(runElement)
 
         for target in self.__terminatedTargets__:
-            target._storeNode(runElement, self.radarPeriod, terminated=True)
+            if preInitialized:
+                target._storeNode(runElement, self.radarPeriod, terminated=True)
+            else:
+                target._storeNodeSparse(runElement, terminated=True)
 
 if __name__ == '__main__':
     pass
