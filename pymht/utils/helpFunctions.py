@@ -70,15 +70,31 @@ def plotTrueTrack(simList, **kwargs):
 
     nScan = len(simList)
     nTargets = len(simList[0])
-    posArray = np.zeros((nScan, nTargets, 2))
+    stateArray = np.zeros((nScan, nTargets, 4))
     for row, scan in enumerate(simList):
-        posArray[row, :, :] = np.array([target.state[0:2] for target in scan])
+        stateArray[row, :, :] = np.array([target.state for target in scan])
     for col in range(nTargets):
-        plt.plot(posArray[:, col, 0], posArray[:, col, 1], '.', alpha=0.7,
+        plt.plot(stateArray[:, col, 0], stateArray[:, col, 1], '.', alpha=0.7,
                  markeredgewidth=0.6, color=next(colors) if colors is not None else None, **newArgs)
-    if kwargs.get('markStart', True):
-       for col in range(nTargets):
-            plt.plot(posArray[0, col, 0], posArray[0, col, 1], '.', color='black')
+
+    ax = plt.gca()
+    for col in range(nTargets):
+        if kwargs.get('markStart', True):
+            plt.plot(stateArray[0, col, 0], stateArray[0, col, 1], '.', color='black')
+        if kwargs.get('label', False):
+            normVelocity = (stateArray[0,col,2:4] /
+                            np.linalg.norm(stateArray[0,col, 2:4]))
+            offsetScale = kwargs.get('offset', 0.0)
+            offset = offsetScale * np.array(normVelocity)
+            position = stateArray[0,col,0:2] - offset
+            (horizontalalignment,
+             verticalalignment) = _getBestTextPosition(normVelocity)
+            ax.text(position[0],
+                    position[1],
+                    "T" + str(col),
+                    fontsize=12,
+                    horizontalalignment=horizontalalignment,
+                    verticalalignment=verticalalignment)
 
 
 def printScanList(scanList):
