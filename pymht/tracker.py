@@ -1076,7 +1076,8 @@ class Tracker():
     def plotTerminatedTracks(self, **kwargs):
         colors = kwargs.get("colors", self._getColorCycle())
         for track in self.__terminatedTargets__:
-            track.plotTrack(c=next(colors), markInitial=True, markEnd=True, terminated = True, **kwargs)
+            defaults = {'c':next(colors), 'markInitial': True, 'markEnd': True, 'terminated': True}
+            track.plotTrack(**{**defaults,**kwargs})
             if kwargs.get('markStates', False):
                 defaults = {'labels': False, 'dummy': True, 'real': True, 'ais': True}
                 track.plotStates(float('inf'), **{**defaults, **kwargs})
