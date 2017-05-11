@@ -781,7 +781,8 @@ class Target():
 
         unSmoothedNodes = self.backtrackNodes()
 
-        for node in unSmoothedNodes:
+        storeIndices = (0, -1) if len(unSmoothedNodes) > 1 else (0,)
+        for node in [unSmoothedNodes[i] for i in storeIndices]:
             stateElement = ET.SubElement(unSmoothedStates,
                                          stateTag,
                                          attrib={timeTag: str(node.time)})
