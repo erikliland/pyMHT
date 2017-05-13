@@ -60,4 +60,14 @@ falseTargetsTag = "falseTargets"
 inverseResidualCovarianceTag = "S_inv"
 terminatedTag = "terminated"
 
+totalTimeTag = "Total"
+initTimeTag = "Init"
+clusterTimeTag = "Cluster"
+dynamicWindowTimeTag = "DynN"
+optimizationTimeTag = "Optim"
+npruneTimeTag = "N-prune"
+growingTimeTag = "Process"
+ilpPruneTimeTag = "ILP-Prune"
+terminateTimeTag = "Terminate"
+
 timeLogPrecision = 6

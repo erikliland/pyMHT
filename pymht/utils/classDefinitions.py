@@ -186,12 +186,14 @@ class SimList(list):
                                          attrib={idTag:str(i)})
             statesElement = ET.SubElement(trackElement,
                                           statesTag)
+            sampleCounter = 0
             for j in range(nSamples):
                 simTarget = self[j][i]
                 inRange = simTarget.inRange(p0, radarRange)
                 radarTime = ((simTarget.time-initialTime)%radarPeriod) == 0.
                 if (not inRange) or (not radarTime):
                     continue
+                sampleCounter += 1
                 stateElement = ET.SubElement(statesElement,
                                              stateTag,
                                              attrib={timeTag:str(simTarget.time),
@@ -208,7 +210,7 @@ class SimList(list):
                     trackElement.attrib[aisclassTag] = str(simTarget.aisClass)
                     trackElement.attrib[prTag] = str(simTarget.P_r)
                 statesElement.attrib[sigmaqTag] = str(simTarget.sigma_Q)
-                trackElement.attrib[lengthTag] = str(j+1)
+                trackElement.attrib[lengthTag] = str(sampleCounter)
 
 
 

@@ -6,6 +6,7 @@ from munkres import munkres  # https://github.com/jfrelinger/cython-munkres-wrap
 from scipy.stats import chi2
 import logging
 import time
+# import scipy.optimize.linear_sum_assignment
 
 tracking_parameters = {
     'gate_probability': 0.99,
