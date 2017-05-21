@@ -59,13 +59,11 @@ def _solve_global_nearest_neighbour(delta_matrix, gate_distance=np.Inf, **kwargs
         if DEBUG: print("dMat\n", dMat)
 
         # Assignment
-        # m = pymunkres.Munkres()
-        # preliminary_assignments = m.compute(dMat.tolist()) #SLOW!
         preliminary_assignment_matrix = munkres(dMat.astype(np.double))
         preliminary_assignments = [(rowI, np.where(row)[0][0]) for rowI, row in
                                    enumerate(preliminary_assignment_matrix)]
+        log.debug("Preliminary assignments"+str(preliminary_assignments))
         if DEBUG: print("preliminary assignments ", preliminary_assignments)
-        # if DEBUG: print("preliminary assignments2", preliminary_assignments2)
         if DEBUG: print("preliminary assignments\n", preliminary_assignment_matrix)
 
         # Post-processing
@@ -81,7 +79,8 @@ def _solve_global_nearest_neighbour(delta_matrix, gate_distance=np.Inf, **kwargs
             colI = colIdx[col]
             if valid_matrix[rowI, colI]:
                 assignments.append((rowI, colI))
-        if DEBUG: print("assignments", assignments)
+        log.debug("assignments "+ str(assignments))
+        assert all([delta_matrix[a[0], a[1]] <= gate_distance for a in assignments])
         return assignments
     except Exception as e:
         print("#" * 20, "CRASH DEBUG INFO", "#" * 20)
@@ -153,8 +152,14 @@ class PreliminaryTrack():
         self.predicted_state = None
         self.measurement_index = None
 
-    def __repr__(self):
+    def __str__(self):
         return "({0:}|{1:})".format(self.m, self.n)
+
+    def __repr__(self):
+        return "Estimates: " + ",".join([np.array_str(e) for e in self.estimates]) + str(self)
+
+    def get_speed(self):
+        return np.linalg.norm(self.estimates[-1][2:4])
 
     def predict(self, F, Q):
         self.predicted_state = F.dot(self.estimates[-1])
@@ -256,8 +261,6 @@ class Initiator():
             nis_vector = np.sum(np.matmul(delta_vector, S_inv) * delta_vector, axis=1)
             inside_gate_vector = nis_vector < self.gamma
             delta_matrix[i,inside_gate_vector] = distance_vector[inside_gate_vector]
-        # log.debug("gamma: " + str(self.gamma))
-        # log.debug("delta_matrix\n" + str(delta_matrix))
 
         # Assign measurements
         assignments = _solve_global_nearest_neighbour(delta_matrix)
@@ -287,16 +290,19 @@ class Initiator():
         for track in self.preliminary_tracks:
             track.n += 1
 
-        log.debug(self.getPreliminaryTracksString())
+        log.debug("Preliminary tracks "+self.getPreliminaryTracksString())
         removeIndices = []
         for track_index, track in enumerate(self.preliminary_tracks):
             track_status = track.mn_analysis(self.M, self.N)
-            if track_status == DEAD:
+            track_speed = track.get_speed()
+            if track_speed > self.v_max*1.5:
+                log.warning("Removing TOO FAST track ({0:6.1f} m/s) i={1:}".format(track_speed, track_index) +"\n"+ repr(track))
+                removeIndices.append(track_index)
+            elif track_status == DEAD:
                 log.debug("Removing DEAD track " + str(track_index))
                 removeIndices.append(track_index)
             elif track_status == CONFIRMED:
                 log.debug("Removing CONFIRMED track " + str(track_index))
-                # assert len(track.estimates) == self.N + 1
                 new_target = Target(measTime,
                                     None,
                                     np.array(track.estimates[-1]),
@@ -351,6 +357,7 @@ class Initiator():
 
         dt = measTime - self.initiators[0].timestamp
         gate_distance = self.v_max * dt
+        log.info("Gate distance {0:.1f}".format(gate_distance))
         # log.debug("dt " + str(dt))
         # log.debug("v_max " + str(self.v_max))
         # log.debug("gate_distance " + str(gate_distance))
@@ -361,7 +368,7 @@ class Initiator():
         unused_indices = [i for i in unused_indices if i not in used_indices]
         unused_indices.sort()
         assert len(unused_indices) == len(set(unused_indices))
-        self.__spawn_preliminary_tracks(measurement_list, assignments)
+        self.__spawn_preliminary_tracks(unusedMeasurementArray, assignments, measTime)
         return unused_indices
 
     def _spawnInitiators(self, unused_indices, measurement_list):
@@ -371,27 +378,24 @@ class Initiator():
         self.initiators = [Measurement(measurement_array[index], time)
                            for index in unused_indices]
 
-    def __spawn_preliminary_tracks(self, measurement_list, assignments):
-        time = measurement_list.time
-        measurements = measurement_list.measurements
+    def __spawn_preliminary_tracks(self, unusedMeasurementArray, assignments, measTime):
+        #time = measurement_list.time
+        #measurements = measurement_list.measurements
         log.info("__spawn_preliminary_tracks " + str(len(assignments)))
-        # log.debug("New preliminary tracks:" +  ("\n" + "\n".join(
-        #         ['{0:17} -> {1:17}'.format(str(self.initiators[old_index].value), str(measurements[new_index]))
-        #          for old_index, new_index in assignments]) if assignments else ""))
 
-        for old_index, new_index in assignments:
-            delta_vector = measurements[new_index] - self.initiators[old_index].value
-            dt = time - self.initiators[old_index].timestamp
+        for initiator_index, measurement_index in assignments:
+            delta_vector = unusedMeasurementArray[measurement_index] - self.initiators[initiator_index].value
+            dt = measTime - self.initiators[initiator_index].timestamp
             velocity_vector = delta_vector / dt
-            x0 = np.hstack((measurements[new_index], velocity_vector))
+            speed = np.linalg.norm(velocity_vector)
+            if speed > self.v_max*1.5:
+                log.warning("Initiator speed to high {0:6.1f} m/s".format(speed) +
+                            "\n" + str(delta_vector))
+            x0 = np.hstack((unusedMeasurementArray[measurement_index], velocity_vector))
             track = PreliminaryTrack(x0, pv.P0)
             self.preliminary_tracks.append(track)
-        used_initiator_indices = {e[0] for e in assignments}
-        unused_initiator_indices = set(range(len(self.initiators))).difference(used_initiator_indices)
-        # if unused_initiator_indices:
-        #     log.debug("discarded initiators:\n" +
-        #                    "\n".join([str(self.initiators[i].value)
-        #                               for i in unused_initiator_indices]))
+        # used_initiator_indices = {e[0] for e in assignments}
+        # unused_initiator_indices = set(range(len(self.initiators))).difference(used_initiator_indices)
 
 
 if __name__ == "__main__":
