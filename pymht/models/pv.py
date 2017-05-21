@@ -17,8 +17,8 @@ H_ais = C_AIS
 # Gamma = np.array(np.diag([1.0, 1.0], -2)[:, 0:2], dtype=defaultType)
 p = np.power(2, 2)  # Initial system state variance
 P0 = np.array(np.diag([p, p, 0.1*(p**1), 0.1*(p**1)]), dtype=defaultType)  # Initial state covariance
-sigmaR_RADAR_tracker = 2.0  # Measurement standard deviation used in kalman filter
-sigmaR_RADAR_true = 2.0
+sigmaR_RADAR_tracker = 3.0  # Measurement standard deviation used in kalman filter
+sigmaR_RADAR_true = 3.0
 sigmaR_AIS_tracker = 1.0
 sigmaR_AIS_true = 1.0
 sigmaQ_tracker = 1.0  # Target standard deviation used in kalman filterUnused
