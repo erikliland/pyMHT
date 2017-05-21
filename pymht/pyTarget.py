@@ -15,6 +15,7 @@ class Target():
         assert x_0.ndim == 1
         assert P_0.ndim == 2, str(P_0.shape)
         assert x_0.shape[0] == P_0.shape[0] == P_0.shape[1]
+        self.isRoot = kwargs.get('isRoot', False)
         self.ID = ID
         self.time = time
         self.scanNumber = scanNumber
@@ -29,6 +30,7 @@ class Target():
         self.trackHypotheses = None
         self.mmsi = kwargs.get('mmsi')
         self.status = kwargs.get('status',activeTag)
+        # self.score = self.cumulativeNLLR / self.rootHeight()
         assert self.P_d >= 0
         assert self.P_d <= 1
         assert (type(self.parent) == type(self) or self.parent is None)
@@ -67,10 +69,12 @@ class Target():
         else:
             gateStr = ""
 
-        if self.cumulativeNLLR == 0.0:
-            nllrStr = ""
+        nllrStr = " \tcNLLR:" + '{: 06.4f}'.format(self.cumulativeNLLR)
+
+        if False:#self.trackHypotheses is None and self.rootHeight()>0:
+            scoreStr = " \tScore:" + '{: 06.4f}'.format(self.getScore())
         else:
-            nllrStr = " \tcNLLR:" + '{: 06.4f}'.format(self.cumulativeNLLR)
+            scoreStr = ""
 
         if self.mmsi is not None:
             mmsiString = " \tMMSI: " + str(self.mmsi)
@@ -84,6 +88,7 @@ class Target():
                 " \t" + str(self.getVelocity()) +
                 idStr +
                 nllrStr +
+                scoreStr +
                 measStr +
                 predStateStr +
                 gateStr +
@@ -112,6 +117,9 @@ class Target():
 
     def __sub__(self, other):
         return self.x_0 - other.x_0
+
+    def getScore(self, N):
+        return self.cumulativeNLLR / N
 
     def getXmlStateStrings(self, precision=2):
         return (str(round(self.x_0[0],precision)),
@@ -142,6 +150,22 @@ class Target():
     def depth(self, count=0):
         return (count if self.trackHypotheses is None
                 else self.trackHypotheses[0].depth(count + 1))
+
+    def height(self, count=1):
+        return (count if self.parent is None
+                else self.parent.height(count+1))
+
+    def rootHeight(self, count=0):
+        return (count if (self.parent is None or self.isRoot)
+                else self.parent.rootHeight(count+1))
+
+    def getRoot(self):
+        if self.isRoot:
+            return self
+        if self.parent is not None:
+            return self.parent.getRoot()
+        else:
+            return None
 
     def predictMeasurement(self, **kwargs):
         self.kalmanFilter.predict()
@@ -241,11 +265,13 @@ class Target():
             if (historicalMmsi is None) or (fusedMMSI[i] == historicalMmsi):
                 measurementNumber = fusedMeasurementIndices[i] + 1 if fusedMeasurementIndices[i] is not None else None
                 measurement = measurements[fusedMeasurementIndices[i]] if fusedMeasurementIndices[i] is not None else None
+                assert np.isfinite(self.cumulativeNLLR)
+                assert np.isfinite(fusedNllr[i])
                 self.trackHypotheses.append(
                     Target(scanTime,
                             scanNumber,
                             fusedStates[i],
-                            fusedCovariance,
+                            fusedCovariance[i],
                             self.ID,
                             measurementNumber=measurementNumber,
                             measurement=measurement,
@@ -311,7 +337,7 @@ class Target():
         if stepsLeft <= 0:
             if self.parent is not None:
                 self.parent._pruneAllHypothesisExceptThis(self, backtrack=True)
-                # self.recursiveSubtractScore(self.cumulativeNLLR)
+                self.recursiveSubtractScore(self.cumulativeNLLR)
                 assert self.parent.scanNumber == self.scanNumber - 1, \
                     "nScanPruning2: from scanNumber" + str(self.parent.scanNumber) + "->" + str(self.scanNumber)
                 return self
