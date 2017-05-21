@@ -1,6 +1,6 @@
 import numpy as np
 from pymht.utils.classDefinitions import SimTarget
-from pymht.utils.classDefinitions import MeasurementList, AIS_message, Position, AIS_messageList, SimList
+from pymht.utils.classDefinitions import MeasurementList, AIS_message, Position, AisMessagesList, SimList
 import time
 import copy
 import math
@@ -127,11 +127,11 @@ def simulateScans(simList, radarPeriod, H, R, lambda_phi=0,
 
 
 def simulateAIS(sim_list, Phi_func, C, R, P_0, radarPeriod, initTime, **kwargs):
-    ais_measurements = AIS_messageList()
+    ais_measurements = AisMessagesList()
     integerTime = kwargs.get('integerTime', True)
     for i, sim in enumerate(sim_list[1:]):
         tempList = []
-        for j, target in ((j,t) for j, t in enumerate(sim) if t.mmsi is not None):
+        for j, target in ((j,target) for j, target in enumerate(sim) if target.mmsi is not None):
             if integerTime:
                 messageTime = math.floor(target.time)
                 dT = messageTime - target.time
@@ -139,16 +139,17 @@ def simulateAIS(sim_list, Phi_func, C, R, P_0, radarPeriod, initTime, **kwargs):
             else:
                 messageTime = target.time
                 state = target.state
-            timeSinceLastAisMessage = target.time - target.timeOfLastAisMessage
+            timeSinceLastAisMessage = messageTime - target.timeOfLastAisMessage
             speedMS = np.linalg.norm(target.state[2:4])
             reportingInterval = _aisReportInterval(speedMS, target.aisClass)
             shouldSendAisMessage = ((timeSinceLastAisMessage >= reportingInterval) and
                                     ((messageTime-initTime) % radarPeriod != 0))
-            log.debug("MMSI " + str(target.mmsi) +
-                  "Time " + str(target.time) + " \t" +
-                  "Time of last AIS message " + str(target.timeOfLastAisMessage) + " \t" +
-                  "Reporting Interval " + str(reportingInterval) +
-                  "Should send AIS message " + str(shouldSendAisMessage))
+            log.debug("MMSI " + str(target.mmsi) + " \t" +
+                      "Target time " + str(target.time) + " \t" +
+                      "Message time " + str(messageTime) + " \t" +
+                      "Time of last AIS message " + str(target.timeOfLastAisMessage) + " \t" +
+                      "Reporting Interval " + str(reportingInterval) + " \t" +
+                      "Should send AIS message " + str(shouldSendAisMessage))
             if not shouldSendAisMessage:
                 try:
                     sim_list[i + 2][j].timeOfLastAisMessage = target.timeOfLastAisMessage
@@ -156,7 +157,7 @@ def simulateAIS(sim_list, Phi_func, C, R, P_0, radarPeriod, initTime, **kwargs):
                     pass
                 continue
             try:
-                sim_list[i+2][j].timeOfLastAisMessage = target.time
+                sim_list[i+2][j].timeOfLastAisMessage = float(messageTime)
             except IndexError:
                 pass
 
