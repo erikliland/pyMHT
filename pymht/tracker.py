@@ -492,7 +492,6 @@ class Tracker():
         fused_mmsi_list = []
 
         lambda_ais = (len(self.__targetList__)*self.P_ais)/(np.pi * self.radarRange**2)
-        # print("lambda_ais", lambda_ais)
 
         for i, node in enumerate(targetNodes):
             x_hat_list = []
@@ -519,8 +518,6 @@ class Tracker():
                 gated_ais_indices = activeAisMeasurementsIndices[gated_nis_array1]
                 nllr1_list = kalman.nllr(lambda_ais, self.P_r, S_list1, nis_array1[gated_ais_indices])
                 for i, ais_index in enumerate(gated_ais_indices):
-                    # print("sList", S_list1)
-                    # print("nis1", nis_array1[ais_index], "nllr1", nllr1_list[i], "det(S)", np.linalg.det(2*np.pi*S_list1[0]))
                     ais_measurement = aisMeasurements[ais_index]
                     x_hat1 = x_bar1 + K_list1[0].dot(ais_measurement.state[0:2] - z_hat_list1[0])
                     P_hat1 = P_hat_list1[0]
@@ -539,7 +536,6 @@ class Tracker():
                     gated_radar_indices = np.flatnonzero(gated_nis_array2)
                     nllr2_list = kalman.nllr(self.lambda_ex,node.P_d, S_list2, nis_array2[gated_radar_indices])
                     for j, radar_index in enumerate(gated_radar_indices):
-                        # print("nis2", nis_array2[radar_index], "nllr2", nllr2_list[j])
                         x_hat2 = x_bar2 + K_list2[0].dot(radarMeasurements[radar_index] - z_hat_list2[0])
                         P_hat2 = P_hat_list2[0]
                         nllr12 = 0 + nllr2_list[j]
@@ -561,13 +557,11 @@ class Tracker():
                                   str(x_hat2) + " " +
                                   str(nllr12) + " " +
                                   str(ais_measurement.mmsi))
-
                         x_hat_list.append(x_hat2)
                         P_hat_list.append(P_hat2)
                         radar_indices_list.append(None)
                         nllr_list.append(nllr12)
                         mmsi_list.append(ais_measurement.mmsi)
-
 
             fused_x_hat_list.append(np.array(x_hat_list, ndmin=2))
             fused_P_hat_list.append(np.array(P_hat_list, ndmin=3))
