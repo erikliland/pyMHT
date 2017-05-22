@@ -6,9 +6,6 @@ import copy
 import math
 import logging
 
-# ----------------------------------------------------------------------------
-# Instantiate logging object
-# ----------------------------------------------------------------------------
 log = logging.getLogger(__name__)
 
 def seed_simulator(seed):
@@ -61,16 +58,20 @@ def generateInitialTargets(numOfTargets, centerPosition,
 
 
 def simulateTargets(initialTargets, simTime, timeStep, model, **kwargs):
+    includeInitialTime = kwargs.get('includeInitialTime', True)
     Phi = model.Phi(timeStep)
     simList = SimList()
     assert all([type(initialTarget) == SimTarget for initialTarget in initialTargets])
     simList.append(initialTargets)
-    nTimeSteps = int(simTime / timeStep)
+    nTimeSteps = int(np.ceil(simTime / timeStep))
+    if includeInitialTime:
+        nTimeSteps -= 1
+
     for i in range(nTimeSteps):
         targetList = [calculateNextState(target, timeStep, Phi, model)
                       for target in simList[-1]]
         simList.append(targetList)
-    if not kwargs.get('includeInitialTime', True):
+    if not includeInitialTime:
         simList.pop(0)
     return simList
 
