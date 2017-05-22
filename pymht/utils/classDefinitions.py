@@ -16,7 +16,7 @@ class SimTarget:
         self.sigma_Q = sigma_Q
         self.mmsi = kwargs.get('mmsi')
         self.aisClass = kwargs.get('aisClass', 'B')
-        self.timeOfLastAisMessage = -float('inf')
+        self.timeOfLastAisMessage = kwargs.get('timeOfLastAisMessage',-float('inf'))
         self.P_r = kwargs.get('P_r', 1.)
 
     def __str__(self):
@@ -233,9 +233,9 @@ class AIS_message:
         return ('Time: ' + timeString + " " +
                 'State: ({0: 7.1f},{1: 7.1f},{2: 7.1f},{3: 7.1f})'.format(
                     self.state[0], self.state[1], self.state[2], self.state[3]) + " " +
-                'Covariance diagonal: ' + np.array_str(np.diagonal(self.covariance),
-                                                       precision=1,
-                                                       suppress_small=True) + " " +
+                #'Covariance diagonal: ' + np.array_str(np.diagonal(self.covariance),
+                #                                       precision=1,
+                #                                       suppress_small=True) + " " +
                 mmsiString)
 
 
@@ -270,7 +270,7 @@ class AIS_prediction:
     __repr__ = __str__
 
 
-class AIS_messageList:
+class AisMessagesList:
     def __init__(self,*args):
         self._list = list(*args)
         self._lastExtractedTime = None
@@ -300,7 +300,7 @@ class AIS_messageList:
             self._nextAisMeasurements = next(self._iterator, None)
 
         if self._nextAisMeasurements is not None:
-            if all((m.time < scanTime) for m in self._nextAisMeasurements):
+            if all((m.time <= scanTime) for m in self._nextAisMeasurements):
                 self._lastExtractedTime = scanTime
                 res = self.predictAisMeasurements(scanTime, self._nextAisMeasurements)
                 self._nextAisMeasurements = next(self._iterator, None)
@@ -311,13 +311,13 @@ class AIS_messageList:
         import pymht.models.pv as model
         import pymht.utils.kalman as kalman
         assert len(aisMeasurements) > 0
-        aisPredictions = PredictionList(scanTime)
+        aisPredictions = AisMessageList(scanTime)
         scanTimeString = datetime.datetime.fromtimestamp(scanTime).strftime("%H:%M:%S.%f")
         for measurement in aisMeasurements:
             aisTimeString = datetime.datetime.fromtimestamp(measurement.time).strftime("%H:%M:%S.%f")
             log.debug("Predicting AIS ("+str(measurement.mmsi)+") from " + aisTimeString + " to " + scanTimeString)
             dT = scanTime - measurement.time
-            assert dT > 0
+            assert dT >= 0
             state = measurement.state
             A = model.Phi(dT)
             Q = model.Q(dT)
@@ -365,7 +365,7 @@ class MeasurementList:
         return self.measurements
 
 
-class PredictionList(MeasurementList):
+class AisMessageList(MeasurementList):
     def __init__(self, time, predictions=None):
         MeasurementList.__init__(self, time, predictions)
         self.aisMessages = []

@@ -48,6 +48,7 @@ class Tracker():
         self.radarPeriod = radarPeriod
         self.fixedPeriod = True
         self.default_P_d = kwargs.get('P_d', 0.8)
+        assert self.default_P_d < 1 and self.default_P_d > 0, "Invalid P_d"
 
 
         # State space model
@@ -105,11 +106,13 @@ class Tracker():
         self.lambda_phi = lambda_phi
         self.lambda_nu = lambda_nu
         self.lambda_ex = lambda_phi + lambda_nu
+        self.P_r = 0.95
+        self.P_ais = 0.5
         self.eta2 = kwargs.get('eta2',5.99)
         N = kwargs.get('N', 5)
         self.N_max = copy.copy(N)
         self.N = copy.copy(N)
-        self.NLLR_UPPER_LIMIT = -(np.log(1 - self.default_P_d)) * 4
+        self.scoreUpperLimit = -np.log(1-self.default_P_d)*0.8
         self.pruneThreshold = kwargs.get("pruneThreshold", 4)
         self.targetSizeLimit = 3000
 
@@ -149,6 +152,7 @@ class Tracker():
             target.scanNumber = len(self.__scanHistory__)
             target.P_d = self.default_P_d
             target.ID = copy.copy(self.trackIdCounter)
+            target.isRoot = True
             self.trackIdCounter += 1
             # target.P_0 = self.P_0
             # assert target.measurementNumber is not None
@@ -276,13 +280,6 @@ class Tracker():
 
         self.toc['DynN'] = time.time() - self.tic['DynN']
 
-        # 5 --Prune sliding window --
-        self.tic['N-Prune'] = time.time()
-        self._nScanPruning()
-        self.toc['N-Prune'] = time.time() - self.tic['N-Prune']
-
-        if kwargs.get("checkIntegrity", False):
-            self._checkTrackerIntegrity()
 
         # 6 -- Pick out dead tracks (terminate)
         self.tic['Terminate'] = time.time()
@@ -296,15 +293,23 @@ class Tracker():
                     trackIndex,np.array_str(self.__trackNodes__[trackIndex].x_0[0:2])))
 
             # Check if track is to insecure
-            elif trackNode.cumulativeNLLR > self.NLLR_UPPER_LIMIT:
+            elif trackNode.getScore(self.N) > self.scoreUpperLimit:
                 trackNode.status = toolowscoreTag
                 deadTracks.append(trackIndex)
                 log.info("Terminating track {0:} at {1:} since its cost is above the threshold ({2:.1f}>{3:.1f})".format(
                     trackIndex, np.array_str(self.__trackNodes__[trackIndex].x_0[0:2]),
-                    trackNode.cumulativeNLLR, self.NLLR_UPPER_LIMIT))
+                    trackNode.getScore(self.N), self.scoreUpperLimit))
 
         self._terminateTracks(deadTracks)
         self.toc['Terminate'] = time.time() - self.tic['Terminate']
+
+        # 5 --Prune sliding window --
+        self.tic['N-Prune'] = time.time()
+        self._nScanPruning()
+        self.toc['N-Prune'] = time.time() - self.tic['N-Prune']
+
+        if kwargs.get("checkIntegrity", False):
+            self._checkTrackerIntegrity()
 
         # 7 -- Initiate new tracks
         self.tic['Init'] = time.time()
@@ -369,6 +374,7 @@ class Tracker():
                                                                                 aisList)
         x_bar_list, P_bar_list = dummyNodesData
         gated_x_hat_list, P_hat_list, gatedIndicesList, nllrList = radarNodesData
+        # print("nllrList", nllrList)
         (fused_x_hat_list,
          fused_P_hat_list,
          fused_radar_indices_list,
@@ -440,20 +446,14 @@ class Tracker():
 
         radarNodesData = self.__createPureRadarNodes(gatedRadarData)
 
-        gatedAisData = self.__processMeasurements(targetNodes,
-                                                  aisList,
-                                                  dummyNodesData,
-                                                  model.C_RADAR,
-                                                  self.R_RADAR)
-
         fusedNodesData = self.__fuseRadarAndAis(targetNodes,
-                                                gatedRadarData,
-                                                gatedAisData,
-                                                aisList)
+                                                aisList,
+                                                scanList)
 
         return dummyNodesData, radarNodesData, fusedNodesData
 
-    def __createPureRadarNodes(self, gatedRadarData):
+    @staticmethod
+    def __createPureRadarNodes(gatedRadarData):
         (gated_radar_indices_list,
          _,
          gated_x_radar_hat_list,
@@ -470,144 +470,101 @@ class Tracker():
         assert all(d is not None for d in newNodesData)
         return newNodesData
 
-    def __fuseRadarAndAis(self, targetNodes, gatedRadarData, gatedAisData, aisList):
+    def __fuseRadarAndAis(self, targetNodes, aisList, scanList):
         nNodes = len(targetNodes)
-        if gatedAisData is None:
+
+        if aisList is None:
             return ([np.array([]) for _ in range(nNodes)],
                     [np.array([]) for _ in range(nNodes)],
                     [np.array([]) for _ in range(nNodes)],
                     [np.array([]) for _ in range(nNodes)],
                     [np.array([]) for _ in range(nNodes)])
 
-        (gated_radar_indices_list,
-         gated_z_radar_tilde_list,
-         gated_x_radar_hat_list,
-         P_radar_hat_list,
-         S_radar_list,
-         radar_nis,
-         radar_nllr_list) = gatedRadarData
+        aisMeasurements = aisList.aisMessages
+        radarMeasurements = scanList.measurements
+        aisTimeSet = {m.time for m in aisMeasurements}
+        scanTime = scanList.time
 
-        (gated_ais_indices_list,
-         gated_z_ais_tilde_list,
-         gated_x_ais_hat_list,
-         P_ais_hat_list,
-         S_ais_list,
-         ais_nis,
-         ais_nllr_list) = gatedAisData
-        #NICE TO KNOW: nNodes == len(gated_radar_indices_list) == len(gated_ais_indices_list)
-
-        # print("Processing nodes:", *targetNodes, sep="\n")
-        # print("gated_radar_indices_list", gated_radar_indices_list)
-        # print("Fusing AIS and radar")
-        # print("gated_ais_indices_list", gated_ais_indices_list)
-        # print("gated_z_ais_tilde_list", gated_z_ais_tilde_list)
-        # print("gated_x_ais_hat_list", gated_x_ais_hat_list)
-        # print("P_ais_hat_list\n", P_ais_hat_list)
-        # print("S_ais_list\n", S_ais_list)
-        # print("ais_nis", ais_nis)
-        # print("ais_nllr_list", ais_nllr_list)
         fused_x_hat_list = []
         fused_P_hat_list = []
         fused_radar_indices_list = []
         fused_nllr_list = []
         fused_mmsi_list = []
 
-        for i in range(nNodes):
+        lambda_ais = (len(self.__targetList__)*self.P_ais)/(np.pi * self.radarRange**2)
+
+        for i, node in enumerate(targetNodes):
             x_hat_list = []
+            P_hat_list = []
             radar_indices_list = []
             nllr_list = []
             mmsi_list = []
-            fusedCovariance = None #P_ais_hat_list[i]
-            for j, radarMeasurementIndex in enumerate(gated_radar_indices_list[i]):
-                for k, aisMeasurementIndex in enumerate(gated_ais_indices_list[i]):
-                    x_0 = targetNodes[i].x_0
-                    P_0 = targetNodes[i].P_0
-                    dT1 = aisList.aisMessages[aisMeasurementIndex].time - targetNodes[i].time
-                    x_bar1, P_bar1 = kalman.predict_single(model.Phi(dT1),model.Q(dT1),x_0, P_0)
-                    z1 = aisList.aisMessages[aisMeasurementIndex].state[0:2]
-                    x_hat1, P_hat1,S1, z_tilde_1 = kalman.filter_single(z1, x_bar1, P_bar1, model.H_radar,
-                                                                        model.C_RADAR.dot(self.R_AIS).dot(model.C_RADAR.T))
-                    dT2 = aisList.time - aisList.aisMessages[aisMeasurementIndex].time
+            for aisTime in aisTimeSet:
+                dT1 = float(aisTime) - node.time
+                x_bar1, P_bar1 = kalman.predict_single(model.Phi(dT1),model.Q(dT1),node.x_0, node.P_0)
+                z_hat_list1, S_list1, S_inv_list1, K_list1, P_hat_list1 = kalman.precalc(
+                    model.Phi(dT1),
+                    model.C_RADAR,
+                    model.Q(dT1),
+                    model.C_RADAR.dot(model.R_AIS()).dot(model.C_RADAR.T),
+                    np.array(x_bar1,ndmin=2),
+                    np.array(P_bar1,ndmin=3))
+                activeAisMeasurements = [m for m in aisMeasurements if m.time == aisTime]
+                activeAisMeasurementsIndices = np.array([i for i, m in enumerate(aisMeasurements) if m.time == aisTime])
+                z_array1 = np.array([m.state[0:2] for m in activeAisMeasurements],ndmin=2)
+                z_tilde_array1 = z_array1 - z_hat_list1[0]
+                nis_array1 = (kalman.normalizedInnovationSquared(z_tilde_array1,S_inv_list1))[0]
+                gated_nis_array1 =nis_array1 <= self.eta2
+                gated_ais_indices = activeAisMeasurementsIndices[gated_nis_array1]
+                nllr1_list = kalman.nllr(lambda_ais, self.P_r, S_list1, nis_array1[gated_ais_indices])
+                for i, ais_index in enumerate(gated_ais_indices):
+                    ais_measurement = aisMeasurements[ais_index]
+                    x_hat1 = x_bar1 + K_list1[0].dot(ais_measurement.state[0:2] - z_hat_list1[0])
+                    P_hat1 = P_hat_list1[0]
+                    dT2 = scanTime - float(ais_measurement.time)
                     x_bar2, P_bar2 = kalman.predict_single(model.Phi(dT2),model.Q(dT2),x_hat1, P_hat1)
-                    z2 = self.__scanHistory__[-1].measurements[radarMeasurementIndex]
-                    x_hat2, P_hat2,  S2, z_tilde_2 = kalman.filter_single(z2, x_bar2, P_bar2, model.H_radar, self.R_RADAR)
-                    nis1 = kalman.nis_single(z_tilde_1, S1)
-                    nis2 = kalman.nis_single(z_tilde_2, S2)
-                    ais_nllr = kalman.nllr(self.lambda_nu,1.0, S1, nis1)
-                    radar_nllr = kalman.nllr(self.lambda_ex, targetNodes[i].P_d, S2, nis2)
-                    fusedNLLR = ais_nllr + radar_nllr
-                    # print("i", i)
-                    # print("j", j)
-                    # print("k", k)
-                    # print("radarMeasurementIndex", radarMeasurementIndex)
-                    # print("aisMeasurementIndex", aisMeasurementIndex)
-                    # # print("Gamma\n", model.Gamma)
-                    # # print("Phi1\n", model.Phi(dT1))
-                    # # print("FPFt\n", model.Phi(dT1).dot(P_0).dot(model.Phi(dT1).T))
-                    # # print("GQGt\n", model.Gamma.dot(model.Q(dT1)).dot(model.Gamma.T))
-                    # print("Origin state     ", x_0)
-                    # print("Origin covariance\n", P_0)
-                    # print("dT1              ", dT1)
-                    # print("Predicted state1 ", x_bar1)
-                    # print("Predicted cov1\n", P_bar1)
-                    # print("AIS measurement  ", z1)
-                    # print("z_tilde1         ", z_tilde_1)
-                    # print("S1\n", S1)
-                    # print("Filtered state1  ", x_hat1)
-                    # print("dT2              ", dT2)
-                    # print("Predicted state2 ", x_bar2)
-                    # print("Radar measurement", z2)
-                    # print("Filtered state2  ", x_hat2)
-                    # # print("Old fused state  ", fusedState)
-                    # # print("dT1 + dT2        ", dT1+dT2)
-                    # # print("P_0\n", P_0)
-                    # # print("P_bar1\n", P_bar1)
-                    # # print("P_hat1\n", P_hat1)
-                    # # print("P_bar2\n", P_bar2)
-                    # # print("P_hat2\n", P_hat2)
-                    # print("NIS1               ", nis1)
-                    # print("NIS2               ", nis2)
-                    # print("Radar NIS          ", radar_nis[i])
-                    # print("AIS NIS            ", ais_nis[i])
-                    # print("Radar S\n", S_radar_list[i])
-                    # print("AIS NLLR           ", ais_nllr)
-                    # print("Radar NLLR         ", radar_nllr)
-                    # print("Old Radar NLLR     ", radar_nllr_list[i])
-                    # print("Old AIS NLLR       ", ais_nllr_list[i])
-                    # print("Fused NLLR         ", fusedNLLR)
-                    # # print()
-                    mmsi = self.__aisHistory__[-1].measurements[aisMeasurementIndex].mmsi
-                    x_hat_list.append(x_hat2)
-                    radar_indices_list.append(radarMeasurementIndex)
-                    nllr_list.append(fusedNLLR)
-                    mmsi_list.append(mmsi)
-                    fusedCovariance = P_hat2
+                    z_hat_list2, S_list2, S_inv_list2, K_list2, P_hat_list2 = kalman.precalc(
+                        model.Phi(dT2),
+                        model.C_RADAR,
+                        model.Q(dT2),
+                        model.C_RADAR.dot(model.R_AIS()).dot(model.C_RADAR.T),
+                        np.array(x_bar2, ndmin=2),
+                        np.array(P_bar2, ndmin=3))
+                    z_tilde_array2 = radarMeasurements - z_hat_list2[0]
+                    nis_array2 = (kalman.normalizedInnovationSquared(z_tilde_array2, S_inv_list2))[0]
+                    gated_nis_array2 = nis_array2 <= self.eta2
+                    gated_radar_indices = np.flatnonzero(gated_nis_array2)
+                    nllr2_list = kalman.nllr(self.lambda_ex,node.P_d, S_list2, nis_array2[gated_radar_indices])
+                    for j, radar_index in enumerate(gated_radar_indices):
+                        x_hat2 = x_bar2 + K_list2[0].dot(radarMeasurements[radar_index] - z_hat_list2[0])
+                        P_hat2 = P_hat_list2[0]
+                        nllr12 = 0 + nllr2_list[j]
+                        log.debug("Fused node " +
+                                  str(x_hat2) + " " +
+                                  str(nllr12) + " " +
+                                  str(ais_measurement.mmsi))
 
-            if len(gated_radar_indices_list[i]) == 0:
-                for k, aisMeasurementIndex in enumerate(gated_ais_indices_list[i]):
-                    x_0 = targetNodes[i].x_0
-                    P_0 = targetNodes[i].P_0
-                    dT1 = aisList.aisMessages[aisMeasurementIndex].time - targetNodes[i].time
-                    x_bar1, P_bar1 = kalman.predict_single(model.Phi(dT1),model.Q(dT1),x_0, P_0)
-                    z1 = aisList.aisMessages[aisMeasurementIndex].state[0:2]
-                    x_hat1, P_hat1,S1, z_tilde_1 = kalman.filter_single(z1, x_bar1, P_bar1, model.H_radar,
-                                                                        model.C_RADAR.dot(self.R_AIS).dot(model.C_RADAR.T))
-                    dT2 = aisList.time - aisList.aisMessages[aisMeasurementIndex].time
-                    x_bar2, P_bar2 = kalman.predict_single(model.Phi(dT2),model.Q(dT2),x_hat1, P_hat1)
-                    nis1 = kalman.nis_single(z_tilde_1, S1)
-                    ais_nllr = kalman.nllr(self.lambda_nu,1.0, S1, nis1)
-                    fusedNLLR = ais_nllr
-                    mmsi = self.__aisHistory__[-1].measurements[aisMeasurementIndex].mmsi
-                    x_hat_list.append(x_bar2)
-                    radar_indices_list.append(None)
-                    nllr_list.append(fusedNLLR)
-                    mmsi_list.append(mmsi)
-                    fusedCovariance = P_bar2
-                    log.debug("Adding pure AIS node: {0:} to ID {1:}".format(mmsi, targetNodes[i].ID))
-
+                        x_hat_list.append(x_hat2)
+                        P_hat_list.append(P_hat2)
+                        radar_indices_list.append(radar_index)
+                        nllr_list.append(nllr12)
+                        mmsi_list.append(ais_measurement.mmsi)
+                    if len(gated_radar_indices) == 0:
+                        x_hat2 = x_bar2
+                        P_hat2 = P_hat_list2[0]
+                        nllr12 = 0
+                        log.debug("Pure AIS node " +
+                                  str(x_hat2) + " " +
+                                  str(nllr12) + " " +
+                                  str(ais_measurement.mmsi))
+                        x_hat_list.append(x_hat2)
+                        P_hat_list.append(P_hat2)
+                        radar_indices_list.append(None)
+                        nllr_list.append(nllr12)
+                        mmsi_list.append(ais_measurement.mmsi)
 
             fused_x_hat_list.append(np.array(x_hat_list, ndmin=2))
-            fused_P_hat_list.append(fusedCovariance)
+            fused_P_hat_list.append(np.array(P_hat_list, ndmin=3))
             fused_radar_indices_list.append(np.array(radar_indices_list))
             fused_nllr_list.append(np.array(nllr_list))
             fused_mmsi_list.append(np.array(mmsi_list))
@@ -619,9 +576,10 @@ class Tracker():
         assert len(fused_mmsi_list) == nNodes
         for i in range(nNodes):
             assert fused_x_hat_list[i].ndim == 2, str(fused_x_hat_list[i].ndim)
+            assert fused_P_hat_list[i].ndim == 3, str(fused_P_hat_list[i].ndim)
             nFusedNodes, nStates = fused_x_hat_list[i].shape
             if nStates == 0: continue
-            assert fused_P_hat_list[i].shape == (nStates, nStates), str(fused_P_hat_list[i].shape)
+            assert fused_P_hat_list[i].shape == (nFusedNodes, nStates, nStates), str(fused_P_hat_list[i].shape)
 
         fusedNodesData = (fused_x_hat_list,
                           fused_P_hat_list,
@@ -892,7 +850,7 @@ class Tracker():
     def _createC(self, cluster):
         def getTargetScore(target, scoreArray):
             if target.trackHypotheses is None:
-                scoreArray.append(target.cumulativeNLLR)
+                scoreArray.append(target.getScore(self.N))
             else:
                 for hyp in target.trackHypotheses:
                     getTargetScore(hyp, scoreArray)
@@ -900,6 +858,7 @@ class Tracker():
         scoreArray = []
         for targetIndex in cluster:
             getTargetScore(self.__targetList__[targetIndex], scoreArray)
+        assert all(np.isfinite(scoreArray)), str(scoreArray)
         return scoreArray
 
     def _hypotheses2Nodes(self, selectedHypotheses, cluster):
@@ -963,13 +922,19 @@ class Tracker():
         tic2 = time.time()
         # Solving optimization problem
         result_status = solver.Solve()
-        assert result_status == pywraplp.Solver.OPTIMAL
         log.debug("Optim Time = " + str(solver.WallTime()) + " milliseconds")
+
+        if result_status == pywraplp.Solver.OPTIMAL:
+            log.debug("Optim result optimal")
+        else:
+            log.warning("Optim result NOT optimal")
+
         toc2 = time.time() - tic2
 
         tic3 = time.time()
         selectedHypotheses = [i for i in range(nHyp)
                               if tau[i].solution_value() > 0.]
+        log.debug("Selected hypotheses" + str(selectedHypotheses))
         assert len(selectedHypotheses) == nTargets
         toc3 = time.time() - tic3
 
@@ -981,6 +946,8 @@ class Tracker():
         node = self.__trackNodes__[targetIndex]
         newRootNode = node.pruneDepth(N)
         if newRootNode != self.__targetList__[targetIndex]:
+            newRootNode.parent.isRoot = False
+            newRootNode.isRoot = True
             self.__targetList__[targetIndex] = newRootNode
             self.__associatedMeasurements__[targetIndex] = self.__targetList__[
                 targetIndex].getMeasurementSet()
@@ -1020,12 +987,12 @@ class Tracker():
                                                               scanNumber,
                                                               targetIndex+1)
                 leafNode._checkMmsiIntegrity()
+                assert np.isfinite(leafNode.getScore(self.N))
         activeMmsiList = [target.mmsi
                           for target in self.__trackNodes__
                           if target.mmsi is not None]
         activeMmsiSet = set(activeMmsiList)
         assert len(activeMmsiList) == len(activeMmsiSet), "One or more MMSI is used multiple times"
-
 
     def getSmoothTracks(self):
         return [track.getSmoothTrack() for track in self.__trackNodes__]
@@ -1241,7 +1208,7 @@ class Tracker():
         ET.SubElement(trackerSettingElement,'lambdaEx').text = str(self.lambda_ex)
         ET.SubElement(trackerSettingElement,'eta2').text = str(self.eta2)
         ET.SubElement(trackerSettingElement,'N_max').text = str(self.N_max)
-        ET.SubElement(trackerSettingElement,'NLLR_upperLimit').text = str(self.NLLR_UPPER_LIMIT)
+        ET.SubElement(trackerSettingElement,'NLLR_upperLimit').text = str(self.scoreUpperLimit)
         ET.SubElement(trackerSettingElement,'pruneThreshold').text = str(self.pruneThreshold)
         ET.SubElement(trackerSettingElement,'targetSizeLimit').text = str(self.targetSizeLimit)
         ET.SubElement(trackerSettingElement,'maxSpeedMS').text = str(self.maxSpeedMS)

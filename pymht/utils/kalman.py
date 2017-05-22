@@ -11,6 +11,7 @@ def nllr(lambda_ex, P_d, S_list, nis):
         lambda_ex += 1e-20
     result = (0.5 * nis + np.log((lambda_ex * np.sqrt(np.linalg.det(2 * np.pi * S_list))) / P_d))
     assert result.size == nis.size
+    assert all(np.isfinite(result)), str(result)
     return result
 
 
