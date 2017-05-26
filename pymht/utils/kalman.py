@@ -19,7 +19,6 @@ def nllr(lambda_ex, P_d, S_list, nis):
     assert all(np.isfinite(result)), str(result)
     return result
 
-
 def normalizedInnovationSquared(z_tilde_list, S_inv_list):
     return np.sum(np.matmul(z_tilde_list, S_inv_list) *
                   z_tilde_list,
@@ -29,13 +28,11 @@ def nis_single(z_tilde, S):
     nis =  z_tilde.dot(np.linalg.inv(S).dot(z_tilde.T))
     return nis
 
-
 def z_tilde(z_list, z_hat_list, nNodes=1, measDim=2):
     z_tensor = np.array([z_list, ] * nNodes)
     z_hat_tensor = z_hat_list.reshape(nNodes, 1, measDim)
     z_tilde_list = z_tensor - z_hat_tensor
     return z_tilde_list
-
 
 def numpyFilter(x_bar, K, z_tilde):
     x_bar = x_bar.reshape(1, x_bar.shape[0])
@@ -48,7 +45,6 @@ def numpyFilter(x_bar, K, z_tilde):
     assert x_hat.shape[1] == x_bar.shape[1], str(x_hat.shape) + str(x_bar.shape)
     return x_hat
 
-
 def predict(A, Q, x_0_list, P_0_list):
     assert A.ndim == 2
     assert Q.ndim == 2
@@ -59,7 +55,6 @@ def predict(A, Q, x_0_list, P_0_list):
     assert x_bar_list.shape == x_0_list.shape, "x_bar ERROR"
     assert P_bar_list.shape == P_0_list.shape, "P_bar ERROR"
     return x_bar_list, P_bar_list
-
 
 def predict_single(A, Q, x_hat, P_hat):
     x_bar = A.dot(x_hat)
@@ -94,7 +89,6 @@ def precalc(C, R, x_bar_list, P_bar_list):
     assert P_hat_list.shape == P_bar_list.shape, "P_hat ERROR"
 
     return z_hat_list, S_list, S_inv_list, K_list, P_hat_list
-
 
 class KalmanFilter():
     """
