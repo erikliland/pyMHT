@@ -91,12 +91,12 @@ def simulateScans(simList, radarPeriod, H, R, lambda_phi=0,
                 measurementList.measurements.append(target.positionWithNoise())
                 if kwargs.get('localClutter', True):
                     nClutter = np.random.poisson(lClutter)
-                    log.debug("nLocalClutter {:}".format(nClutter))
+                    # log.debug("nLocalClutter {:}".format(nClutter))
                     measurementList.measurements.extend([target.positionWithNoise(sigma_R_scale = 3)
                                                          for _ in range(nClutter)])
         if all(e is not None for e in [rRange, p0]) and kwargs.get('globalClutter', True):
             nClutter = np.random.poisson(gClutter)
-            log.debug("nGlobalClutter {:}".format(nClutter))
+            # log.debug("nGlobalClutter {:}".format(nClutter))
             for i in range(nClutter):
                 clutter = _generateCartesianClutter(p0, rRange)
                 measurementList.measurements.append(clutter)
@@ -129,12 +129,12 @@ def simulateAIS(sim_list, ais_model, radarPeriod, initTime, **kwargs):
             reportingInterval = _aisReportInterval(speedMS, target.aisClass)
             shouldSendAisMessage = ((timeSinceLastAisMessage >= reportingInterval) and
                                     ((messageTime-initTime) % radarPeriod != 0))
-            log.debug("MMSI " + str(target.mmsi) + " \t" +
-                      "Target time " + str(target.time) + " \t" +
-                      "Message time " + str(messageTime) + " \t" +
-                      "Time of last AIS message " + str(target.timeOfLastAisMessage) + " \t" +
-                      "Reporting Interval " + str(reportingInterval) + " \t" +
-                      "Should send AIS message " + str(shouldSendAisMessage))
+            # log.debug("MMSI " + str(target.mmsi) + " \t" +
+            #           "Target time " + str(target.time) + " \t" +
+            #           "Message time " + str(messageTime) + " \t" +
+            #           "Time of last AIS message " + str(target.timeOfLastAisMessage) + " \t" +
+            #           "Reporting Interval " + str(reportingInterval) + " \t" +
+            #           "Should send AIS message " + str(shouldSendAisMessage))
             if not shouldSendAisMessage:
                 try:
                     sim_list[i + 2][j].timeOfLastAisMessage = target.timeOfLastAisMessage
@@ -155,7 +155,7 @@ def simulateAIS(sim_list, ais_model, radarPeriod, initTime, **kwargs):
                 assert state.size == target.model.nObsDim_AIS, str(state.size)
             if kwargs.get('idScrambling',False) and np.random.uniform() > 0.5:
                 mmsi = target.mmsi + 10
-                log.info("Scrambling MMSI {0:} to {1:} at {2:}".format(target.mmsi,mmsi, messageTime))
+                # log.info("Scrambling MMSI {0:} to {1:} at {2:}".format(target.mmsi,mmsi, messageTime))
             else:
                 mmsi = target.mmsi
 
