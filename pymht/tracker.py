@@ -27,14 +27,8 @@ import os
 
 # ----------------------------------------------------------------------------
 # Instantiate logging object
-# ----------------------------------------------------------------------------
-logDir = os.path.join(os.getcwd(), 'logs')
-if not os.path.exists(logDir): os.makedirs(logDir)
-logging.basicConfig(level=logging.DEBUG,
-                    format='%(asctime)s %(name)-25s %(levelname)-8s %(message)s',
-                    datefmt='%Y-%m-%d %H:%M:%S',
-                    filename=os.path.join(logDir, 'myapp.log'),
-                    filemode='w')
+# -------------------------------------------------------1---------------------
+
 log = logging.getLogger(__name__)
 
 class Tracker():
@@ -128,7 +122,7 @@ class Tracker():
         # Misc
         self.colors = ['r', 'g', 'b', 'c', 'm', 'y', 'k']
 
-        log.info("Initiation done\n" + "#" * 100 + "\n")
+        log.info("Initiation done\n" + "#" * 100)
 
     def setHighPriority(self):
         import psutil
@@ -183,10 +177,8 @@ class Tracker():
             assert all([float(aisMessage.time) < scanTime for aisMessage in aisList])
             assert all([float(aisMessage.time) > scanTime-self.radarPeriod for aisMessage in aisList]),\
                 str(scanTime)+str([m.time for m in aisList])
-            log.debug('AIS times \t' + ','.join(
-                [datetime.datetime.fromtimestamp(aisMeasurement.time).strftime("%H:%M:%S.%f")
-                 for aisMeasurement in aisList]))
-            log.debug("AIS list:\n" + str(aisList))
+            log.debug('AIS times \t' + ','.join([aisMeasurement.getTimeString() for aisMeasurement in aisList]))
+            log.debug("AIS list:\n" + '\n'.join([str(m) for m in aisList]))
         # 0 --Iterative procedure for tracking --
         self.tic['Total'] = time.time()
 
@@ -417,7 +409,8 @@ class Tracker():
         fused_nllr_list = []
         fused_mmsi_list = []
 
-        # lambda_ais = (len(self.__targetList__)*self.P_ais)/(np.pi * self.radarRange**2)
+        lambda_ais = (len(self.__targetList__)*self.P_ais)/(np.pi * self.radarRange**2)
+        # print("lambda_ais {:.2e}".format(lambda_ais))
 
         for i, node in enumerate(targetNodes):
             # print("Node",i, "Target ID", node.ID)
@@ -454,9 +447,10 @@ class Tracker():
                     if len(gated_ais_indices) == 0: continue
                     # print("gated S array1\n", S_list1)
                     # print("gated_ais_indices",gated_ais_indices)
-                    nllr1_list = kalman.nllr_ais(S_list1, nis_array1[gated_ais_indices])
+                    nllr1_list = kalman.nllr(lambda_ais, 1.0, S_list1, nis_array1[gated_ais_indices])
                     # print("nllr1", np.array_str(nllr1_list, precision=2))
-                    for ais_index in gated_ais_indices:
+                    for i, ais_index in enumerate(gated_ais_indices):
+                        # print("ais_index",ais_index)
                         ais_measurement = activeAisMeasurements[ais_index]
                         x_hat1 = x_bar1 + K_list1[0].dot(ais_measurement.state - z_hat_list1[0])
                         P_hat1 = P_hat_list1[0]
@@ -472,13 +466,14 @@ class Tracker():
                         gated_nis_array2 = nis_array2 <= self.eta2
                         gated_radar_indices = np.flatnonzero(gated_nis_array2)
                         nllr2_list = kalman.nllr(self.lambda_ex,node.P_d, S_list2, nis_array2[gated_radar_indices])
+                        # print("nllr2_list",np.array_str(nllr2_list, precision=2))
                         for j, radar_index in enumerate(gated_radar_indices):
                             x_hat2 = x_bar2 + K_list2[0].dot(radarMeasurements[radar_index] - z_hat_list2[0])
                             P_hat2 = P_hat_list2[0]
-                            nllr12 = 0 + nllr2_list[j]
+                            nllr12 = nllr1_list[i] + nllr2_list[j]
                             log.debug("Fused node " +
-                                      str(x_hat2) + " " +
-                                      str(nllr12) + " " +
+                                      np.array_str(x_hat2, precision=1) + " " +
+                                      '{: .2f} '.format(nllr12) +
                                       str(ais_measurement.mmsi))
 
                             x_hat_list.append(x_hat2)
@@ -489,11 +484,11 @@ class Tracker():
                         if len(gated_radar_indices) == 0:
                             x_hat2 = x_bar2
                             P_hat2 = P_hat_list2[0]
-                            nllr12 = 0
+                            nllr12 = nllr1_list[i]
                             log.debug("Pure AIS node " +
-                                      str(x_hat2) + " " +
-                                      str(nllr12) + " " +
-                                      str(ais_measurement.mmsi))
+                                      np.array_str(x_hat2, precision=1) + " " +
+                                      '{: .2f} '.format(nllr12) +
+                                      'MMSI: {:}'.format(ais_measurement.mmsi))
                             x_hat_list.append(x_hat2)
                             P_hat_list.append(P_hat2)
                             radar_indices_list.append(None)
