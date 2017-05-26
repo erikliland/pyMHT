@@ -71,19 +71,20 @@ def plotTrueTrack(simList, **kwargs):
     nScan = len(simList)
     nTargets = len(simList[0])
     stateArray = np.zeros((nScan, nTargets, 4))
-    for row, scan in enumerate(simList):
-        stateArray[row, :, :] = np.array([target.state for target in scan])
+    for row, targetList in enumerate(simList):
+        stateArray[row, :, :] = np.array([target.cartesianState() for target in targetList])
     for col in range(nTargets):
         plt.plot(stateArray[:, col, 0], stateArray[:, col, 1], '.', alpha=0.7,
                  markeredgewidth=0.6, color=next(colors) if colors is not None else None, **newArgs)
 
     ax = plt.gca()
-    for col in range(nTargets):
+    for col, target in enumerate(simList[0]):
         if kwargs.get('markStart', True):
             plt.plot(stateArray[0, col, 0], stateArray[0, col, 1], '.', color='black')
         if kwargs.get('label', False):
-            normVelocity = (stateArray[0,col,2:4] /
-                            np.linalg.norm(stateArray[0,col, 2:4]))
+            velocity = target.cartesianVelocity()
+            normVelocity = (velocity /
+                            np.linalg.norm(velocity))
             offsetScale = kwargs.get('offset', 0.0)
             offset = offsetScale * np.array(normVelocity)
             position = stateArray[0,col,0:2] - offset

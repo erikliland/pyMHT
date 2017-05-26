@@ -1,6 +1,8 @@
 from pymht.utils import kalman
 import numpy as np
 from pymht.models import pv
+from pymht.models import polar
+from pymht.models import ais
 
 dT = 1.0
 x_0 = np.zeros(4)
@@ -36,7 +38,7 @@ def test_predict():
 
 def test_numpyPredict():
     z_hat_list, S_list, S_inv_list, K_list, P_hat_list = kalman.precalc(
-        A, C, Q, R, x_bar_list, P_bar_list)
+        C, R, x_bar_list, P_bar_list)
 
     gated_z_tilde_list = np.random.random((n, 5, 2))
     gated_x_hat_list = [kalman.numpyFilter(x_bar_list[i],

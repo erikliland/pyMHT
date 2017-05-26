@@ -1,7 +1,10 @@
 # content of test_sample.py
 import pymht.utils.simulator as sim
 import numpy as np
-import pymht.models.pv as model
+from pymht.models import pv
+from pymht.models import ais
+from pymht.models import polar
+
 from pymht.utils.classDefinitions import AIS_message
 
 seed = 172362
@@ -26,7 +29,12 @@ sim.seed_simulator(seed)
 
 def test_initial_target_generation():
     global initialTargets
-    initialTargets = sim.generateInitialTargets(nTargets, p0, radarRange, P_d,model.sigmaQ_true, assignMMSI = True)
+    initialTargets = sim.generateInitialTargets(nTargets,
+                                                p0,
+                                                radarRange,
+                                                P_d,
+                                                pv.sigmaQ_true,
+                                                assignMMSI = True)
 
 def test_simulation_seed_consistency():
     global simLists
@@ -36,7 +44,7 @@ def test_simulation_seed_consistency():
         simLists.append(sim.simulateTargets(initialTargets,
                                               simTime,
                                               simulationTimeStep,
-                                              model))
+                                              pv))
 
     for i in range(nTests-1):
         for simListA, simListB in zip(simLists[i],simLists[i+1]):
@@ -49,15 +57,15 @@ def test_scan_simulation_consistency():
     for _ in range(nTests):
         sim.seed_simulator(seed)
         scanLists.append(sim.simulateScans(simLists[0],
-                                     radarPeriod,
-                                     model.C_RADAR,
-                                     model.R_RADAR(model.sigmaR_RADAR_true),
-                                     lambda_phi,
-                                     radarRange,
-                                     p0,
-                                     shuffle=True,
-                                     localClutter=True,
-                                     globalClutter=True)
+                                           radarPeriod,
+                                           pv.C_RADAR,
+                                           pv.R_RADAR(pv.sigmaR_RADAR_true),
+                                           lambda_phi,
+                                           radarRange,
+                                           p0,
+                                           shuffle=True,
+                                           localClutter=True,
+                                           globalClutter=True)
                          )
     for i in range(nTests-1):
         scanListA = scanLists[i]
@@ -77,16 +85,9 @@ def test_ais_simulation_consistency():
         sim.seed_simulator(seed)
         aisMeasurementsList.append(
             sim.simulateAIS(simLists[i],
-                          model.Phi,
-                          model.C_AIS,
-                          model.R_AIS(model.sigmaR_AIS_true),
-                          model.GPS_COVARIANCE_PRECISE,
-                          radarPeriod,
-                            initTime,
-                          integerTime=True,
-                          noise=True,
-                          idScrambling = False,
-                          period=aisPeriod))
+                            ais,
+                            radarPeriod,
+                            initTime))
 
 
     for i in range(nTests-1):

@@ -1,5 +1,6 @@
 import numpy as np
-from pymht.utils.classDefinitions import SimTarget
+from pymht.utils import classDefinitions
+from pymht.utils.classDefinitions import SimTarget, SimTargetCartesian
 from pymht.utils.classDefinitions import MeasurementList, AIS_message, Position, AisMessagesList, SimList
 import time
 import copy
@@ -8,26 +9,11 @@ import logging
 
 log = logging.getLogger(__name__)
 
+def checkEqualIvo(lst):
+    return not lst or lst.count(lst[0]) == len(lst)
+
 def seed_simulator(seed):
     np.random.seed(seed)
-
-def positionWithNoise(state, H, R):
-    assert R.ndim == 2
-    assert R.shape[0] == R.shape[1]
-    assert H.shape[1] == state.shape[0]
-    v = np.random.multivariate_normal(np.zeros(R.shape[0]), R)
-    assert H.shape[0] == v.shape[0], str(state.shape) + str(v.shape)
-    assert v.ndim == 1
-    return H.dot(state) + v
-
-
-def calculateNextState(target, timeStep, Phi, model):
-    Q = model.Q(timeStep, target.sigma_Q)
-    w = np.random.multivariate_normal(np.zeros(4), Q)
-    nextState = Phi.dot(target.state) + w.T
-    newVar = {'state': nextState, 'time': target.time + timeStep}
-    return SimTarget(**{**target.__dict__, **newVar})
-
 
 def generateInitialTargets(numOfTargets, centerPosition,
                            radarRange, P_d, sigma_Q, **kwargs):
@@ -52,40 +38,39 @@ def generateInitialTargets(numOfTargets, centerPosition,
                     break
         else:
             mmsi = None
-        target = SimTarget(np.array([px, py, vx, vy], dtype=np.float32), initialTime, P_d, sigma_Q, mmsi = mmsi)
+        target = SimTargetCartesian(np.array([px, py, vx, vy], dtype=np.float32), initialTime, P_d, sigma_Q, mmsi = mmsi)
         initialList.append(target)
     return initialList
 
-
 def simulateTargets(initialTargets, simTime, timeStep, model, **kwargs):
-    includeInitialTime = kwargs.get('includeInitialTime', True)
-    Phi = model.Phi(timeStep)
     simList = SimList()
-    assert all([type(initialTarget) == SimTarget for initialTarget in initialTargets])
+    assert all([isinstance(initialTarget,SimTarget) for initialTarget in initialTargets])
     simList.append(initialTargets)
     nTimeSteps = int(np.ceil(simTime / timeStep))
-    if includeInitialTime:
-        nTimeSteps -= 1
 
     for i in range(nTimeSteps):
-        targetList = [calculateNextState(target, timeStep, Phi, model)
+        targetList = [target.calculateNextState(timeStep)
                       for target in simList[-1]]
         simList.append(targetList)
-    if not includeInitialTime:
-        simList.pop(0)
-    return simList
 
+    return simList
 
 def simulateScans(simList, radarPeriod, H, R, lambda_phi=0,
                   rRange=None, p0=None, **kwargs):
+    includeInitialTime = not kwargs.get('preInitialized', False)
     area = np.pi * np.power(rRange, 2)
     gClutter = lambda_phi * area
-    lClutter = kwargs.get('lClutter', 2)
+    lClutter = kwargs.get('lambda_local', 1)
     scanList = []
     lastScan = None
-    for sim in simList:
-        simTime = sim[0].time
+    skippedFirst = False
+    for targetList in simList:
+        simTime = targetList[0].time
         if lastScan is None:
+            if not includeInitialTime and not skippedFirst:
+                skippedFirst = True
+                lastScan = simTime
+                continue
             lastScan = simTime
         else:
             timeSinceLastScan = simTime - lastScan
@@ -95,25 +80,23 @@ def simulateScans(simList, radarPeriod, H, R, lambda_phi=0,
                 continue
 
         measurementList = MeasurementList(simTime)
-        for target in sim:
+        for target in targetList:
             visible = np.random.uniform() <= kwargs.get('P_d',target.P_d)
             if (rRange is not None) and (p0 is not None):
-                distance = np.linalg.norm(target.state[0:2] - p0)
-                inRange =  distance <= rRange
                 inRange = target.inRange(p0, rRange)
             else:
                 inRange = True
 
             if visible and inRange:
-                measurementList.measurements.append(positionWithNoise(target.state, H, R))
+                measurementList.measurements.append(target.positionWithNoise())
                 if kwargs.get('localClutter', True):
                     nClutter = np.random.poisson(lClutter)
-                    log.debug("nLocalClutter {:}".format(nClutter))
-                    measurementList.measurements.extend([positionWithNoise(target.state, H, R * 5)
+                    # log.debug("nLocalClutter {:}".format(nClutter))
+                    measurementList.measurements.extend([target.positionWithNoise(sigma_R_scale = 3)
                                                          for _ in range(nClutter)])
         if all(e is not None for e in [rRange, p0]) and kwargs.get('globalClutter', True):
             nClutter = np.random.poisson(gClutter)
-            log.debug("nGlobalClutter {:}".format(nClutter))
+            # log.debug("nGlobalClutter {:}".format(nClutter))
             for i in range(nClutter):
                 clutter = _generateCartesianClutter(p0, rRange)
                 measurementList.measurements.append(clutter)
@@ -126,31 +109,32 @@ def simulateScans(simList, radarPeriod, H, R, lambda_phi=0,
         scanList.append(copy.deepcopy(measurementList))
     return scanList
 
-
-def simulateAIS(sim_list, Phi_func, C, R, P_0, radarPeriod, initTime, **kwargs):
+def simulateAIS(sim_list, ais_model, radarPeriod, initTime, **kwargs):
     ais_measurements = AisMessagesList()
     integerTime = kwargs.get('integerTime', True)
+    tempList = []
     for i, sim in enumerate(sim_list[1:]):
-        tempList = []
+        assert checkEqualIvo([t.time for t in sim])
+
         for j, target in ((j,target) for j, target in enumerate(sim) if target.mmsi is not None):
             if integerTime:
                 messageTime = math.floor(target.time)
                 dT = messageTime - target.time
-                state = Phi_func(dT).dot(target.state)
+                state = target.model.A_AIS(dT).dot(target.cartesianState())
             else:
                 messageTime = target.time
-                state = target.state
+                state = target.cartesianState()
             timeSinceLastAisMessage = messageTime - target.timeOfLastAisMessage
-            speedMS = np.linalg.norm(target.state[2:4])
+            speedMS = target.speedMS()
             reportingInterval = _aisReportInterval(speedMS, target.aisClass)
             shouldSendAisMessage = ((timeSinceLastAisMessage >= reportingInterval) and
                                     ((messageTime-initTime) % radarPeriod != 0))
-            log.debug("MMSI " + str(target.mmsi) + " \t" +
-                      "Target time " + str(target.time) + " \t" +
-                      "Message time " + str(messageTime) + " \t" +
-                      "Time of last AIS message " + str(target.timeOfLastAisMessage) + " \t" +
-                      "Reporting Interval " + str(reportingInterval) + " \t" +
-                      "Should send AIS message " + str(shouldSendAisMessage))
+            # log.debug("MMSI " + str(target.mmsi) + " \t" +
+            #           "Target time " + str(target.time) + " \t" +
+            #           "Message time " + str(messageTime) + " \t" +
+            #           "Time of last AIS message " + str(target.timeOfLastAisMessage) + " \t" +
+            #           "Reporting Interval " + str(reportingInterval) + " \t" +
+            #           "Should send AIS message " + str(shouldSendAisMessage))
             if not shouldSendAisMessage:
                 try:
                     sim_list[i + 2][j].timeOfLastAisMessage = target.timeOfLastAisMessage
@@ -161,23 +145,31 @@ def simulateAIS(sim_list, Phi_func, C, R, P_0, radarPeriod, initTime, **kwargs):
                 sim_list[i+2][j].timeOfLastAisMessage = float(messageTime)
             except IndexError:
                 pass
-
+            highAccuracy = True
             if kwargs.get('noise', True):
-                state = positionWithNoise(state, C, R)
+                highAccuracy = np.random.uniform() > 0.5
+                R = target.model.R_AIS(highAccuracy)
+                v = np.random.multivariate_normal(np.zeros(R.shape[0]), R)
+                state = target.model.C_AIS.dot(state) + v
+                assert state.ndim == 1
+                assert state.size == target.model.nObsDim_AIS, str(state.size)
             if kwargs.get('idScrambling',False) and np.random.uniform() > 0.5:
                 mmsi = target.mmsi + 10
-                log.info("Scrambling MMSI {0:} to {1:} at {2:}".format(target.mmsi,mmsi, messageTime))
+                # log.info("Scrambling MMSI {0:} to {1:} at {2:}".format(target.mmsi,mmsi, messageTime))
             else:
                 mmsi = target.mmsi
 
             prediction = AIS_message(time=messageTime,
                                      state=state,
-                                     covariance=P_0,
-                                     mmsi=mmsi)
+                                     mmsi=mmsi,
+                                     highAccuracy=highAccuracy)
             if np.random.uniform() <= target.P_r:
                 tempList.append(prediction)
-        if tempList:
-            ais_measurements.append(tempList)
+        simTime = sim[0].time
+        if (simTime - initTime) % radarPeriod == 0:
+            if tempList:
+                ais_measurements.append(tempList[:])
+                tempList = []
     return ais_measurements
 
 def _aisReportInterval(speedMS, aisClass):
@@ -206,72 +198,6 @@ def _aisReportInterval(speedMS, aisClass):
     else:
         raise ValueError("aisClass must be 'A' og 'B'")
 
-
-def writeSimList(initialTargets, simList, filename):
-    startTime = initialTargets[0].time
-    try:
-        f = open(filename, 'w')
-        f.write("0" + "".join([target.storeString() for target in initialTargets]) + "\n")
-        for scan in simList:
-            f.write('{:.2f}'.format(scan[0].time - startTime) +
-                    "".join([target.storeString() for target in scan]) + "\n")
-        f.close()
-    except:
-        pass
-
-
-def importFromFile(filename, **kwargs):
-    startLine = kwargs.get('startLine', 0)
-    initialTime = time.time()
-    initialTargets = []
-    simList = []
-    firstPositions = None
-    firstTime = None
-    try:
-        f = open(filename, 'r')
-    except:
-        print("Could not open the file:", filename)
-        return [], []
-    for lineIndex, line in enumerate(f):
-        lineIndex = lineIndex - startLine
-        elements = line.strip().split(',')
-        localTime = float(elements[0])
-        globalTime = initialTime + localTime
-        if lineIndex == 0:
-            firstTime = float(elements[0])
-            firstPositions = [Position(elements[i], elements[i + 1])
-                              for i in range(1, len(elements), 2)]
-        elif lineIndex > 0:
-            if lineIndex == 1:
-                for i, initPos in enumerate(firstPositions):
-                    initialTargets.append(
-                        SimTarget(time=firstTime,
-                                  position=initPos,
-                                  velocity=(Position(elements[2 * i + 1], elements[2 * i + 2]) - initPos) * (
-                                   1 / (localTime - firstTime))))
-
-            if localTime.is_integer():
-                targetList = [SimTarget(time=localTime,
-                                        position=Position(elements[i], elements[i + 1]),
-                                        velocity=Velocity(0, 0)
-                                        ) for i in range(1, len(elements), 2)
-                              ]
-
-                simList.append(targetList)
-    for scanIndex, scan in enumerate(simList):
-        for targetIndex, target in enumerate(scan):
-            if scanIndex == 0:
-                target.state[2:4] = (target.state[0:2] -
-                                     firstPositions[targetIndex].toarray())
-            elif scanIndex == (len(simList) - 1):
-                target.state[2:4] = simList[scanIndex - 1][targetIndex].state[2:4]
-            else:
-                target.state[2:4] = (target.state[0:2] -
-                                     simList[scanIndex - 1][targetIndex].state[0:2])
-
-    return initialTargets, simList
-
-
 def findCenterPositionAndRange(simList):
     xMin = float('Inf')
     yMin = float('Inf')
@@ -279,22 +205,21 @@ def findCenterPositionAndRange(simList):
     yMax = -float('Inf')
     for sim in simList:
         for simTarget in sim:
-            xMin = simTarget.state[0] if simTarget.state[0] < xMin else xMin
-            yMin = simTarget.state[1] if simTarget.state[1] < yMin else yMin
-            xMax = simTarget.state[0] if simTarget.state[0] > xMax else xMax
-            yMax = simTarget.state[1] if simTarget.state[1] > yMax else yMax
+            state = simTarget.cartesianState()
+            xMin = state[0] if state[0] < xMin else xMin
+            yMin = state[1] if state[1] < yMin else yMin
+            xMax = state[0] if state[0] > xMax else xMax
+            yMax = state[1] if state[1] > yMax else yMax
     p0 = Position(xMin + (xMax - xMin) / 2, yMin + (yMax - yMin) / 2)
     R = np.sqrt(np.power(max(abs(xMax - p0.x), abs(xMin - p0.x)), 2) +
                 np.power(max(abs(yMax - p0.y), abs(yMin - p0.y)), 2))
     return p0, R
-
 
 def _generateRadialClutter(centerPosition, radarRange):
     heading = np.random.uniform(0, 360)
     distance = np.random.uniform(0, radarRange)
     px, py = _pol2cart(heading, distance)
     return centerPosition + np.array([px, py])
-
 
 def _generateCartesianClutter(centerPosition, radarRange):
     while True:
@@ -304,11 +229,10 @@ def _generateCartesianClutter(centerPosition, radarRange):
         if np.linalg.norm(pos) <= radarRange:
             return centerPosition + pos
 
-
 def _pol2cart(bearingDEG, distance):
-    angleDEG = 90 - bearingDEG
+    import math
+    angleDEG = (90 - bearingDEG + 360)%360
     angleRAD = np.deg2rad(angleDEG)
-    x = distance * np.cos(angleRAD)
-    y = distance * np.sin(angleRAD)
+    x = distance * math.cos(angleRAD)
+    y = distance * math.sin(angleRAD)
     return [x, y]
-

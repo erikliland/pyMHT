@@ -118,8 +118,8 @@ class Target():
     def __sub__(self, other):
         return self.x_0 - other.x_0
 
-    def getScore(self, N):
-        return self.cumulativeNLLR / N
+    def getScore(self):
+        return self.cumulativeNLLR - self.getRoot().cumulativeNLLR
 
     def getXmlStateStrings(self, precision=2):
         return (str(round(self.x_0[0],precision)),
@@ -337,7 +337,7 @@ class Target():
         if stepsLeft <= 0:
             if self.parent is not None:
                 self.parent._pruneAllHypothesisExceptThis(self, backtrack=True)
-                self.recursiveSubtractScore(self.cumulativeNLLR)
+                # self.recursiveSubtractScore(self.cumulativeNLLR)
                 assert self.parent.scanNumber == self.scanNumber - 1, \
                     "nScanPruning2: from scanNumber" + str(self.parent.scanNumber) + "->" + str(self.scanNumber)
                 return self
