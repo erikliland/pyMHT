@@ -374,17 +374,11 @@ class AIS_message:
         self.highAccuracy = highAccuracy
 
     def __str__(self):
-        if self.time == int(self.time):
-            timeFormat = "%H:%M:%S"
-        else:
-            timeFormat = "%H:%M:%S.%f"
-        timeString = datetime.datetime.fromtimestamp(self.time).strftime(timeFormat)
-        if self.time < 1e6:
-            timeString = str(self.time)
+        timeString = self.getTimeString()
         mmsiString = 'MMSI: ' + str(self.mmsi) if self.mmsi is not None else ""
         return ('Time: ' + timeString + " " +
                 'State:' + np.array2string(self.state, formatter={'float_kind':lambda x: '{: 7.1f}'.format(x)}) + " " +
-                'High accuracy: {:} '.format(self.highAccuracy) +
+                'High accuracy: {:1} '.format(self.highAccuracy) +
                 mmsiString)
 
     def __eq__(self, other):
@@ -395,6 +389,16 @@ class AIS_message:
         return True
 
     __repr__ = __str__
+
+    def getTimeString(self):
+        if self.time == int(self.time):
+            timeFormat = "%H:%M:%S"
+        else:
+            timeFormat = "%H:%M:%S.%f"
+        timeString = datetime.datetime.fromtimestamp(self.time).strftime(timeFormat)
+        if self.time < 1e6:
+            timeString = str(self.time)
+        return timeString
 
     def plot(self, **kwargs):
         Position(self.state[0:2]).plot(mmsi=self.mmsi, original=True, **kwargs)
