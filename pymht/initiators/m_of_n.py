@@ -3,10 +3,10 @@ import pymht.models.pv as pv
 from pymht.pyTarget import Target
 from munkres import munkres  # https://github.com/jfrelinger/cython-munkres-wrapper
 # import pymunkres  # https://github.com/erikliland/munkres
+# import scipy.optimize.linear_sum_assignment
 from scipy.stats import chi2
 import logging
 import time
-# import scipy.optimize.linear_sum_assignment
 
 tracking_parameters = {
     'gate_probability': 0.99,
@@ -16,8 +16,6 @@ tracking_parameters['gamma'] = chi2(df=2).ppf(tracking_parameters['gate_probabil
 CONFIRMED = 1
 PRELIMINARY = 0
 DEAD = -1
-
-np.set_printoptions(precision=1, suppress=True)
 
 log = logging.getLogger(__name__)
 
@@ -97,7 +95,6 @@ def _solve_global_nearest_neighbour(delta_matrix, gate_distance=np.Inf, **kwargs
         time.sleep(0.1)
         raise e
 
-
 def _initiator_distance(delta_vector, dt, v_max, R):
     movement_scalar = dt * v_max
     d_plus = np.maximum(delta_vector - movement_scalar, np.zeros(2))
@@ -105,7 +102,6 @@ def _initiator_distance(delta_vector, dt, v_max, R):
     d = d_plus + d_minus
     D = np.dot(d.T, np.dot(np.linalg.inv(R + R), d))
     return D
-
 
 def _merge_targets(targets):
     if len(targets) == 1: return targets[0]
@@ -120,7 +116,6 @@ def _merge_targets(targets):
                   measurement=targets[0].measurement,  # TODO: Make a less crude solution
                   # measurementNumber=targets[0].measurementNumber
                   )
-
 
 def _merge_similar_targets(initial_targets, threshold):
     if not initial_targets: return initial_targets
@@ -139,7 +134,6 @@ def _merge_similar_targets(initial_targets, threshold):
             assert type(merged_target) == type(target)
             targets.append(merged_target)
     return targets
-
 
 class PreliminaryTrack():
     def __init__(self, state, covariance):
@@ -178,7 +172,6 @@ class PreliminaryTrack():
         self.predicted_state = None
         return return_value
 
-
 class Measurement():
     def __init__(self, value, timestamp):
         self.value = value
@@ -190,7 +183,6 @@ class Measurement():
         meas_str = "Measurement: (%.2f, %.2f)" % (self.value[0], self.value[1])
         time_str = "Time: " + strftime("%H:%M:%S", gmtime(self.timestamp))
         return "{" + meas_str + ", " + time_str + "}"
-
 
 class Initiator():
     def __init__(self, M, N, v_max, C, R,  mergeThreshold=5, **kwargs):
@@ -299,7 +291,7 @@ class Initiator():
                 log.warning("Removing TOO FAST track ({0:6.1f} m/s) i={1:}".format(track_speed, track_index) +"\n"+ repr(track))
                 removeIndices.append(track_index)
             elif track_status == DEAD:
-                log.debug("Removing DEAD track " + str(track_index))
+                # log.debug("Removing DEAD track " + str(track_index))
                 removeIndices.append(track_index)
             elif track_status == CONFIRMED:
                 log.debug("Removing CONFIRMED track " + str(track_index))
@@ -378,7 +370,6 @@ class Initiator():
             x0 = np.hstack((unusedMeasurementArray[measurement_index], velocity_vector))
             track = PreliminaryTrack(x0, pv.P0)
             self.preliminary_tracks.append(track)
-
 
 if __name__ == "__main__":
     import pymht.utils.simulator as sim
