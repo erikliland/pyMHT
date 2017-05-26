@@ -119,7 +119,6 @@ class Target():
         return self.x_0 - other.x_0
 
     def getScore(self):
-        # return self.cumulativeNLLR / N
         return self.cumulativeNLLR - self.getRoot().cumulativeNLLR
 
     def getXmlStateStrings(self, precision=2):
