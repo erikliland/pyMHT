@@ -1,9 +1,12 @@
+import math
 import numpy as np
 import datetime
 import matplotlib.pyplot as plt
 import logging
+import copy
 import xml.etree.ElementTree as ET
 from pymht.utils.xmlDefinitions import *
+from pymht.models import pv, polar
 log = logging.getLogger(__name__)
 
 
@@ -18,18 +21,7 @@ class SimTarget:
         self.aisClass = kwargs.get('aisClass', 'B')
         self.timeOfLastAisMessage = kwargs.get('timeOfLastAisMessage',-float('inf'))
         self.P_r = kwargs.get('P_r', 1.)
-
-    def __str__(self):
-        timeString = datetime.datetime.fromtimestamp(self.time).strftime("%H:%M:%S.%f")
-        mmsiString = 'MMSI: ' + str(self.mmsi) if self.mmsi is not None else ""
-        return ('Time: ' + timeString + " " +
-                'Pos: ({0: 7.1f},{1: 7.1f})'.format(self.state[0], self.state[1]) + " " +
-                'Vel: ({0: 5.1f},{1: 5.1f})'.format(self.state[2], self.state[3]) + " " +
-                'Speed: {0:4.1f}m/s ({1:4.1f}knt)'.format(self.speed('m/s'), self.speed('knots')) + " " +
-                'Pd: {:3.0f}%'.format(self.P_d * 100.) + " " +
-                mmsiString)
-
-    __repr__ = __str__
+        self.model = None
 
     def __eq__(self, other):
         if not np.array_equal(self.state,other.state): return False
@@ -47,7 +39,62 @@ class SimTarget:
     def storeString(self):
         return ',{0:.2f},{1:.2f}'.format(*self.state[0:2])
 
-    def getXmlStateStrings(self, precision=2):
+    def getXmlStateStringsCartesian(self, precision=2):
+        raise NotImplementedError
+
+    def getXmlStateStringsPolar(self, precision=2):
+        raise NotImplementedError
+
+    def position(self):
+        return Position(self.state[0], self.state[1])
+
+    def velocity(self):
+        raise NotImplementedError
+
+    def speedMS(self):
+        raise NotImplementedError
+
+    def speedKnots(self):
+        return self.speedMS() * 1.94384449
+
+    def cartesianState(self):
+        raise NotImplementedError
+
+    def cartesianVelocity(self):
+        raise NotImplementedError
+
+    def polarState(self):
+        raise NotImplementedError
+
+    def calculateNextState(self, timeStep):
+        raise NotImplementedError
+
+    def positionWithNoise(self):
+        raise NotImplementedError
+
+class SimTargetCartesian(SimTarget):
+    def __init__(self, state, time, P_d, sigma_Q, **kwargs):
+        SimTarget.__init__(self, state, time, P_d, sigma_Q, **kwargs)
+        self.model = pv
+
+    def __str__(self):
+        timeString = datetime.datetime.fromtimestamp(self.time).strftime("%H:%M:%S.%f")
+        mmsiString = 'MMSI: ' + str(self.mmsi) if self.mmsi is not None else ""
+        return ('Time: ' + timeString + " " +
+                'Pos: ({0: 7.1f},{1: 7.1f})'.format(self.state[0], self.state[1]) + " " +
+                'Vel: ({0: 5.1f},{1: 5.1f})'.format(self.state[2], self.state[3]) + " " +
+                'Speed: {0:4.1f}m/s ({1:4.1f}knt)'.format(self.speedMS(), self.speedKnots()) + " " +
+                'Pd: {:3.0f}%'.format(self.P_d * 100.) + " " +
+                mmsiString)
+
+    def __copy__(self):
+        return SimTargetCartesian(self.state, self.time, self.P_d, self.sigma_Q,
+                                  mmsi=self.mmsi, aisClass=self.aisClass, timeOfLastAisMessage=self.timeOfLastAisMessage,
+                                  P_r=self.P_r)
+
+    __repr__ = __str__
+
+    def getXmlStateStringsCartesian(self, precision=2):
         return (str(round(self.state[0],precision)),
                 str(round(self.state[1],precision)),
                 str(round(self.state[2],precision)),
@@ -59,14 +106,122 @@ class SimTarget:
     def velocity(self):
         return Velocity(self.state[2], self.state[3])
 
-    def speed(self, unit='m/s'):
+    def speedMS(self):
         speed_ms = np.linalg.norm(self.state[2:4])
-        if unit == 'm/s':
-            return speed_ms
-        elif unit == 'knots':
-            return speed_ms * 1.94384449
-        else:
-            raise ValueError("Unknown unit")
+        return speed_ms
+
+    def cartesianState(self):
+        return self.state
+
+    def cartesianVelocity(self):
+        return self.state[2:4]
+
+    def calculateNextState(self, timeStep):
+        Phi = self.model.Phi(timeStep)
+        Q = self.model.Q(timeStep, self.sigma_Q)
+        w = np.random.multivariate_normal(np.zeros(4), Q)
+        nextState = Phi.dot(self.state) + w.T
+        newVar = {'state': nextState, 'time': self.time + timeStep}
+        return SimTargetCartesian(**{**self.__dict__, **newVar})
+
+    def positionWithNoise(self, **kwargs):
+        # def positionWithNoise(state, H, R):
+        sigma_R_scale = kwargs.get('sigma_R_scale', 1)
+        R = self.model.R_RADAR(self.model.sigmaR_RADAR_true*sigma_R_scale)
+        H = self.model.C_RADAR
+        assert R.ndim == 2
+        assert R.shape[0] == R.shape[1]
+        assert H.shape[1] == self.state.shape[0]
+        v = np.random.multivariate_normal(np.zeros(R.shape[0]), R)
+        assert H.shape[0] == v.shape[0], str(self.state.shape) + str(v.shape)
+        assert v.ndim == 1
+        return H.dot(self.state) + v
+
+class SimTargetPolar(SimTarget):
+    def __init__(self, state, time, P_d, sigma_Q, **kwargs):
+        SimTarget.__init__(self, state, time, P_d, sigma_Q, **kwargs)
+        self.model = polar
+        self.headingChangeMean = kwargs.get('headingChangeMean')
+        #state = east, north, heading (deg), speed
+
+    def __str__(self):
+        timeString = datetime.datetime.fromtimestamp(self.time).strftime("%H:%M:%S.%f")
+        mmsiString = 'MMSI: ' + str(self.mmsi) if self.mmsi is not None else ""
+        return ('Time: ' + timeString + " " +
+                'Pos: ({0: 7.1f},{1: 7.1f})'.format(self.state[0], self.state[1]) + " " +
+                'Hdg: {0: 5.1f}{1:+3.1f} deg'.format(self.state[2], self.headingChangeMean) + " " +
+                'Speed: {0:4.1f}m/s ({1:4.1f}knt)'.format(self.speedMS(), self.speedKnots()) + " " +
+                'Pd: {:3.0f}%'.format(self.P_d * 100.) + " " +
+                mmsiString)
+
+    def __copy__(self):
+        return SimTargetPolar(self.state, self.time, self.P_d, self.sigma_Q,
+                                  mmsi=self.mmsi, aisClass=self.aisClass, timeOfLastAisMessage=self.timeOfLastAisMessage,
+                                  P_r=self.P_r, headingChangeMean=self.headingChangeMean)
+
+    __repr__ = __str__
+
+    def getXmlStateStringsCartesian(self, precision=2):
+        cartesianState = self.cartesianState()
+        return (str(round(cartesianState[0],precision)),
+                str(round(cartesianState[1],precision)),
+                str(round(cartesianState[2],precision)),
+                str(round(cartesianState[3],precision)))
+
+    def getXmlStateStringsPolar(self, precision=2):
+        return (str(round(self.state[0],precision)),
+                str(round(self.state[1],precision)),
+                str(round(self.state[2],precision)),
+                str(round(self.state[3],precision)))
+
+    @staticmethod
+    def normalizeHeadingDeg(heading):
+        return (heading + 360.)%360.
+
+    def cartesianState(self):
+        pos = self.state[0:2]
+        vel = self.cartesianVelocity()
+        return np.hstack((pos, vel))
+
+    def cartesianVelocity(self):
+        compassHeadingDeg = self.state[2]
+        theta = math.radians(self.normalizeHeadingDeg(90. - compassHeadingDeg))
+        vx = self.state[3] * math.cos(theta)
+        vy = self.state[3] * math.sin(theta)
+        return np.array([vx,vy], dtype=np.float32)
+
+    def position(self):
+        return Position(self.state[0], self.state[1])
+
+    def velocity(self):
+        return Velocity(self.cartesianVelocity())
+
+    def speedMS(self):
+        return self.state[3]
+
+    def calculateNextState(self, timeStep):
+        cartesianSpeedVector = self.cartesianVelocity()
+        stateDelta = timeStep * cartesianSpeedVector
+        headingDelta = timeStep * np.random.normal(self.headingChangeMean, self.model.sigma_hdg)
+        speedDelta = timeStep * np.random.normal(0,self.model.sigma_speed)
+        nextState = np.copy(self.state)
+        nextState[0:2] += stateDelta
+        nextState[2] = self.normalizeHeadingDeg(nextState[2] + headingDelta)
+        nextState[3] = max(0, nextState[3] + speedDelta)
+        newVar = {'state': nextState, 'time': self.time + timeStep}
+        return SimTargetPolar(**{**self.__dict__, **newVar})
+
+    def positionWithNoise(self, **kwargs):
+        sigma_R_scale = kwargs.get('sigma_R_scale', 1)
+        R = self.model.R_RADAR(self.model.sigmaR_RADAR_true*sigma_R_scale)
+        H = self.model.C_RADAR
+        assert R.ndim == 2
+        assert R.shape[0] == R.shape[1]
+        assert H.shape[1] == self.state.shape[0]
+        v = np.random.multivariate_normal(np.zeros(R.shape[0]), R)
+        assert H.shape[0] == v.shape[0], str(self.state.shape) + str(v.shape)
+        assert v.ndim == 1
+        return H.dot(self.state) + v
 
 class Position:
     def __init__(self, *args, **kwargs):
@@ -127,7 +282,6 @@ class Position:
             ax = plt.subplot(111)
             ax.text(self.array[0], self.array[1], str(
                 scanNumber) + ":" + str(measurementNumber), size=7, ha="left", va="top")
-
 
 class Velocity:
     def __init__(self, *args, **kwargs):
@@ -198,7 +352,7 @@ class SimList(list):
                                              stateTag,
                                              attrib={timeTag:str(simTarget.time),
                                                      pdTag:str(simTarget.P_d)})
-                eastPos, northPos, eastVel, northVel = simTarget.getXmlStateStrings()
+                eastPos, northPos, eastVel, northVel = simTarget.getXmlStateStringsCartesian()
                 positionElement = ET.SubElement(stateElement,positionTag)
                 ET.SubElement(positionElement,northTag).text = northPos
                 ET.SubElement(positionElement,eastTag).text = eastPos
@@ -212,14 +366,12 @@ class SimList(list):
                 statesElement.attrib[sigmaqTag] = str(simTarget.sigma_Q)
                 trackElement.attrib[lengthTag] = str(sampleCounter)
 
-
-
 class AIS_message:
-    def __init__(self, time, state, covariance, mmsi):
+    def __init__(self, time, state, mmsi, highAccuracy=False):
         self.time = time
         self.state = state
-        self.covariance = covariance
         self.mmsi = mmsi
+        self.highAccuracy = highAccuracy
 
     def __str__(self):
         if self.time == int(self.time):
@@ -231,13 +383,9 @@ class AIS_message:
             timeString = str(self.time)
         mmsiString = 'MMSI: ' + str(self.mmsi) if self.mmsi is not None else ""
         return ('Time: ' + timeString + " " +
-                'State: ({0: 7.1f},{1: 7.1f},{2: 7.1f},{3: 7.1f})'.format(
-                    self.state[0], self.state[1], self.state[2], self.state[3]) + " " +
-                #'Covariance diagonal: ' + np.array_str(np.diagonal(self.covariance),
-                #                                       precision=1,
-                #                                       suppress_small=True) + " " +
+                'State:' + np.array2string(self.state, formatter={'float_kind':lambda x: '{: 7.1f}'.format(x)}) + " " +
+                'High accuracy: {:} '.format(self.highAccuracy) +
                 mmsiString)
-
 
     def __eq__(self, other):
         if self.time != other.time: return False
@@ -250,7 +398,6 @@ class AIS_message:
 
     def plot(self, **kwargs):
         Position(self.state[0:2]).plot(mmsi=self.mmsi, original=True, **kwargs)
-
 
 class AIS_prediction:
     def __init__(self, state, covariance, mmsi):
@@ -268,7 +415,6 @@ class AIS_prediction:
         return (stateString + " " + covarianceString + " " + mmsiString)
 
     __repr__ = __str__
-
 
 class AisMessagesList:
     def __init__(self,*args):
@@ -302,7 +448,7 @@ class AisMessagesList:
         if self._nextAisMeasurements is not None:
             if all((m.time <= scanTime) for m in self._nextAisMeasurements):
                 self._lastExtractedTime = scanTime
-                res = self.predictAisMeasurements(scanTime, self._nextAisMeasurements)
+                res = copy.copy(self._nextAisMeasurements)
                 self._nextAisMeasurements = next(self._iterator, None)
                 return res
         return None
@@ -363,7 +509,6 @@ class MeasurementList:
 
     def getMeasurements(self):
         return self.measurements
-
 
 class AisMessageList(MeasurementList):
     def __init__(self, time, predictions=None):
