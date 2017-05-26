@@ -3,6 +3,11 @@ A module with operations useful for Kalman filtering.
 """
 import numpy as np
 
+def nllr_ais(S_list, nis):
+    result = (0.5 * nis + np.log(np.sqrt(np.linalg.det(2 * np.pi * S_list))))
+    assert result.size == nis.size
+    assert all(np.isfinite(result)), str(result)
+    return result
 
 def nllr(lambda_ex, P_d, S_list, nis):
     # assert S_list.shape[0] ==  nis.size, str(S_list.shape) + str(nis.size) + str(nis.shape)
@@ -69,10 +74,8 @@ def filter_single(z, x_bar, P_bar, H, R):
     P_hat = P_bar - K.dot(H).dot(P_bar)
     return x_hat, P_hat, S, y_tilde
 
-def precalc(A, C, Q, R, x_bar_list, P_bar_list):
-    assert A.ndim == 2
+def precalc(C, R, x_bar_list, P_bar_list):
     assert C.ndim == 2
-    assert Q.ndim == 2
     assert R.ndim == 2
 
     nMeasurement, nStates = x_bar_list.shape
