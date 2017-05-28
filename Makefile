@@ -7,6 +7,7 @@ init:
 	sudo -H pip3 install --upgrade pip
 	sudo -H pip3 install -r requirements.txt
 	sudo python3 setup.py install
+endif
 
 ifeq ($(shell uname),Linux)
 #Run Linux commands
@@ -23,3 +24,4 @@ init:
 	sudo apt-get install python-numpy
 	sudo -H pip install -r requirements.txt
 	sudo python3 setup.py install
+endif
