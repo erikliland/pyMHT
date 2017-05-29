@@ -24,6 +24,8 @@ from ortools.linear_solver import pywraplp
 from termcolor import cprint
 import xml.etree.ElementTree as ET
 import os
+npVersionTuple = np.__version__.split('.')
+assert (int(npVersionTuple[0]) >= 1 and int(npVersionTuple[1]) >= 12), str(np.__version__)
 
 # ----------------------------------------------------------------------------
 # Instantiate logging object
@@ -402,9 +404,6 @@ class Tracker():
         return newNodesData
 
     def __fuseRadarAndAis(self, targetNodes, aisList, scanList):
-        # TODO: Remove when done debugging
-        np.set_printoptions(precision=1, suppress=True)
-
         nNodes = len(targetNodes)
 
         if aisList is None:
@@ -413,6 +412,143 @@ class Tracker():
                     [np.array([]) for _ in range(nNodes)],
                     [np.array([]) for _ in range(nNodes)],
                     [np.array([]) for _ in range(nNodes)])
+
+        aisMeasurements = aisList
+        radarMeasurements = scanList.measurements
+        aisTimeSet = {m.time for m in aisMeasurements}
+        scanTime = scanList.time
+
+        fused_x_hat_list = []
+        fused_P_hat_list = []
+        fused_radar_indices_list = []
+        fused_nllr_list = []
+        fused_mmsi_list = []
+
+        lambda_ais = (len(self.__targetList__) * self.P_ais) / (np.pi * self.radarRange ** 2)
+        # print("lambda_ais {:.2e}".format(lambda_ais))
+
+        for i, node in enumerate(targetNodes):
+            # print("Node",i, "Target ID", node.ID)
+            x_hat_list = []
+            P_hat_list = []
+            radar_indices_list = []
+            nllr_list = []
+            mmsi_list = []
+            for aisTime in aisTimeSet:
+                # print("aisTime", aisTime)
+                dT1 = float(aisTime) - node.time
+                x_bar1, P_bar1 = kalman.predict_single(pv.Phi(dT1), pv.Q(dT1), node.x_0, node.P_0)
+                # print("x_bar_1", x_bar1)
+                # print("P_bar1\n", P_bar1)
+                for highAccuracy in [True, False]:
+                    # print("highAccuracy",highAccuracy)
+                    z_hat_list1, S_list1, S_inv_list1, K_list1, P_hat_list1 = kalman.precalc(
+                        ais_model.C,
+                        ais_model.R(highAccuracy),
+                        np.array(x_bar1, ndmin=2),
+                        np.array(P_bar1, ndmin=3))
+                    activeAisMeasurements = [m for m in aisMeasurements if
+                                             m.time == aisTime and m.highAccuracy == highAccuracy]
+                    if len(activeAisMeasurements) == 0: continue
+                    # print("activeAisMeasurements",activeAisMeasurements)
+                    # activeAisMeasurementsIndices = np.array([aisMeasurements.index(m) for m in activeAisMeasurements])
+                    # print("activeAisMeasurementsIndices",activeAisMeasurementsIndices)
+                    z_array1 = np.array([m.state for m in activeAisMeasurements], ndmin=2)
+                    z_tilde_array1 = z_array1 - z_hat_list1[0]
+                    nis_array1 = (kalman.normalizedInnovationSquared(z_tilde_array1, S_inv_list1))[0]
+                    # print("nis_array1",nis_array1)
+                    gated_nis_array1 = nis_array1 <= self.eta2_ais
+                    # print("gated nis array1", nis_array1[gated_nis_array1])
+                    gated_ais_indices = np.flatnonzero(gated_nis_array1)
+                    if len(gated_ais_indices) == 0: continue
+                    # print("gated S array1\n", S_list1)
+                    # print("gated_ais_indices",gated_ais_indices)
+                    nllr1_list = kalman.nllr(lambda_ais, 1.0, S_list1, nis_array1[gated_ais_indices])
+                    # print("nllr1", np.array_str(nllr1_list, precision=2))
+                    for i, ais_index in enumerate(gated_ais_indices):
+                        # print("ais_index",ais_index)
+                        ais_measurement = activeAisMeasurements[ais_index]
+                        x_hat1 = x_bar1 + K_list1[0].dot(ais_measurement.state - z_hat_list1[0])
+                        P_hat1 = P_hat_list1[0]
+                        dT2 = scanTime - float(ais_measurement.time)
+                        x_bar2, P_bar2 = kalman.predict_single(pv.Phi(dT2), pv.Q(dT2), x_hat1, P_hat1)
+                        z_hat_list2, S_list2, S_inv_list2, K_list2, P_hat_list2 = kalman.precalc(
+                            pv.C_RADAR,
+                            pv.R_RADAR(),
+                            np.array(x_bar2, ndmin=2),
+                            np.array(P_bar2, ndmin=3))
+                        z_tilde_array2 = radarMeasurements - z_hat_list2[0]
+                        nis_array2 = (kalman.normalizedInnovationSquared(z_tilde_array2, S_inv_list2))[0]
+                        gated_nis_array2 = nis_array2 <= self.eta2
+                        gated_radar_indices = np.flatnonzero(gated_nis_array2)
+                        nllr2_list = kalman.nllr(self.lambda_ex, node.P_d, S_list2, nis_array2[gated_radar_indices])
+                        # print("nllr2_list",np.array_str(nllr2_list, precision=2))
+                        for j, radar_index in enumerate(gated_radar_indices):
+                            x_hat2 = x_bar2 + K_list2[0].dot(radarMeasurements[radar_index] - z_hat_list2[0])
+                            P_hat2 = P_hat_list2[0]
+                            nllr12 = nllr1_list[i] + nllr2_list[j]
+                            log.debug("Fused node " +
+                                      np.array_str(x_hat2, precision=1) + " " +
+                                      '{: .2f} '.format(nllr12) +
+                                      str(ais_measurement.mmsi))
+
+                            x_hat_list.append(x_hat2)
+                            P_hat_list.append(P_hat2)
+                            radar_indices_list.append(radar_index)
+                            nllr_list.append(nllr12)
+                            mmsi_list.append(ais_measurement.mmsi)
+                        if len(gated_radar_indices) == 0:
+                            x_hat2 = x_bar2
+                            P_hat2 = P_hat_list2[0]
+                            nllr12 = nllr1_list[i]
+                            log.debug("Pure AIS node " +
+                                      np.array_str(x_hat2, precision=1) + " " +
+                                      '{: .2f} '.format(nllr12) +
+                                      'MMSI: {:}'.format(ais_measurement.mmsi))
+                            x_hat_list.append(x_hat2)
+                            P_hat_list.append(P_hat2)
+                            radar_indices_list.append(None)
+                            nllr_list.append(nllr12)
+                            mmsi_list.append(ais_measurement.mmsi)
+
+            fused_x_hat_list.append(np.array(x_hat_list, ndmin=2))
+            fused_P_hat_list.append(np.array(P_hat_list, ndmin=3))
+            fused_radar_indices_list.append(np.array(radar_indices_list))
+            fused_nllr_list.append(np.array(nllr_list))
+            fused_mmsi_list.append(np.array(mmsi_list))
+
+        assert len(fused_x_hat_list) == nNodes
+        assert len(fused_P_hat_list) == nNodes
+        assert len(fused_radar_indices_list) == nNodes
+        assert len(fused_nllr_list) == nNodes
+        assert len(fused_mmsi_list) == nNodes
+        for i in range(nNodes):
+            assert fused_x_hat_list[i].ndim == 2, str(fused_x_hat_list[i].ndim)
+            assert fused_P_hat_list[i].ndim == 3, str(fused_P_hat_list[i].ndim)
+            nFusedNodes, nStates = fused_x_hat_list[i].shape
+            if nStates == 0: continue
+            assert fused_P_hat_list[i].shape == (nFusedNodes, nStates, nStates), str(fused_P_hat_list[i].shape)
+
+        fusedNodesData = (fused_x_hat_list,
+                          fused_P_hat_list,
+                          fused_radar_indices_list,
+                          fused_nllr_list,
+                          fused_mmsi_list)
+
+        return fusedNodesData
+
+    def __fuseRadarAndAis2(self, targetNodes, aisList, scanList):
+        # TODO: Remove when done debugging
+        np.set_printoptions(precision=1, suppress=True)
+
+        nNodes = len(targetNodes)
+
+        if aisList is None:
+            return ([None]*nNodes,
+                    [None]*nNodes,
+                    [None]*nNodes,
+                    [None]*nNodes,
+                    [None]*nNodes)
 
         nNodes = len(targetNodes)
         aisMeasurements = aisList
@@ -429,11 +565,13 @@ class Tracker():
         print("\nnNodes", nNodes)
         print("nAisMeasurements", nAisMeasurements)
 
-        fused_x_hat_list = [np.array([]) for _ in range(nNodes)]
-        fused_P_hat_list = [np.array([]) for _ in range(nNodes)]
-        fused_radar_indices_list = [np.array([]) for _ in range(nNodes)]
-        fused_nllr_list = [np.array([]) for _ in range(nNodes)]
-        fused_mmsi_list = [np.array([]) for _ in range(nNodes)]
+        fused_x_hat_list = [None]*nNodes
+        fused_P_hat_list = [None]*nNodes
+        fused_radar_indices_list = [None]*nNodes
+        fused_nllr_list = [None]*nNodes
+        fused_mmsi_list = [None]*nNodes
+
+        print("fused_x_hat_list",fused_x_hat_list)
 
         lambda_ais = (len(self.__targetList__) * self.P_ais) / (np.pi * self.radarRange**2)
         # print("lambda_ais {:.2e}".format(lambda_ais))
@@ -506,13 +644,16 @@ class Tracker():
                 print("Node indices", gated_ais_indices[0],
                       "are connected with AIS indices", gated_ais_indices[1], "respectively")
 
-                gated_nis1 = np.array([nis_array1[gated_ais_indices] for i in gated_ais_indices[0]], ndmin=2)
-                print("gated_nis1", gated_nis1.shape, "\n", gated_nis1)
-                assert gated_nis1.shape == (nNodes, nGatedAisMeasurements), str(gated_nis1.shape)
+                gated_nis1 = [np.array([nis_array1[i1][i2]], ndmin=1)
+                                       for i1, i2 in zip(gated_ais_indices[0], gated_ais_indices[1])]
+                # gated_nis1 = np.array(nis_array1[gated_ais_indices], ndmin=2)
+                print("gated_nis1\n", gated_nis1)
+                assert len(gated_nis1) == len(gated_ais_indices[0])
+                # assert all([gated_nis1[i].shape == (nGatedAisMeasurements[i],1) for i,e in enumerate(nGatedAisMeasurements) ])
 
-                nllr1_list = kalman.nllr(lambda_ais, 1.0, S_list1, gated_nis1)
-                assert nllr1_list.shape == (nNodes, nGatedAisMeasurements), str(nllr1_list.shape)
+                nllr1_list = [kalman.nllr(lambda_ais, 1.0, S_list1[i], gated_nis1[i]) for i in range(len(gated_nis1))]
                 print("nllr1_list", nllr1_list)
+                # assert nllr1_list.shape == (nNodes, nGatedAisMeasurements), str(nllr1_list.shape)
 
                 print("x_bar1[gated_ais_indices[0]]", x_bar1[gated_ais_indices[0]])
                 print("K_list1[gated_ais_indices[0]]\n", K_list1[gated_ais_indices[0]])
@@ -521,7 +662,7 @@ class Tracker():
                 x_hat1 = (x_bar1[gated_ais_indices[0]] + np.matmul(K_list1[gated_ais_indices[0]],
                                                                    z_tilde_array1[gated_ais_indices].T)[0].T)
                 print("x_hat1", x_hat1.shape, "\n", x_hat1)
-                assert x_hat1.shape == (nGatedAisMeasurements, state_dim), str(x_hat1.shape)
+                assert x_hat1.shape == (np.sum(nGatedAisMeasurements), state_dim), str(x_hat1.shape)
 
                 P_hat1 = P_hat_list1[gated_ais_indices[0]]
                 print("P_hat1", P_hat1.shape, "\n", P_hat1)
@@ -539,70 +680,83 @@ class Tracker():
                     pv.R_RADAR(),
                     np.array(x_bar2, ndmin=2),
                     np.array(P_bar2, ndmin=3))
-                assert z_hat_list2.shape == (nGatedAisMeasurements, radar_meas_dim)
-                assert S_list2.shape == (nGatedAisMeasurements, radar_meas_dim, radar_meas_dim)
-                assert S_inv_list2.shape == (nGatedAisMeasurements, radar_meas_dim, radar_meas_dim)
-                assert K_list2.shape == (nGatedAisMeasurements, state_dim, radar_meas_dim)
-                assert P_hat_list2.shape == (nGatedAisMeasurements, state_dim, state_dim)
+                print("z_hat_list2\n", z_hat_list2)
                 # print("K_list2\n", K_list2)
+                assert z_hat_list2.shape == (np.sum(nGatedAisMeasurements), radar_meas_dim)
+                assert S_list2.shape == (np.sum(nGatedAisMeasurements), radar_meas_dim, radar_meas_dim)
+                assert S_inv_list2.shape == (np.sum(nGatedAisMeasurements), radar_meas_dim, radar_meas_dim)
+                assert K_list2.shape == (np.sum(nGatedAisMeasurements), state_dim, radar_meas_dim)
+                assert P_hat_list2.shape == (np.sum(nGatedAisMeasurements), state_dim, state_dim)
 
                 print("nRadarMeasurements", nRadarMeasurements)
-                z_tilde_array2 = np.array(radarMeasurements - z_hat_list2, ndmin=3)
+
+                z_tilde_array2 = kalman.z_tilde(radarMeasurements, z_hat_list2, np.sum(nGatedAisMeasurements), radar_meas_dim)
                 # print("z_tilde_array2", z_tilde_array2.shape, "\n", z_tilde_array2)
-                assert z_tilde_array2.shape == (nGatedAisMeasurements, nRadarMeasurements, radar_meas_dim)
+                assert z_tilde_array2.shape == (np.sum(nGatedAisMeasurements), nRadarMeasurements, radar_meas_dim)
 
                 nis_array2 = (kalman.normalizedInnovationSquared(z_tilde_array2, S_inv_list2))
                 # print("nis_array2", nis_array2.shape, "\n", nis_array2)
-                assert nis_array2.shape == (nGatedAisMeasurements, nRadarMeasurements)
+                assert nis_array2.shape == (np.sum(nGatedAisMeasurements), nRadarMeasurements)
 
                 gated_nis_array2 = nis_array2 <= self.eta2
                 # print("gated_nis_array2", gated_nis_array2.shape, "\n", np.asarray(gated_nis_array2, dtype=np.int))
-                assert gated_nis_array2.shape == (nGatedAisMeasurements, nRadarMeasurements)
+                assert gated_nis_array2.shape == (np.sum(nGatedAisMeasurements), nRadarMeasurements)
 
                 gated_radar_indices = np.nonzero(gated_nis_array2)
                 assert len(gated_radar_indices[0]) == len(gated_radar_indices[1])
                 nGatedRadarMeasurements = len(gated_radar_indices[0])
                 print("nGatedRadarMeasurements", nGatedRadarMeasurements)
-                print("AIS indices", gated_radar_indices[
-                      0], "are connected with radar indices", gated_radar_indices[1], "respectively")
 
-                nllr2_list = kalman.nllr(self.lambda_ex, self.default_P_d, S_list2, nis_array2[gated_radar_indices])
-                print("nllr2_list", nllr2_list)
-                assert nllr2_list.ndim == 1
-                assert nllr2_list.size == nGatedRadarMeasurements
+                for nodeIndex in range(nNodes):
+                    nodeAisIndices = np.where(gated_ais_indices[0]==nodeIndex)[0]
+                    if len(nodeAisIndices) == 0:
+                        continue
+                    print("nodeAisIndices",nodeAisIndices)
+                    nodeGatedAisIndices = gated_ais_indices[1][nodeAisIndices]
+                    print("nodeGatedAisIndices",nodeGatedAisIndices)
 
-                x_hat2 = (x_bar2[gated_radar_indices[0]] +
-                          np.matmul(K_list2[gated_radar_indices[0]],
-                                    z_tilde_array2[gated_radar_indices].T)[0].T)
-                print("x_hat2", x_hat2.shape, "\n", x_hat2)
-                assert x_hat2.shape == (nGatedRadarMeasurements, state_dim)
+                    print("gated_radar_indices",gated_radar_indices)
 
-                P_hat2 = P_hat_list2[gated_radar_indices[0]]
-                # print("P_hat2", P_hat2.shape, "\n", P_hat2)
-                assert P_hat2.shape == (x_hat2.shape[0], state_dim, state_dim)
+                    if nGatedRadarMeasurements > 0:
+                        print("AIS indices", gated_radar_indices[
+                            0], "are connected with radar indices", gated_radar_indices[1], "respectively")
 
-                if nGatedRadarMeasurements > 0:
-                    print("gated_ais_indices", gated_ais_indices)
-                    fused_x_hat_list[gated_ais_indices[0]] = x_hat2
-                    fused_P_hat_list[gated_ais_indices[0]] = P_hat2
-                    fused_radar_indices_list[gated_ais_indices[0]] = gated_radar_indices[1]
-                    fused_nllr_list[gated_ais_indices[0]] = nllr2_list
-                    fused_mmsi_list[gated_ais_indices[0]] = mmsi_array[gated_radar_indices[0]]
-                else:
-                    raise NotImplementedError
-                    assert False, "Manually stopped"
-                    x_hat2 = x_bar2
-                    P_hat2 = P_hat_list2[0]
-                    nllr12 = nllr1_list[i]
-                    log.debug("Pure AIS node " +
-                              np.array_str(x_hat2, precision=1) + " " +
-                              '{: .2f} '.format(nllr12) +
-                              'MMSI: {:}'.format(ais_measurement.mmsi))
-                    x_hat_list.append(x_hat2)
-                    P_hat_list.append(P_hat2)
-                    radar_indices_list.append(None)
-                    nllr_list.append(nllr12)
-                    mmsi_list.append(ais_measurement.mmsi)
+                        nllr2_list = kalman.nllr(self.lambda_ex, self.default_P_d, S_list2, nis_array2[gated_radar_indices])
+                        print("nllr2_list", nllr2_list)
+                        assert nllr2_list.ndim == 1
+                        assert nllr2_list.size == nGatedRadarMeasurements
+
+                        x_hat2 = (x_bar2[gated_radar_indices[0]] +
+                                  np.matmul(K_list2[gated_radar_indices[0]],
+                                            z_tilde_array2[gated_radar_indices].T)[0].T)
+                        print("x_hat2", x_hat2.shape, "\n", x_hat2)
+                        assert x_hat2.shape == (nGatedRadarMeasurements, state_dim)
+
+                        P_hat2 = P_hat_list2[gated_radar_indices[0]]
+                        # print("P_hat2", P_hat2.shape, "\n", P_hat2)
+                        assert P_hat2.shape == (x_hat2.shape[0], state_dim, state_dim)
+
+                        print("gated_ais_indices[0]", gated_ais_indices[0])
+                        for nodeIndex in gated_ais_indices[0]:
+                            fused_x_hat_list[nodeIndex] = x_hat2
+                            fused_P_hat_list[nodeIndex] = P_hat2
+                            fused_radar_indices_list[nodeIndex] = gated_radar_indices[1]
+                            fused_nllr_list[nodeIndex] = nllr2_list
+                            fused_mmsi_list[nodeIndex] = mmsi_array[gated_radar_indices[0]]
+                    else:
+                        print("No radar measurement inside AIS gates. Creating pure AIS node")
+                        # log.debug("Pure AIS node " +
+                        #           np.array_str(x_hat2, precision=1) + " " +
+                        #           '{: .2f} '.format(nllr12) +
+                        #           'MMSI: {:}'.format(ais_measurement.mmsi))
+                        for nodeIndex, aisIndex in zip(gated_ais_indices[0], gated_ais_indices[1]):
+                            x_hat2 = x_bar2
+                            P_hat2 = P_bar2
+                            fused_x_hat_list[nodeIndex] = x_hat2
+                            fused_P_hat_list[nodeIndex] = P_hat2
+                            fused_radar_indices_list[nodeIndex] = None
+                            fused_nllr_list[nodeIndex] = nllr1_list
+                            fused_mmsi_list[nodeIndex] = mmsi_array[aisIndex]
 
         print("fused_x_hat_list", fused_x_hat_list)
         print("fused_P_hat_list", fused_P_hat_list)
