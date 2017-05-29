@@ -3,36 +3,43 @@ A module with operations useful for Kalman filtering.
 """
 import numpy as np
 
+
 def nllr_ais(S_list, nis):
     result = (0.5 * nis + np.log(np.sqrt(np.linalg.det(2 * np.pi * S_list))))
     assert result.size == nis.size
     assert all(np.isfinite(result)), str(result)
     return result
 
+
 def nllr(lambda_ex, P_d, S_list, nis):
+    print("S_list", S_list.shape, "nis", nis.shape, nis)
     # assert S_list.shape[0] ==  nis.size, str(S_list.shape) + str(nis.size) + str(nis.shape)
     if lambda_ex == 0:
-        print("RuntimeError('lambda_ex' can not be zero.)")
+        log.warning("'lambda_ex' can not be zero.")
         lambda_ex += 1e-20
     result = (0.5 * nis + np.log((lambda_ex * np.sqrt(np.linalg.det(2 * np.pi * S_list))) / P_d))
     assert result.size == nis.size
     assert all(np.isfinite(result)), str(result)
     return result
 
+
 def normalizedInnovationSquared(z_tilde_list, S_inv_list):
     return np.sum(np.matmul(z_tilde_list, S_inv_list) *
                   z_tilde_list,
                   axis=2)
 
+
 def nis_single(z_tilde, S):
-    nis =  z_tilde.dot(np.linalg.inv(S).dot(z_tilde.T))
+    nis = z_tilde.dot(np.linalg.inv(S).dot(z_tilde.T))
     return nis
+
 
 def z_tilde(z_list, z_hat_list, nNodes=1, measDim=2):
     z_tensor = np.array([z_list, ] * nNodes)
     z_hat_tensor = z_hat_list.reshape(nNodes, 1, measDim)
     z_tilde_list = z_tensor - z_hat_tensor
     return z_tilde_list
+
 
 def numpyFilter(x_bar, K, z_tilde):
     x_bar = x_bar.reshape(1, x_bar.shape[0])
@@ -45,6 +52,7 @@ def numpyFilter(x_bar, K, z_tilde):
     assert x_hat.shape[1] == x_bar.shape[1], str(x_hat.shape) + str(x_bar.shape)
     return x_hat
 
+
 def predict(A, Q, x_0_list, P_0_list):
     assert A.ndim == 2
     assert Q.ndim == 2
@@ -56,18 +64,21 @@ def predict(A, Q, x_0_list, P_0_list):
     assert P_bar_list.shape == P_0_list.shape, "P_bar ERROR"
     return x_bar_list, P_bar_list
 
+
 def predict_single(A, Q, x_hat, P_hat):
     x_bar = A.dot(x_hat)
     P_bar = A.dot(P_hat).dot(A.T) + Q
     return x_bar, P_bar
 
+
 def filter_single(z, x_bar, P_bar, H, R):
     y_tilde = z - H.dot(x_bar)
-    S = H.dot(P_bar).dot(H.T)+R
+    S = H.dot(P_bar).dot(H.T) + R
     K = P_bar.dot(H.T).dot(np.linalg.inv(S))
     x_hat = x_bar + K.dot(y_tilde)
     P_hat = P_bar - K.dot(H).dot(P_bar)
     return x_hat, P_hat, S, y_tilde
+
 
 def precalc(C, R, x_bar_list, P_bar_list):
     assert C.ndim == 2
@@ -89,6 +100,7 @@ def precalc(C, R, x_bar_list, P_bar_list):
     assert P_hat_list.shape == P_bar_list.shape, "P_hat ERROR"
 
     return z_hat_list, S_list, S_inv_list, K_list, P_hat_list
+
 
 class KalmanFilter():
     """
