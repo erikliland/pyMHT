@@ -149,7 +149,7 @@ class SimTargetPolar(SimTarget):
         mmsiString = 'MMSI: ' + str(self.mmsi) if self.mmsi is not None else ""
         return ('Time: ' + timeString + " " +
                 'Pos: ({0: 7.1f},{1: 7.1f})'.format(self.state[0], self.state[1]) + " " +
-                'Hdg: {0: 5.1f}{1:+3.1f} deg'.format(self.state[2], self.headingChangeMean) + " " +
+                'Hdg: {0:5.1f}{1:+3.1f} deg'.format(self.state[2], self.headingChangeMean) + " " +
                 'Speed: {0:4.1f}m/s ({1:4.1f}knt)'.format(self.speedMS(), self.speedKnots()) + " " +
                 'Pd: {:3.0f}%'.format(self.P_d * 100.) + " " +
                 mmsiString)
