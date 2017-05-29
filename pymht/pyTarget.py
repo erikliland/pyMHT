@@ -9,7 +9,9 @@ import matplotlib.pyplot as plt
 import xml.etree.ElementTree as ET
 from pymht.utils.xmlDefinitions import *
 
+
 class Target():
+
     def __init__(self, time, scanNumber, x_0, P_0, ID=None, S_inv=None, **kwargs):
         assert (scanNumber is None) or (scanNumber == int(scanNumber))
         assert x_0.ndim == 1
@@ -29,7 +31,7 @@ class Target():
         self.cumulativeNLLR = copy.copy(kwargs.get("cumulativeNLLR", 0))
         self.trackHypotheses = None
         self.mmsi = kwargs.get('mmsi')
-        self.status = kwargs.get('status',activeTag)
+        self.status = kwargs.get('status', activeTag)
         # self.score = self.cumulativeNLLR / self.rootHeight()
         assert self.P_d >= 0
         assert self.P_d <= 1
@@ -71,7 +73,7 @@ class Target():
 
         nllrStr = " \tcNLLR:" + '{: 06.4f}'.format(self.cumulativeNLLR)
 
-        if False:#self.trackHypotheses is None and self.rootHeight()>0:
+        if False:  # self.trackHypotheses is None and self.rootHeight()>0:
             scoreStr = " \tScore:" + '{: 06.4f}'.format(self.getScore())
         else:
             scoreStr = ""
@@ -122,10 +124,10 @@ class Target():
         return self.cumulativeNLLR - self.getRoot().cumulativeNLLR
 
     def getXmlStateStrings(self, precision=2):
-        return (str(round(self.x_0[0],precision)),
-                str(round(self.x_0[1],precision)),
-                str(round(self.x_0[2],precision)),
-                str(round(self.x_0[3],precision))
+        return (str(round(self.x_0[0], precision)),
+                str(round(self.x_0[1], precision)),
+                str(round(self.x_0[2], precision)),
+                str(round(self.x_0[3], precision))
                 )
 
     def getPosition(self):
@@ -153,11 +155,11 @@ class Target():
 
     def height(self, count=1):
         return (count if self.parent is None
-                else self.parent.height(count+1))
+                else self.parent.height(count + 1))
 
     def rootHeight(self, count=0):
         return (count if (self.parent is None or self.isRoot)
-                else self.parent.rootHeight(count+1))
+                else self.parent.rootHeight(count + 1))
 
     def getRoot(self):
         if self.isRoot:
@@ -199,7 +201,8 @@ class Target():
         newNodes = []
         usedMeasurementIndices = set()
         for measurementIndex, insideGate in enumerate(gatedMeasurements):
-            if not insideGate: continue
+            if not insideGate:
+                continue
             nllr = kalman.nllr(lambda_ex, self.P_d, S, nis[measurementIndex])[0]
             x_hat = kalman.numpyFilter(
                 x_bar, K.reshape(4, 2), z_tilde[measurementIndex].reshape(1, 2)).reshape(4, )
@@ -253,7 +256,8 @@ class Target():
                 {(scanNumber, measurementIndex + 1)}
             )
 
-        if fusedAisData is None: return
+        if fusedAisData is None:
+            return
         (fusedStates,
          fusedCovariance,
          fusedMeasurementIndices,
@@ -261,6 +265,7 @@ class Target():
          fusedMMSI) = fusedAisData
         historicalMmsi = self._getHistoricalMmsi()
         acceptedMMSI = []
+        print("len(fusedMeasurementIndices)", len(fusedMeasurementIndices))
         for i in range(len(fusedMeasurementIndices)):
             if (historicalMmsi is None) or (fusedMMSI[i] == historicalMmsi):
                 measurementNumber = fusedMeasurementIndices[i] + 1 if fusedMeasurementIndices[i] is not None else None
@@ -269,16 +274,16 @@ class Target():
                 assert np.isfinite(fusedNllr[i])
                 self.trackHypotheses.append(
                     Target(scanTime,
-                            scanNumber,
-                            fusedStates[i],
-                            fusedCovariance[i],
-                            self.ID,
-                            measurementNumber=measurementNumber,
-                            measurement=measurement,
-                            cumulativeNLLR=self.cumulativeNLLR + fusedNllr[i],
-                            mmsi=fusedMMSI[i],
-                            P_d=self.P_d,
-                            parent=self)
+                           scanNumber,
+                           fusedStates[i],
+                           fusedCovariance[i],
+                           self.ID,
+                           measurementNumber=measurementNumber,
+                           measurement=measurement,
+                           cumulativeNLLR=self.cumulativeNLLR + fusedNllr[i],
+                           mmsi=fusedMMSI[i],
+                           P_d=self.P_d,
+                           parent=self)
                 )
                 acceptedMMSI.append(fusedMMSI[i])
 
@@ -321,8 +326,8 @@ class Target():
                       parent=self)
 
     def _pruneAllHypothesisExceptThis(self, keep, backtrack=False):
-        keepIndex= self.trackHypotheses.index(keep)
-        indices = np.delete(np.arange(len(self.trackHypotheses)),[keepIndex])
+        keepIndex = self.trackHypotheses.index(keep)
+        indices = np.delete(np.arange(len(self.trackHypotheses)), [keepIndex])
         self.trackHypotheses = np.delete(self.trackHypotheses, indices).tolist()
         assert len(self.trackHypotheses) == 1, "It should have been one node left."
 
@@ -358,7 +363,7 @@ class Target():
         # print("distArray",distArray)
         gatedDistArray = distArray < threshold
         # print("gatedDistArray",gatedDistArray)
-        tempFuseIndices = np.where(gatedDistArray)[0] +1
+        tempFuseIndices = np.where(gatedDistArray)[0] + 1
         if tempFuseIndices.size == 0:
             return
         fuseIndices = []
@@ -403,7 +408,6 @@ class Target():
         # Add new node
         # print("Replacing 0-node")
         self.trackHypotheses[0] = newNode
-
 
     def getMeasurementSet(self, root=True):
         subSet = set()
@@ -586,8 +590,8 @@ class Target():
                 measurements[i] = np.ma.masked
         assert measurements.shape[1] == 2, str(measurements.shape)
         if depth < 2:
-            pos =  measurements.filled(np.nan)
-            vel = np.empty_like(pos)*np.nan
+            pos = measurements.filled(np.nan)
+            vel = np.empty_like(pos) * np.nan
             return pos, vel, False
         kf = KalmanFilter(transition_matrices=model.Phi(radarPeriod),
                           observation_matrices=model.C_RADAR,
@@ -606,14 +610,14 @@ class Target():
         if kwargs.get('markInitial', False) and stepsBack == float('inf'):
             self.getInitial().markInitial(**kwargs)
         if kwargs.get('markID', True):
-            self.getInitial().markID(offset=20,**kwargs)
+            self.getInitial().markID(offset=20, **kwargs)
         if kwargs.get('markRoot', False) and root is not None:
             root.markRoot()
         if kwargs.get('markEnd', True):
             self.markEnd(**kwargs)
-        if kwargs.get('smooth', False) and self.getInitial().depth()>1:
+        if kwargs.get('smooth', False) and self.getInitial().depth() > 1:
             radarPeriod = kwargs.get('radarPeriod', self._estimateRadarPeriod())
-            track,_, smoothingGood = self.getSmoothTrack(radarPeriod)
+            track, _, smoothingGood = self.getSmoothTrack(radarPeriod)
             linestyle = 'dashed'
             if not smoothingGood:
                 return
@@ -677,7 +681,7 @@ class Target():
                  markerfacecolor='black',
                  markeredgecolor='black')
 
-    def markID(self,**kwargs):
+    def markID(self, **kwargs):
         index = self.ID
         if (index is not None):
             ax = plt.subplot(111)
@@ -708,11 +712,11 @@ class Target():
                  "H",
                  markerfacecolor='None',
                  markeredgecolor='black')
-        if kwargs.get('terminated',False):
+        if kwargs.get('terminated', False):
             plt.plot(self.x_0[0],
                      self.x_0[1],
                      "*",
-                     markeredgecolor = 'red')
+                     markeredgecolor='red')
 
     def recDownPlotMeasurements(self, plottedMeasurements, **kwargs):
         if self.parent is not None:
@@ -745,7 +749,7 @@ class Target():
         if mmsi is not None:
             trackElement.attrib[mmsiTag] = str(mmsi)
         trackElement.attrib[idTag] = str(self.ID)
-        for k,v in kwargs.items():
+        for k, v in kwargs.items():
             trackElement.attrib[str(k)] = str(v)
 
         unSmoothedNodes = self.backtrackNodes()
@@ -757,7 +761,6 @@ class Target():
 
         smoothedStateElement = ET.SubElement(trackElement,
                                              smoothedstatesTag)
-
 
         for node, sPos, sVel in zip(unSmoothedNodes, smoothedPositions, smoothedVelocities):
             stateElement = ET.SubElement(unSmoothedStates,
@@ -796,13 +799,13 @@ class Target():
                     sStateElement.attrib[stateTag] = node.status
 
     def _storeNodeSparse(self, simulationElement, **kwargs):
-        trackElement = ET.SubElement(simulationElement,trackTag)
-        unSmoothedStates = ET.SubElement(trackElement,statesTag)
+        trackElement = ET.SubElement(simulationElement, trackTag)
+        unSmoothedStates = ET.SubElement(trackElement, statesTag)
         mmsi = self._getHistoricalMmsi()
         if mmsi is not None:
             trackElement.attrib[mmsiTag] = str(mmsi)
         trackElement.attrib[idTag] = str(self.ID)
-        for k,v in kwargs.items():
+        for k, v in kwargs.items():
             trackElement.attrib[str(k)] = str(v)
 
         unSmoothedNodes = self.backtrackNodes()
