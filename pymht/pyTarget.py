@@ -263,9 +263,10 @@ class Target():
          fusedMeasurementIndices,
          fusedNllr,
          fusedMMSI) = fusedAisData
+        if any([e is None for e in fusedAisData]):
+            return
         historicalMmsi = self._getHistoricalMmsi()
         acceptedMMSI = []
-        print("len(fusedMeasurementIndices)", len(fusedMeasurementIndices))
         for i in range(len(fusedMeasurementIndices)):
             if (historicalMmsi is None) or (fusedMMSI[i] == historicalMmsi):
                 measurementNumber = fusedMeasurementIndices[i] + 1 if fusedMeasurementIndices[i] is not None else None
