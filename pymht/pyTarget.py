@@ -696,7 +696,7 @@ class Target():
             ax.text(position[0],
                     position[1],
                     "T" + str(index),
-                    fontsize=8,
+                    fontsize=10,
                     horizontalalignment=horizontalalignment,
                     verticalalignment=verticalalignment)
 
