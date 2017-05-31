@@ -12,13 +12,12 @@ def nllr_ais(S_list, nis):
 
 
 def nllr(lambda_ex, P_d, S_list, nis):
-    print("S_list", S_list.shape, "nis", nis.shape, nis)
     # assert S_list.shape[0] ==  nis.size, str(S_list.shape) + str(nis.size) + str(nis.shape)
     if lambda_ex == 0:
         log.warning("'lambda_ex' can not be zero.")
         lambda_ex += 1e-20
     result = (0.5 * nis + np.log((lambda_ex * np.sqrt(np.linalg.det(2 * np.pi * S_list))) / P_d))
-    assert result.size == nis.size
+    assert result.size == nis.size, str(result.size)+'/'+str(nis.size)
     assert all(np.isfinite(result)), str(result)
     return result
 

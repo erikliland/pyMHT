@@ -59,6 +59,8 @@ correctInitialTargetsTag = "correctTargets"
 falseTargetsTag = "falseTargets"
 inverseResidualCovarianceTag = "S_inv"
 terminatedTag = "terminated"
+nScansTag = "nScans"
+radarPeriodTag = "radarPeriod"
 
 totalTimeTag = "Total"
 initTimeTag = "Init"

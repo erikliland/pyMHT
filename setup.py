@@ -3,6 +3,10 @@ Setup script for pyMHT by Erik Liland 2017
 """
 from setuptools import find_packages
 import os
+import sys
+
+if sys.version_info.major < 3:
+    sys.exit('Sorry, Python 2 is not supported')
 
 if ('USE_CYTHON' in os.environ) and (int(os.environ['USE_CYTHON']) == 1):
     print("Using Cython")
