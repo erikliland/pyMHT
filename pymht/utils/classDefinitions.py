@@ -4,9 +4,10 @@ import datetime
 import matplotlib.pyplot as plt
 import logging
 import copy
+import collections
 import xml.etree.ElementTree as ET
-from pymht.utils.xmlDefinitions import *
-from pymht.models import pv, polar
+from .xmlDefinitions import *
+from ..models import pv, polar, ais
 log = logging.getLogger(__name__)
 
 
@@ -403,6 +404,13 @@ class AIS_message:
     def plot(self, **kwargs):
         Position(self.state[0:2]).plot(mmsi=self.mmsi, original=True, **kwargs)
 
+    def predict(self, dT):
+        Phi = ais.Phi(dT)
+        Q = pv.Q(dT)
+        state = Phi.dot(self.state)
+        covariance = Phi.dot(pv.P0).dot(Phi.T) + Q
+        return state, covariance
+
 class AIS_prediction:
     def __init__(self, state, covariance, mmsi):
         assert state.shape[0] == covariance.shape[0] == covariance.shape[1]
@@ -452,10 +460,10 @@ class AisMessagesList:
         if self._nextAisMeasurements is not None:
             if all((m.time <= scanTime) for m in self._nextAisMeasurements):
                 self._lastExtractedTime = scanTime
-                res = copy.copy(self._nextAisMeasurements)
+                res = AisMessageList(copy.copy(self._nextAisMeasurements))
                 self._nextAisMeasurements = next(self._iterator, None)
                 return res
-        return None
+        return AisMessageList()
 
     def predictAisMeasurements(self,scanTime, aisMeasurements):
         import pymht.models.pv as model
@@ -514,28 +522,33 @@ class MeasurementList:
     def getMeasurements(self):
         return self.measurements
 
-class AisMessageList(MeasurementList):
-    def __init__(self, time, predictions=None):
-        MeasurementList.__init__(self, time, predictions)
-        self.aisMessages = []
+class AisMessageList(list):
+    def __init__(self, *args):
+        list.__init__(self, *args)
+        assert all([type(m) is AIS_message for m in self])
+        mmsiList = [m.mmsi for m in self]
+        deleteIndices = []
+        duplicateMMSI = [item for item, count in collections.Counter(mmsiList).items() if count > 1]
+        for mmsi in duplicateMMSI:
+            indices = [(i,m.time) for i,m in enumerate(self) if m.mmsi == mmsi]
+            indices.sort(key=lambda tup: tup[1])
+            assert len(indices) > 1
+            for tup in indices[:-1]:
+                deleteIndices.append(tup[0])
+        deleteIndices.sort(reverse=True)
+        for i in deleteIndices:
+            del self[i]
 
-    def __str__(self):
-        if self.time == int(self.time):
-            timeFormat = "%H:%M:%S"
-        else:
-            timeFormat = "%H:%M:%S.%f"
-        timeString = datetime.datetime.fromtimestamp(self.time).strftime(timeFormat)
-        return ("Time: " + timeString +
-                "\tMeasurements:\t" + ", ".join(
-            [str(measurement) for measurement in self.measurements]))
+        mmsiList = [m.mmsi for m in self]
+        mmsiSet = set(mmsiList)
+        assert len(mmsiList) == len(mmsiSet)
+
+
+    def filterUnused(self, usedMmsiSet):
+        unusedAisMeasurements = [m for m in self
+                                 if m.mmsi not in usedMmsiSet]
+        return unusedAisMeasurements
 
     def plot(self, **kwargs):
-        if kwargs.get('original', True):
-            for message in self.aisMessages:
-                message.plot(**kwargs)
-        if kwargs.get('predicted', False):
-            for measurement in self.measurements:
-                Position(measurement.state[0:2]).plot(mmsi=measurement.mmsi, **kwargs)
-
-    def getMeasurements(self):
-        return np.array([m.state for m in self.measurements])
+        for measurement in self:
+            measurement.plot(**kwargs)
