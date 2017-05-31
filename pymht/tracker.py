@@ -23,6 +23,7 @@ from scipy.sparse.csgraph import connected_components
 from ortools.linear_solver import pywraplp
 from termcolor import cprint
 import xml.etree.ElementTree as ET
+from .utils.classDefinitions import AisMessageList
 import os
 npVersionTuple = np.__version__.split('.')
 assert (int(npVersionTuple[0]) >= 1 and int(npVersionTuple[1]) >= 12), str(np.__version__)
@@ -163,7 +164,7 @@ class Tracker():
         else:
             log.debug("Discarded an initial target: " + str(newTarget))
 
-    def addMeasurementList(self, scanList, aisList=None, **kwargs):
+    def addMeasurementList(self, scanList, aisList=AisMessageList(), **kwargs):
         if kwargs.get("checkIntegrity", False):
             self._checkTrackerIntegrity()
         self.tic.clear()
@@ -184,28 +185,33 @@ class Tracker():
             assert all([float(aisMessage.time) < scanTime for aisMessage in aisList])
             assert all([float(aisMessage.time) > scanTime - self.radarPeriod for aisMessage in aisList]),\
                 str(scanTime) + str([m.time for m in aisList])
+            mmsiList = [m.mmsi for m in aisList]
+            mmsiSet = set(mmsiList)
+            assert len(mmsiList) == len(mmsiSet), "Duplicate MMSI in aisList"
             log.debug(
                 'AIS times \t' + ','.join([aisMeasurement.getTimeString() for aisMeasurement in aisList]))
             log.debug("AIS list:\n" + '\n'.join([str(m) for m in aisList]))
+            nAisMeasurements = len(aisList)
+
         # 0 --Iterative procedure for tracking --
         self.tic['Total'] = time.time()
 
         # 1 --Grow each track tree--
         self.tic['Process'] = time.time()
-        nMeas = len(scanList.measurements)
-        measDim = self.C.shape[0]
+        nRadarMeas = len(scanList.measurements)
+        radarMeasDim = self.C.shape[0]
         scanNumber = len(self.__scanHistory__)
         nTargets = len(self.__targetList__)
         timeSinceLastScan = scanTime - self.__scanHistory__[-1].time
         if not self.fixedPeriod:
             self.radarPeriod = timeSinceLastScan
-        unused_measurement_indices = np.ones(nMeas, dtype=np.bool)
+        unusedRadarMeasurementIndices = np.ones(nRadarMeas, dtype=np.bool)
         self.leafNodeTimeList = []
         targetProcessTimes = np.zeros(nTargets)
         nTargetNodes = np.zeros(nTargets)
         for targetIndex, _ in enumerate(self.__targetList__):
-            self._growTarget(targetIndex, nTargetNodes, scanList, aisList, measDim,
-                             unused_measurement_indices, scanTime, scanNumber, targetProcessTimes)
+            self._growTarget(targetIndex, nTargetNodes, scanList, aisList, radarMeasDim,
+                             unusedRadarMeasurementIndices, scanTime, scanNumber, targetProcessTimes)
         self.toc['Process'] = time.time() - self.tic['Process']
 
         if kwargs.get("printAssociation", False):
@@ -262,8 +268,14 @@ class Tracker():
 
         # 7 -- Initiate new tracks
         self.tic['Init'] = time.time()
-        unused_measurements = scanList.filterUnused(unused_measurement_indices)
-        new_initial_targets = self.initiator.processMeasurements(unused_measurements)
+        unusedRadarMeasurements = scanList.filterUnused(unusedRadarMeasurementIndices)
+        usedAisMmsi = [[a[1] for a in targetAssociations if a[0] == scanNumber and a[1]>=1e8]
+                       for targetAssociations in self.__associatedMeasurements__]
+        usedAisMmsi = [item for sublist in usedAisMmsi for item in sublist]
+        unusedAisMeasurements = aisList.filterUnused(set(usedAisMmsi))
+        if not kwargs.get('aisInitialization', False):
+            unusedAisMeasurements = []
+        new_initial_targets = self.initiator.processMeasurements(unusedRadarMeasurements, unusedAisMeasurements)
         for initial_target in new_initial_targets:
             log.info("\tNew target({}): ".format(
                 len(self.__targetList__) + 1) + str(initial_target))
@@ -288,7 +300,7 @@ class Tracker():
 
         if kwargs.get("printInfo", False):
             print("Added scan number:", len(self.__scanHistory__),
-                  " \tnMeas ", nMeas, sep="")
+                  " \tnRadarMeas ", nRadarMeas, sep="")
 
         if kwargs.get("printTime", False):
             self.printTimeLog(**kwargs)
