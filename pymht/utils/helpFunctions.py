@@ -75,7 +75,7 @@ def plotTrueTrack(ax,simList, **kwargs):
     for col in range(nTargets):
         ax.plot(stateArray[:, col, 0],
                 stateArray[:, col, 1],
-                marker='.',
+                '.',
                 alpha=0.7,
                 markeredgewidth=0.5,
                 color=next(colors) if colors is not None else None,
@@ -96,7 +96,7 @@ def plotTrueTrack(ax,simList, **kwargs):
             ax.text(position[0],
                     position[1],
                     "T" + str(col),
-                    fontsize=kwargs.get('fontsize',12),
+                    fontsize=kwargs.get('fontsize',10),
                     horizontalalignment=horizontalalignment,
                     verticalalignment=verticalalignment)
 
