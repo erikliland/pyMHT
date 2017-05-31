@@ -1,12 +1,14 @@
+import logging
+import time
 import numpy as np
-import pymht.models.pv as pv
-from pymht.pyTarget import Target
+from scipy.stats import chi2
+from ..models import pv, ais
+from ..pyTarget import Target
 from munkres import munkres  # https://github.com/jfrelinger/cython-munkres-wrapper
 # import pymunkres  # https://github.com/erikliland/munkres
 # import scipy.optimize.linear_sum_assignment
-from scipy.stats import chi2
-import logging
-import time
+
+np.set_printoptions(precision=1, suppress=True, linewidth=120)
 
 tracking_parameters = {
     'gate_probability': 0.99,
@@ -58,10 +60,12 @@ def _solve_global_nearest_neighbour(delta_matrix, gate_distance=np.Inf, **kwargs
 
         # Assignment
         preliminary_assignment_matrix = munkres(dMat.astype(np.double))
+        if DEBUG: print("preliminary preliminary_assignment_matrix\n",
+                        np.asarray(preliminary_assignment_matrix,dtype=np.int))
         preliminary_assignments = [(rowI, np.where(row)[0][0]) for rowI, row in
                                    enumerate(preliminary_assignment_matrix)]
-        if DEBUG: print("preliminary assignments ", preliminary_assignments)
-        if DEBUG: print("preliminary assignments\n", preliminary_assignment_matrix)
+        if DEBUG:
+            print("preliminary assignments ", preliminary_assignments)
 
         # Post-processing
         rowIdx = np.where(validRow)[0]
@@ -71,12 +75,14 @@ def _solve_global_nearest_neighbour(delta_matrix, gate_distance=np.Inf, **kwargs
             row = preliminary_assignment[0]
             col = preliminary_assignment[1]
             if (row >= nRows) or (col >= nCols):
-                break
+                continue
             rowI = rowIdx[row]
             colI = colIdx[col]
             if valid_matrix[rowI, colI]:
                 assignments.append((rowI, colI))
         assert all([delta_matrix[a[0], a[1]] <= gate_distance for a in assignments])
+        if DEBUG:
+            print("final assignments", assignments)
         return assignments
     except Exception as e:
         print("#" * 20, "CRASH DEBUG INFO", "#" * 20)
@@ -136,25 +142,35 @@ def _merge_similar_targets(initial_targets, threshold):
     return targets
 
 class PreliminaryTrack():
-    def __init__(self, state, covariance):
-        self.estimates = [state]
+    def __init__(self, state, covariance, mmsi = None):
+        self.state = state
         self.covariance = covariance
         self.n = 0
         self.m = 0
         self.predicted_state = None
         self.measurement_index = None
+        self.mmsi = mmsi
 
     def __str__(self):
-        return "({0:}|{1:})".format(self.m, self.n)
+        formatter = {'float_kind': lambda x: "{: 7.1f}".format(x) }
+        mmsiStr = " MMSI {:} ".format(self.mmsi) if self.mmsi is not None else ""
+        predStateStr = ("Pred state:" + np.array2string(self.predicted_state,
+                                                     precision=1,
+                                                     suppress_small=True,
+                                                     formatter=formatter)
+                        if self.predicted_state is not None else "")
+        return ("State: " + np.array2string(self.state, precision=1, suppress_small=True,formatter=formatter) +
+                " ({0:}|{1:}) ".format(self.m, self.n) +
+                predStateStr +
+                mmsiStr)
 
-    def __repr__(self):
-        return "Estimates: " + ",".join([np.array_str(e) for e in self.estimates]) + str(self)
+    __repr__ = __str__
 
     def get_speed(self):
-        return np.linalg.norm(self.estimates[-1][2:4])
+        return np.linalg.norm(self.state[2:4])
 
     def predict(self, F, Q):
-        self.predicted_state = F.dot(self.estimates[-1])
+        self.predicted_state = F.dot(self.state)
         self.covariance = F.dot(self.covariance).dot(F.T) + Q
 
     def mn_analysis(self, M, N):
@@ -171,6 +187,13 @@ class PreliminaryTrack():
         return_value = np.copy(self.predicted_state)
         self.predicted_state = None
         return return_value
+
+    def compareSimilarity(self, other):
+        deltaState = self.state - other.state
+        S = self.covariance + ais.R(False)
+        S_inv = np.linalg.inv(S)
+        NIS = deltaState.T.dot(S_inv).dot(deltaState)
+        return NIS
 
 class Measurement():
     def __init__(self, value, timestamp):
@@ -196,47 +219,74 @@ class Initiator():
         self.gamma = tracking_parameters['gamma']
         self.last_timestamp = None
         self.merge_threshold = mergeThreshold  # meter
-        log.info("Initiator ready")
+        log.info("Initiator ready ({0:}/{1:})".format(self.M, self.N))
         log.debug("Initiator gamma: " + str(self.gamma))
 
     def getPreliminaryTracksString(self):
         return " ".join([str(e) for e in self.preliminary_tracks])
 
-    def processMeasurements(self, measurement_list):
+    def processMeasurements(self, radar_measurement_list, ais_measurement_list=list()):
+        # print("radar_measurement_list",radar_measurement_list)
+        # print("ais_measurement_list",ais_measurement_list)
         tic = time.time()
-        log.info("processMeasurements " + str(measurement_list.measurements.shape[0]))
-        unused_indices, initial_targets = self._processPreliminaryTracks(measurement_list)
-        unused_indices = self._processInitiators(unused_indices, measurement_list)
-        self._spawnInitiators(unused_indices, measurement_list)
-        self.last_timestamp = measurement_list.time
+        log.info("processMeasurements " + str(radar_measurement_list.measurements.shape[0]))
+        unused_indices, initial_targets = self._processPreliminaryTracks(radar_measurement_list, ais_measurement_list)
+        unused_indices = self._processInitiators(unused_indices, radar_measurement_list)
+        self._spawnInitiators(unused_indices, radar_measurement_list)
+        self.last_timestamp = radar_measurement_list.time
         initial_targets = _merge_similar_targets(initial_targets, self.merge_threshold)
         log.info("new initial targets " + str(len(initial_targets)))
         toc = time.time() - tic
-        log.info("processMeasurements runtime: {:.1f}ms".format(toc * 1000))
+        log.debug("processMeasurements runtime: {:.1f}ms".format(toc * 1000))
         return initial_targets
 
-    def _processPreliminaryTracks(self, measurement_list):
+    def _processPreliminaryTracks(self, measurement_list, ais_measurement_list):
         newInitialTargets = []
-        measTime = measurement_list.time
+        radarMeasTime = measurement_list.time
         measurement_array = np.array(measurement_list.measurements, dtype=np.float32)
+
+        # Predict position
+        if self.last_timestamp is not None:
+            dt = radarMeasTime - self.last_timestamp
+            F = pv.Phi(dt)
+            Q = pv.Q(dt)
+            for track in self.preliminary_tracks:
+                track.predict(F, Q)
+        else:
+            assert len(self.preliminary_tracks) == 0, "Undefined situation"
+
+        existingMmsiList = [t.mmsi for t in self.preliminary_tracks if t.mmsi is not None]
+        existingMmsiSet = set(existingMmsiList)
+        assert len(existingMmsiList) == len(existingMmsiSet), "Duplicate MMSI in preliminaryTracks"
+        for measurement in ais_measurement_list:
+            if measurement.mmsi in existingMmsiSet:
+                continue
+            dT = radarMeasTime - measurement.time
+            state, covariance = measurement.predict(dT)
+            tempTrack = PreliminaryTrack(state, covariance, measurement.mmsi)
+            tempTrack.predicted_state = state
+            nisList = [p.compareSimilarity(tempTrack) for p in self.preliminary_tracks]
+            threshold = 1.0
+            if not any([s <= threshold for s in nisList]):
+                self.preliminary_tracks.append(tempTrack)
+            else:
+                print("Discarded new AIS preliminaryTrack because it was to similar",
+                      [e for e in nisList if e <= threshold], tempTrack)
+
         log.info("_processPreliminaryTracks " + str(len(self.preliminary_tracks)))
 
+        predicted_states = np.array([track.get_predicted_state_and_clear()
+                                     for track in self.preliminary_tracks],
+                                    ndmin=2, dtype=np.float32)
         # Check for something to work on
         n1 = len(self.preliminary_tracks)
         n2 = measurement_array.shape[0]
         n3 = measurement_array.size
-        if n1 == 0 or n2 == 0 or n3 == 0:
+        if n1 == 0:
+            return np.arange(n2).tolist(), newInitialTargets
+        if len(ais_measurement_list) == 0 and (n2 == 0 or n3 == 0):
             return np.arange(n2).tolist(), newInitialTargets
 
-        # Predict position
-        dt = measTime - self.last_timestamp
-        F = pv.Phi(dt)
-        Q = pv.Q(dt)
-        for track in self.preliminary_tracks:
-            track.predict(F, Q)
-        predicted_states = np.array([track.get_predicted_state_and_clear()
-                                     for track in self.preliminary_tracks],
-                                    ndmin=2, dtype=np.float32)
 
         # Calculate delta matrix
         delta_matrix = np.ones((n1, n2), dtype=np.float32) * np.Inf
@@ -264,7 +314,7 @@ class Initiator():
             delta_vector = measurement_array[meas_index] - self.C.dot(predicted_states[track_index])
             filtered_state = predicted_states[track_index] + K.dot(delta_vector)
             P_hat = P_bar - K.dot(self.C).dot(P_bar)
-            self.preliminary_tracks[track_index].estimates.append(filtered_state)
+            self.preliminary_tracks[track_index].state = filtered_state
             self.preliminary_tracks[track_index].covariance = P_hat
             self.preliminary_tracks[track_index].m += 1
             self.preliminary_tracks[track_index].measurement_index = meas_index
@@ -275,14 +325,15 @@ class Initiator():
                                     for track_index in range(len(self.preliminary_tracks))
                                     if track_index not in assigned_track_indices]
         for track_index in unassigned_track_indices:
-            self.preliminary_tracks[track_index].estimates.append(
-                predicted_states[track_index])
+            self.preliminary_tracks[track_index].state = predicted_states[track_index]
 
         # Increase all N
         for track in self.preliminary_tracks:
             track.n += 1
 
         log.debug("Preliminary tracks "+self.getPreliminaryTracksString())
+
+        #Evaluate destiny
         removeIndices = []
         for track_index, track in enumerate(self.preliminary_tracks):
             track_status = track.mn_analysis(self.M, self.N)
@@ -295,9 +346,9 @@ class Initiator():
                 removeIndices.append(track_index)
             elif track_status == CONFIRMED:
                 log.debug("Removing CONFIRMED track " + str(track_index))
-                new_target = Target(measTime,
+                new_target = Target(radarMeasTime,
                                     None,
-                                    np.array(track.estimates[-1]),
+                                    np.array(track.state),
                                     track.covariance,
                                     measurementNumber=track.measurement_index + 1,
                                     measurement=measurement_array[track.measurement_index])
@@ -306,16 +357,18 @@ class Initiator():
                 newInitialTargets.append(new_target)
                 removeIndices.append(track_index)
 
+        #Remove dead preliminaryTracks
         for i in reversed(removeIndices):
             self.preliminary_tracks.pop(i)
         if removeIndices:
             log.debug(self.getPreliminaryTracksString())
 
-        used_indices = [assignment[1] for assignment in assignments]
-        unused_indices = [index
+        #Return unused radar measurement indices
+        used_radar_indices = [assignment[1] for assignment in assignments]
+        unused_radar_indices = [index
                           for index in np.arange(n2)
-                          if index not in used_indices]
-        return unused_indices, newInitialTargets
+                          if index not in used_radar_indices]
+        return unused_radar_indices, newInitialTargets
 
     def _processInitiators(self, unused_indices, measurement_list):
         log.debug("_processInitiators " + str(len(self.initiators)))
@@ -338,7 +391,7 @@ class Initiator():
 
         dt = measTime - self.initiators[0].timestamp
         gate_distance = (self.v_max * dt)
-        log.info("Gate distance {0:.1f}".format(gate_distance))
+        log.debug("Gate distance {0:.1f}".format(gate_distance))
 
         assignments = _solve_global_nearest_neighbour(distance_matrix, gate_distance)
         assigned_local_indices = [assignment[1] for assignment in assignments]
@@ -350,7 +403,7 @@ class Initiator():
         return unused_indices
 
     def _spawnInitiators(self, unused_indices, measurement_list):
-        log.debug("_spawnInitiators " + str(len(unused_indices)))
+        log.info("_spawnInitiators " + str(len(unused_indices)))
         time = measurement_list.time
         measurement_array = measurement_list.measurements
         self.initiators = [Measurement(measurement_array[index], time)
@@ -358,7 +411,6 @@ class Initiator():
 
     def __spawn_preliminary_tracks(self, unusedMeasurementArray, assignments, measTime):
         log.info("__spawn_preliminary_tracks " + str(len(assignments)))
-
         for initiator_index, measurement_index in assignments:
             delta_vector = unusedMeasurementArray[measurement_index] - self.initiators[initiator_index].value
             dt = measTime - self.initiators[initiator_index].timestamp
@@ -369,7 +421,15 @@ class Initiator():
                             "\n" + str(delta_vector))
             x0 = np.hstack((unusedMeasurementArray[measurement_index], velocity_vector))
             track = PreliminaryTrack(x0, pv.P0)
-            self.preliminary_tracks.append(track)
+            nisList = [p.compareSimilarity(track) for p in self.preliminary_tracks]
+            threshold = 1.0
+            if not any([s <= threshold for s in nisList]):
+                self.preliminary_tracks.append(track)
+            else:
+                log.debug("Discarded new preliminaryTrack because it was to similar " +
+                      str([e for e in nisList if e <= threshold]) +  str(track))
+                i = nisList.index(min(nisList))
+                print(self.preliminary_tracks[i])
 
 if __name__ == "__main__":
     import pymht.utils.simulator as sim
