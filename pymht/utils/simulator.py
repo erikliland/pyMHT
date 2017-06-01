@@ -1,11 +1,11 @@
-import numpy as np
-from pymht.utils import classDefinitions
-from pymht.utils.classDefinitions import SimTarget, SimTargetCartesian
-from pymht.utils.classDefinitions import MeasurementList, AIS_message, Position, AisMessagesList, SimList
 import time
 import copy
 import math
 import logging
+import numpy as np
+from .classDefinitions import ScanList
+from .classDefinitions import SimTarget, SimTargetCartesian
+from .classDefinitions import MeasurementList, AIS_message, Position, AisMessagesList, SimList
 
 log = logging.getLogger(__name__)
 
@@ -61,7 +61,7 @@ def simulateScans(simList, radarPeriod, H, R, lambda_phi=0,
     area = np.pi * np.power(rRange, 2)
     gClutter = lambda_phi * area
     lClutter = kwargs.get('lambda_local', 1)
-    scanList = []
+    scanList = ScanList()
     lastScan = None
     skippedFirst = False
     for targetList in simList:
