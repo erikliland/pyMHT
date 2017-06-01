@@ -273,7 +273,7 @@ class Tracker():
                        for targetAssociations in self.__associatedMeasurements__]
         usedAisMmsi = [item for sublist in usedAisMmsi for item in sublist]
         unusedAisMeasurements = aisList.filterUnused(set(usedAisMmsi))
-        if not kwargs.get('aisInitialization', False):
+        if not kwargs.get('aisInitialization', True):
             unusedAisMeasurements = []
         new_initial_targets = self.initiator.processMeasurements(unusedRadarMeasurements, unusedAisMeasurements)
         for initial_target in new_initial_targets:
