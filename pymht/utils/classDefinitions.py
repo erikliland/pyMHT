@@ -6,6 +6,7 @@ import logging
 import copy
 import collections
 import xml.etree.ElementTree as ET
+import matplotlib.pyplot as plt
 from .xmlDefinitions import *
 from ..models import pv, polar, ais
 log = logging.getLogger(__name__)
@@ -261,18 +262,18 @@ class Position:
     def y(self):
         return self.array[1]
 
-    def plot(self, measurementNumber=-1, scanNumber=None, mmsi=None, **kwargs):
+    def plot(self,ax=plt.gca(), measurementNumber=-1, scanNumber=None, mmsi=None, **kwargs):
         if mmsi is not None:
             marker = 'h' if kwargs.get('original',False) else 'D'
-            plt.plot(self.array[0], self.array[1],
+            ax.plot(self.array[0], self.array[1],
                      marker=marker, markerfacecolor='None',
                      markeredgewidth=kwargs.get('markeredgewidth',1),
                      markeredgecolor = kwargs.get('color','black'))
         elif measurementNumber > 0:
-            plt.plot(self.array[0], self.array[1], 'kx',
+            ax.plot(self.array[0], self.array[1], 'kx',
                      markeredgecolor=kwargs.get('color', 'black'))
         elif measurementNumber == 0:
-            plt.plot(self.array[0], self.array[1], fillstyle="none", marker="o",
+            ax.plot(self.array[0], self.array[1], fillstyle="none", marker="o",
                      markeredgecolor=kwargs.get('color', 'black'))
         else:
             raise ValueError("Not a valid measurement number")
@@ -280,7 +281,6 @@ class Position:
         if ((scanNumber is not None) and
                 (measurementNumber is not None) and
                 kwargs.get("labels", False)):
-            ax = plt.subplot(111)
             ax.text(self.array[0], self.array[1], str(
                 scanNumber) + ":" + str(measurementNumber), size=7, ha="left", va="top")
 
@@ -508,9 +508,9 @@ class MeasurementList:
 
     __repr__ = __str__
 
-    def plot(self, **kwargs):
+    def plot(self,ax = plt.gca(), **kwargs):
         for measurementIndex, measurement in enumerate(self.measurements):
-            Position(measurement).plot(measurementIndex + 1, **kwargs)
+            Position(measurement).plot(ax, measurementIndex + 1, **kwargs)
 
     def filterUnused(self, unused_measurement_indices):
         measurements = self.measurements[np.where(unused_measurement_indices)]
@@ -543,7 +543,6 @@ class AisMessageList(list):
         mmsiSet = set(mmsiList)
         assert len(mmsiList) == len(mmsiSet)
 
-
     def filterUnused(self, usedMmsiSet):
         unusedAisMeasurements = [m for m in self
                                  if m.mmsi not in usedMmsiSet]
@@ -552,3 +551,24 @@ class AisMessageList(list):
     def plot(self, **kwargs):
         for measurement in self:
             measurement.plot(**kwargs)
+
+class ScanList(list):
+    def __init__(self, *args):
+        list.__init__(self, *args)
+        assert all([type(m) is AIS_message for m in self])
+
+    def append(self, item):
+        if not isinstance(item, MeasurementList):
+            raise TypeError('item is not of type'+str(type(MeasurementList)))
+        super(ScanList, self).append(item)
+
+    def plot(self,ax=plt.gca(), **kwargs):
+        for m in self:
+            m.plot(ax,**kwargs)
+
+    def plotFast(self, ax=plt.gca(), **kwargs):
+        for measurementList in self:
+            measurementArray = np.array(measurementList.measurements, ndmin=2)
+            assert measurementArray.ndim ==2
+            assert measurementArray.shape[1] == 2
+            ax.plot(measurementArray[:,0],measurementArray[:,1], '.', color='black', **kwargs)
