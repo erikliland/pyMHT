@@ -401,8 +401,8 @@ class AIS_message:
             timeString = str(self.time)
         return timeString
 
-    def plot(self, **kwargs):
-        Position(self.state[0:2]).plot(mmsi=self.mmsi, original=True, **kwargs)
+    def plot(self, ax=plt.gca(), **kwargs):
+        Position(self.state[0:2]).plot(ax, mmsi=self.mmsi, original=True, **kwargs)
 
     def predict(self, dT):
         Phi = ais.Phi(dT)
@@ -548,9 +548,9 @@ class AisMessageList(list):
                                  if m.mmsi not in usedMmsiSet]
         return unusedAisMeasurements
 
-    def plot(self, **kwargs):
+    def plot(self, ax=plt.gca(), **kwargs):
         for measurement in self:
-            measurement.plot(**kwargs)
+            measurement.plot(ax, **kwargs)
 
 class ScanList(list):
     def __init__(self, *args):
