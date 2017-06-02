@@ -1292,97 +1292,97 @@ class Tracker():
         for node in self.__trackNodes__:
             node.plotValidationRegion(self.eta2, stepsBack)
 
-    def plotHypothesesTrack(self, **kwargs):
-        def recPlotHypothesesTrack(target, track=[], **kwargs):
+    def plotHypothesesTrack(self, ax=plt.gca(), **kwargs):
+        def recPlotHypothesesTrack(ax, target, track=[], **kwargs):
             newTrack = track[:] + [target.getPosition()]
             if target.trackHypotheses is None:
-                plt.plot([p.x() for p in newTrack],
+                ax.plot([p.x() for p in newTrack],
                          [p.y() for p in newTrack],
                          "--",
                          **kwargs)
             else:
                 for hyp in target.trackHypotheses:
-                    recPlotHypothesesTrack(hyp, newTrack, **kwargs)
+                    recPlotHypothesesTrack(ax, hyp, newTrack, **kwargs)
 
         colors = kwargs.get("colors", self._getColorCycle())
         for target in self.__targetList__:
-            recPlotHypothesesTrack(target, c=next(colors))
+            recPlotHypothesesTrack(ax, target, c=next(colors))
         if kwargs.get('markStates', False):
             defaults = {'dummy': True, 'real': True, 'ais': True,
                         'includeHistory': False, 'color': 'red'}
-            self.plotStatesFromRoot(**{**defaults, **kwargs})
+            self.plotStatesFromRoot(ax, **{**defaults, **kwargs})
 
-    def plotActiveTracks(self, **kwargs):
+    def plotActiveTracks(self, ax=plt.gca(), **kwargs):
         colors = kwargs.get("colors", self._getColorCycle())
         for i, track in enumerate(self.__trackNodes__):
-            track.plotTrack(root=self.__targetList__[i], c=next(
+            track.plotTrack(ax, root=self.__targetList__[i], c=next(
                 colors), period=self.radarPeriod, **kwargs)
         if kwargs.get('markStates', True):
             defaults = {'labels': False, 'dummy': True,
                         'real': True, 'ais': True, 'color': 'red'}
-            self.plotStatesFromTracks(**{**defaults, **kwargs})
+            self.plotStatesFromTracks(ax, **{**defaults, **kwargs})
 
-    def plotTerminatedTracks(self, **kwargs):
+    def plotTerminatedTracks(self, ax=plt.gca(), **kwargs):
         colors = kwargs.get("colors", self._getColorCycle())
         for track in self.__terminatedTargets__:
             defaults = {'c': next(colors), 'markInitial': True,
                         'markEnd': True, 'terminated': True}
-            track.plotTrack(**{**defaults, **kwargs})
+            track.plotTrack(ax, **{**defaults, **kwargs})
             if kwargs.get('markStates', False):
                 defaults = {'labels': False, 'dummy': True, 'real': True, 'ais': True}
-                track.plotStates(float('inf'), **{**defaults, **kwargs})
+                track.plotStates(ax, float('inf'), **{**defaults, **kwargs})
 
-    def plotMeasurementsFromTracks(self, stepsBack=float('inf'), **kwargs):
+    def plotMeasurementsFromTracks(self, ax=plt.gca(), stepsBack=float('inf'), **kwargs):
         for node in self.__trackNodes__:
-            node.plotMeasurement(stepsBack, **kwargs)
+            node.plotMeasurement(ax, stepsBack, **kwargs)
 
-    def plotStatesFromTracks(self, stepsBack=float('inf'), **kwargs):
+    def plotStatesFromTracks(self, ax=plt.gca(), stepsBack=float('inf'), **kwargs):
         for node in self.__trackNodes__:
-            node.plotStates(stepsBack, **kwargs)
+            node.plotStates(ax, stepsBack, **kwargs)
 
-    def plotMeasurementsFromRoot(self, **kwargs):
+    def plotMeasurementsFromRoot(self, ax=plt.gca(), **kwargs):
         if not (("real" in kwargs) or ("dummy" in kwargs) or ("ais" in kwargs)):
             return
         plottedMeasurements = set()
         for target in self.__targetList__:
             if kwargs.get("includeHistory", False):
-                target.getInitial().recDownPlotMeasurements(plottedMeasurements, **kwargs)
+                target.getInitial().recDownPlotMeasurements(plottedMeasurements, ax, **kwargs)
             else:
                 for hyp in target.trackHypotheses:
-                    hyp.recDownPlotMeasurements(plottedMeasurements, **kwargs)
+                    hyp.recDownPlotMeasurements(plottedMeasurements, ax, **kwargs)
 
-    def plotStatesFromRoot(self, **kwargs):
+    def plotStatesFromRoot(self, ax=plt.gca(), **kwargs):
         if not (("real" in kwargs) or ("dummy" in kwargs) or ("ais" in kwargs)):
             return
         for target in self.__targetList__:
             if kwargs.get("includeHistory", False):
-                target.getInitial().recDownPlotStates(**kwargs)
+                target.getInitial().recDownPlotStates(ax, **kwargs)
             elif target.trackHypotheses is not None:
                 for hyp in target.trackHypotheses:
-                    hyp.recDownPlotStates(**kwargs)
+                    hyp.recDownPlotStates(ax, **kwargs)
 
-    def plotScanIndex(self, index, **kwargs):
-        self.__scanHistory__[index].plot(**kwargs)
+    def plotScanIndex(self, index, ax=plt.gca(), **kwargs):
+        self.__scanHistory__[index].plot(ax, **kwargs)
 
-    def plotLastScan(self, **kwargs):
-        self.__scanHistory__[-1].plot(**kwargs)
+    def plotLastScan(self, ax=plt.gca(), **kwargs):
+        self.__scanHistory__[-1].plot(ax, **kwargs)
 
-    def plotLastAisUpdate(self, **kwargs):
+    def plotLastAisUpdate(self, ax=plt.gca(), **kwargs):
         if self.__aisHistory__[-1] is not None:
-            self.__aisHistory__[-1].plot(**kwargs)
+            self.__aisHistory__[-1].plot(ax, **kwargs)
 
-    def plotAllScans(self, stepsBack=None, **kwargs):
+    def plotAllScans(self, ax=plt.gca(), stepsBack=None, **kwargs):
         if stepsBack is not None:
             stepsBack = -(stepsBack + 1)
         for scan in self.__scanHistory__[:stepsBack:-1]:
-            scan.plot(**kwargs)
+            scan.plot(ax, **kwargs)
 
-    def plotAllAisUpdates(self, stepsBack=None, **kwargs):
+    def plotAllAisUpdates(self, ax=plt.gca(), stepsBack=None, **kwargs):
         if stepsBack is not None:
             stepsBack = -(stepsBack + 1)
         for update in self.__aisHistory__[:stepsBack:-1]:
             if update is not None:
-                update.plot(markeredgewidth=2, **kwargs)
+                update.plot(ax, markeredgewidth=2, **kwargs)
 
     def plotVelocityArrowForTrack(self, stepsBack=1):
         for track in self.__trackNodes__:
