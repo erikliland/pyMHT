@@ -607,15 +607,15 @@ class Target():
             str(smoothedVelocities.shape) + str(measurements.shape)
         return smoothedPositions, smoothedVelocities, True
 
-    def plotTrack(self, root=None, stepsBack=float('inf'), **kwargs):
+    def plotTrack(self,ax=plt.gca(), root=None, stepsBack=float('inf'), **kwargs):
         if kwargs.get('markInitial', False) and stepsBack == float('inf'):
-            self.getInitial().markInitial(**kwargs)
+            self.getInitial().markInitial(ax, **kwargs)
         if kwargs.get('markID', True):
-            self.getInitial().markID(offset=20, **kwargs)
+            self.getInitial().markID(ax, offset=20, **kwargs)
         if kwargs.get('markRoot', False) and root is not None:
-            root.markRoot()
+            root.markRoot(ax)
         if kwargs.get('markEnd', True):
-            self.markEnd(**kwargs)
+            self.markEnd(ax, **kwargs)
         if kwargs.get('smooth', False) and self.getInitial().depth() > 1:
             radarPeriod = kwargs.get('radarPeriod', self._estimateRadarPeriod())
             track, _, smoothingGood = self.getSmoothTrack(radarPeriod)
@@ -625,7 +625,7 @@ class Target():
         else:
             track = self.backtrackPosition(stepsBack)
             linestyle = 'solid'
-        plt.plot([p[0] for p in track],
+        ax.plot([p[0] for p in track],
                  [p[1] for p in track],
                  c=kwargs.get('c'),
                  linestyle=linestyle)
@@ -640,26 +640,28 @@ class Target():
         if (self.parent is not None) and (stepsBack > 0):
             self.parent.plotMeasurement(stepsBack - 1, **kwargs)
 
-    def plotStates(self, stepsBack=0, **kwargs):
+    def plotStates(self, ax=plt.gca(), stepsBack=0, **kwargs):
         if (self.mmsi is not None) and kwargs.get('ais', True):
-            Position(self.x_0).plot(self.measurementNumber,
+            Position(self.x_0).plot(ax,
+                                    self.measurementNumber,
                                     self.scanNumber,
                                     self.mmsi,
                                     **kwargs)
         elif (self.measurementNumber is not None) and (self.measurementNumber == 0) and kwargs.get("dummy", True):
-            Position(self.x_0).plot(self.measurementNumber,
+            Position(self.x_0).plot(ax,
+                                    self.measurementNumber,
                                     self.scanNumber,
                                     **kwargs)
         elif (self.measurementNumber is not None) and(self.measurementNumber > 0) and kwargs.get('real', True):
-            Position(self.x_0).plot(self.measurementNumber,
+            Position(self.x_0).plot(ax,
+                                    self.measurementNumber,
                                     self.scanNumber,
                                     **kwargs)
         if (self.parent is not None) and (stepsBack > 0):
-            self.parent.plotStates(stepsBack - 1, **kwargs)
+            self.parent.plotStates(ax, stepsBack - 1, **kwargs)
 
-    def plotVelocityArrow(self, stepsBack=1):
+    def plotVelocityArrow(self, ax=plt.gca(), stepsBack=1):
         if self.kalmanFilter.x_bar is not None:
-            ax = plt.subplot(111)
             deltaPos = self.kalmanFilter.x_bar[0:2] - self.kalmanFilter.x_hat[0:2]
             ax.arrow(self.kalmanFilter.x_hat[0],
                      self.kalmanFilter.x_hat[1],
@@ -673,19 +675,18 @@ class Target():
                      alpha=0.3,
                      linewidth=1)
         if (self.parent is not None) and (stepsBack > 0):
-            self.parent.plotVelocityArrow(stepsBack - 1)
+            self.parent.plotVelocityArrow(ax, stepsBack - 1)
 
-    def markInitial(self, **kwargs):
-        plt.plot(self.x_0[0],
+    def markInitial(self,ax=plt.gca(), **kwargs):
+        ax.plot(self.x_0[0],
                  self.x_0[1],
                  "*",
                  markerfacecolor='black',
                  markeredgecolor='black')
 
-    def markID(self, **kwargs):
+    def markID(self, ax=plt.gca(), **kwargs):
         index = self.ID
         if (index is not None):
-            ax = plt.subplot(111)
             normVelocity = (self.x_0[2:4] /
                             np.linalg.norm(self.x_0[2:4]))
             offsetScale = kwargs.get('offset', 0.0)
@@ -700,26 +701,26 @@ class Target():
                     horizontalalignment=horizontalalignment,
                     verticalalignment=verticalalignment)
 
-    def markRoot(self):
-        plt.plot(self.x_0[0],
+    def markRoot(self, ax=plt.gca()):
+        ax.plot(self.x_0[0],
                  self.x_0[1],
                  's',
                  markerfacecolor='None',
                  markeredgecolor='black')
 
-    def markEnd(self, **kwargs):
-        plt.plot(self.x_0[0],
+    def markEnd(self, ax=plt.gca(), **kwargs):
+        ax.plot(self.x_0[0],
                  self.x_0[1],
                  "H",
                  markerfacecolor='None',
                  markeredgecolor='black')
         if kwargs.get('terminated', False):
-            plt.plot(self.x_0[0],
+            ax.plot(self.x_0[0],
                      self.x_0[1],
                      "*",
                      markeredgecolor='red')
 
-    def recDownPlotMeasurements(self, plottedMeasurements, **kwargs):
+    def recDownPlotMeasurements(self, plottedMeasurements, ax=plt.gca(), **kwargs):
         if self.parent is not None:
             if self.measurementNumber == 0:
                 self.plotMeasurement(**kwargs)
@@ -727,18 +728,18 @@ class Target():
                 if kwargs.get('real', True):
                     measurementID = (self.scanNumber, self.measurementNumber)
                     if measurementID not in plottedMeasurements:
-                        self.plotMeasurement(**kwargs)
+                        self.plotMeasurement(ax, **kwargs)
                         plottedMeasurements.add(measurementID)
         if self.trackHypotheses is not None:
             for hyp in self.trackHypotheses:
-                hyp.recDownPlotMeasurements(plottedMeasurements, **kwargs)
+                hyp.recDownPlotMeasurements(plottedMeasurements, ax, **kwargs)
 
-    def recDownPlotStates(self, **kwargs):
+    def recDownPlotStates(self, ax=plt.gca(), **kwargs):
         if self.parent is not None:
-            self.plotStates(**kwargs)
+            self.plotStates(ax, **kwargs)
         if self.trackHypotheses is not None:
             for hyp in self.trackHypotheses:
-                hyp.recDownPlotStates(**kwargs)
+                hyp.recDownPlotStates(ax, **kwargs)
 
     def _storeNode(self, simulationElement, radarPeriod, **kwargs):
         trackElement = ET.SubElement(simulationElement,
