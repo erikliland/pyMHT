@@ -61,6 +61,7 @@ inverseResidualCovarianceTag = "S_inv"
 terminatedTag = "terminated"
 nScansTag = "nScans"
 radarPeriodTag = "radarPeriod"
+ssErrorTag = "ssError"
 
 totalTimeTag = "Total"
 initTimeTag = "Init"

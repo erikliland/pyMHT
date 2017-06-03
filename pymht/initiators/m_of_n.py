@@ -23,6 +23,7 @@ log = logging.getLogger(__name__)
 
 def _solve_global_nearest_neighbour(delta_matrix, gate_distance=np.Inf, **kwargs):
     try:
+        tic = time.time()
         DEBUG = kwargs.get('debug', False)
         # Copy and gating
         if DEBUG: print("delta matrix\n", delta_matrix)
@@ -83,6 +84,8 @@ def _solve_global_nearest_neighbour(delta_matrix, gate_distance=np.Inf, **kwargs
         assert all([delta_matrix[a[0], a[1]] <= gate_distance for a in assignments])
         if DEBUG:
             print("final assignments", assignments)
+        toc = time.time() - tic
+        log.debug("_solve_global_nearest_neighbour runtime: {:.1f}ms".format(toc * 1000))
         return assignments
     except Exception as e:
         print("#" * 20, "CRASH DEBUG INFO", "#" * 20)
@@ -97,7 +100,6 @@ def _solve_global_nearest_neighbour(delta_matrix, gate_distance=np.Inf, **kwargs
         print("colIdx", colIdx)
         print("assignments", assignments)
         print("#" * 20, "CRASH DEBUG INFO", "#" * 20)
-        import time
         time.sleep(0.1)
         raise e
 
@@ -124,6 +126,7 @@ def _merge_targets(targets):
                   )
 
 def _merge_similar_targets(initial_targets, threshold):
+    tic = time.time()
     if not initial_targets: return initial_targets
     targets = []
     used_targets = set()
@@ -139,6 +142,8 @@ def _merge_similar_targets(initial_targets, threshold):
                 used_targets.add(i)
             assert type(merged_target) == type(target)
             targets.append(merged_target)
+    toc = time.time() - tic
+    log.debug("_merge_similar_targets runtime: {:.1f}ms".format(toc * 1000))
     return targets
 
 class PreliminaryTrack():
@@ -226,8 +231,6 @@ class Initiator():
         return " ".join([str(e) for e in self.preliminary_tracks])
 
     def processMeasurements(self, radar_measurement_list, ais_measurement_list=list()):
-        # print("radar_measurement_list",radar_measurement_list)
-        # print("ais_measurement_list",ais_measurement_list)
         tic = time.time()
         log.info("processMeasurements " + str(radar_measurement_list.measurements.shape[0]))
         unused_indices, initial_targets = self._processPreliminaryTracks(radar_measurement_list, ais_measurement_list)
@@ -241,6 +244,7 @@ class Initiator():
         return initial_targets
 
     def _processPreliminaryTracks(self, measurement_list, ais_measurement_list):
+        tic = time.time()
         newInitialTargets = []
         radarMeasTime = measurement_list.time
         measurement_array = np.array(measurement_list.measurements, dtype=np.float32)
@@ -368,9 +372,13 @@ class Initiator():
         unused_radar_indices = [index
                           for index in np.arange(n2)
                           if index not in used_radar_indices]
+
+        toc = time.time() - tic
+        log.debug("_processPreliminaryTracks runtime: {:.1f}ms".format(toc * 1000))
         return unused_radar_indices, newInitialTargets
 
     def _processInitiators(self, unused_indices, measurement_list):
+        tic = time.time()
         log.debug("_processInitiators " + str(len(self.initiators)))
         measTime = measurement_list.time
         measurementArray = np.array(measurement_list.measurements, ndmin=2, dtype=np.float32)
@@ -379,7 +387,6 @@ class Initiator():
         if n1 == 0 or n2 == 0:
             return unused_indices
 
-
         #TODO: Improve runtime of this section. It takes about 97% of m/n runtime
         unusedMeasurementArray = measurementArray[unused_indices]
         initiatorArray = np.array([i.value for i in self.initiators], ndmin=2, dtype=np.float32)
@@ -387,7 +394,6 @@ class Initiator():
         for i in range(n1):
             deltaTensor[i] = unusedMeasurementArray - initiatorArray[i]
         distance_matrix = np.linalg.norm(deltaTensor, axis=2)
-
 
         dt = measTime - self.initiators[0].timestamp
         gate_distance = (self.v_max * dt)
@@ -399,18 +405,53 @@ class Initiator():
         unused_indices = [i for i in unused_indices if i not in used_indices]
         unused_indices.sort()
         assert len(unused_indices) == len(set(unused_indices))
+        toc = time.time() - tic
+        log.debug("_processInitiators runtime: {:.1f}ms".format(toc * 1000))
+        # tic1 = time.time()
         self.__spawn_preliminary_tracks(unusedMeasurementArray, assignments, measTime)
+        # log.debug("Test section runtime: {:.1f}ms".format((time.time() - tic1) * 1000))
         return unused_indices
 
     def _spawnInitiators(self, unused_indices, measurement_list):
+        tic = time.time()
         log.info("_spawnInitiators " + str(len(unused_indices)))
-        time = measurement_list.time
+        measurementTime = measurement_list.time
         measurement_array = measurement_list.measurements
-        self.initiators = [Measurement(measurement_array[index], time)
+        self.initiators = [Measurement(measurement_array[index], measurementTime)
                            for index in unused_indices]
+        toc = time.time() - tic
+        log.debug("_spawnInitiators runtime: {:.1f}ms".format(toc * 1000))
 
     def __spawn_preliminary_tracks(self, unusedMeasurementArray, assignments, measTime):
+        tic = time.time()
         log.info("__spawn_preliminary_tracks " + str(len(assignments)))
+        # initiator_index_vector = np.array([a[0] for a in assignments])
+        # assert initiator_index_vector.ndim == 1
+        # measurement_index_vector = np.array([a[1] for a in assignments])
+        # initiator_matrix = np.array([self.initiators[i].value for i in initiator_index_vector], ndmin=2)
+        # assert initiator_matrix.ndim == 2
+        # position_matrix = np.array(unusedMeasurementArray[measurement_index_vector], ndmin=2)
+        # delta_matrix = position_matrix - initiator_matrix
+        # assert delta_matrix.ndim == 2
+        # dt_vector = np.array([measTime - self.initiators[i].timestamp for i in initiator_index_vector])
+        # assert dt_vector.ndim == 1
+        # velocity_matrix = delta_matrix / dt_vector[:,None]
+        # assert velocity_matrix.shape == delta_matrix.shape
+        # speed_vector = np.linalg.norm(velocity_matrix, axis=1)
+        # assert speed_vector.ndim == 1
+        # assert speed_vector.size == velocity_matrix.shape[0]
+        # # too_fast_vector = speed_vector > self.v_max * 1.5
+        # # assert too_fast_vector.shape == speed_vector.shape
+        # x0_matrix = np.hstack((position_matrix, velocity_matrix))
+        # assert x0_matrix.ndim == 2
+        # assert x0_matrix.shape == (position_matrix.shape[0], position_matrix.shape[1]+velocity_matrix.shape[1])
+        # if self.preliminary_tracks:
+        #     preliminary_tracks_state_matrix = np.array([t.state for t in self.preliminary_tracks], ndmin=2)
+        #     assert preliminary_tracks_state_matrix.ndim == 2
+        #     assert preliminary_tracks_state_matrix.shape[1] == x0_matrix.shape[1]
+        #     x0_tensor = np.concatenate(x0_matrix)
+        #     delta_tensor = x0_matrix - preliminary_tracks_state_matrix
+
         for initiator_index, measurement_index in assignments:
             delta_vector = unusedMeasurementArray[measurement_index] - self.initiators[initiator_index].value
             dt = measTime - self.initiators[initiator_index].timestamp
@@ -426,10 +467,12 @@ class Initiator():
             if not any([s <= threshold for s in nisList]):
                 self.preliminary_tracks.append(track)
             else:
-                log.debug("Discarded new preliminaryTrack because it was to similar " +
-                      str([e for e in nisList if e <= threshold]) +  str(track))
-                i = nisList.index(min(nisList))
-                print(self.preliminary_tracks[i])
+                log.debug("Discarded new preliminaryTrack because it was to similar ")
+               #       str([e for e in nisList if e <= threshold]) +  str(track))
+                # i = nisList.index(min(nisList))
+                # log.debug(str(self.preliminary_tracks[i]))
+        toc = time.time() - tic
+        log.debug("__spawn_preliminary_tracks runtime: {:.1f}ms".format(toc * 1000))
 
 if __name__ == "__main__":
     import pymht.utils.simulator as sim
