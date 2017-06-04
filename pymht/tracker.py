@@ -6,6 +6,8 @@ Trondheim, Norway
 Spring 2017
 ========================================================================================
 """
+import matplotlib
+matplotlib.use('Agg')
 from pymht.utils.xmlDefinitions import *
 from pymht.pyTarget import Target
 import pymht.utils.kalman as kalman

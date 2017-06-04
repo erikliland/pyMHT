@@ -1,3 +1,5 @@
+import matplotlib
+matplotlib.use('Agg')
 from pymht.utils.classDefinitions import Position, Velocity
 import pymht.models.pv as model
 import pymht.utils.kalman as kalman
