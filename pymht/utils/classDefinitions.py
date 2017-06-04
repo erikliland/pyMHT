@@ -7,6 +7,7 @@ import copy
 import collections
 import xml.etree.ElementTree as ET
 import matplotlib.pyplot as plt
+from . import helpFunctions as hpf
 from .xmlDefinitions import *
 from ..models import pv, polar, ais
 log = logging.getLogger(__name__)
@@ -366,6 +367,45 @@ class SimList(list):
                     trackElement.attrib[prTag] = str(simTarget.P_r)
                 statesElement.attrib[sigmaqTag] = str(simTarget.sigma_Q)
                 trackElement.attrib[lengthTag] = str(sampleCounter)
+
+    def plot(self, ax=plt.gca(), **kwargs):
+        colors = kwargs.get("colors")
+        newArgs = copy.copy(kwargs)
+        if "colors" in newArgs:
+            del newArgs["colors"]
+
+        nScan = len(self)
+        nTargets = len(self[0])
+        stateArray = np.zeros((nScan, nTargets, 4))
+        for row, targetList in enumerate(self):
+            stateArray[row, :, :] = np.array([target.cartesianState() for target in targetList])
+        for col in range(nTargets):
+            ax.plot(stateArray[:, col, 0],
+                    stateArray[:, col, 1],
+                    '.',
+                    alpha=0.7,
+                    markeredgewidth=0.5,
+                    color=next(colors) if colors is not None else None,
+                    markevery=kwargs.get('markevery', 1))
+
+        for col, target in enumerate(self[0]):
+            if kwargs.get('markStart', True):
+                ax.plot(stateArray[0, col, 0], stateArray[0, col, 1], '.', color='black')
+            if kwargs.get('label', False):
+                velocity = target.cartesianVelocity()
+                normVelocity = (velocity /
+                                np.linalg.norm(velocity))
+                offsetScale = kwargs.get('offset', 0.0)
+                offset = offsetScale * np.array(normVelocity)
+                position = stateArray[0, col, 0:2] - offset
+                (horizontalalignment,
+                 verticalalignment) = hpf._getBestTextPosition(normVelocity)
+                ax.text(position[0],
+                        position[1],
+                        "T" + str(col),
+                        fontsize=kwargs.get('fontsize', 10),
+                        horizontalalignment=horizontalalignment,
+                        verticalalignment=verticalalignment)
 
 class AIS_message:
     def __init__(self, time, state, mmsi, highAccuracy=False):
