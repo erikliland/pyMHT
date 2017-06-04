@@ -383,8 +383,8 @@ class SimList(list):
             ax.plot(stateArray[:, col, 0],
                     stateArray[:, col, 1],
                     '.',
-                    alpha=0.7,
-                    markeredgewidth=0.5,
+                    alpha=kwargs.get('alpha',0.7),
+                    markeredgewidth=kwargs.get('markeredgewidth',0.5),
                     color=next(colors) if colors is not None else None,
                     markevery=kwargs.get('markevery', 1))
 
