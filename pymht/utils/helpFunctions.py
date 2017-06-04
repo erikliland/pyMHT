@@ -1,4 +1,5 @@
 from __future__ import print_function
+import matplotlib.pyplot as plt
 import numpy as np
 import logging
 
@@ -49,3 +50,45 @@ def printScanList(scanList):
         print("\tMeasurement ", index, ":\t", end='', sep='')
         measurement.print()
 
+
+def printHypothesesScore(targetList):
+    def recPrint(target, targetIndex):
+        if target.trackHypotheses is not None:
+            for hyp in target.trackHypotheses:
+                recPrint(hyp, targetIndex)
+
+    for targetIndex, target in enumerate(targetList):
+        print("\tTarget: ", targetIndex,
+              "\tInit", target.initial.position,
+              "\tPred", target.predictedPosition(),
+              "\tMeas", target.measurement, sep="")
+
+
+def backtrackMeasurementNumbers(selectedNodes, steps=None):
+    def recBacktrackNodeMeasurements(node, measurementBacktrack, stepsLeft=None):
+        if node.parent is not None:
+            if stepsLeft is None:
+                measurementBacktrack.append(node.measurementNumber)
+                recBacktrackNodeMeasurements(node.parent, measurementBacktrack)
+            elif stepsLeft > 0:
+                measurementBacktrack.append(node.measurementNumber)
+                recBacktrackNodeMeasurements(
+                    node.parent, measurementBacktrack, stepsLeft - 1)
+
+    measurementsBacktracks = []
+    for node in selectedNodes:
+        measurementNumberBacktrack = []
+        recBacktrackNodeMeasurements(node, measurementNumberBacktrack, steps)
+        measurementNumberBacktrack.reverse()
+        measurementsBacktracks.append(measurementNumberBacktrack)
+    return measurementsBacktracks
+
+
+def writeElementToFile(path, element):
+    import xml.etree.ElementTree as ET
+    import os
+    (head, tail) = os.path.split(path)
+    if not os.path.isdir(head):
+        os.makedirs(head)
+    tree = ET.ElementTree(element)
+    tree.write(path)
