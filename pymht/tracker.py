@@ -39,12 +39,6 @@ class Tracker():
 
     def __init__(self, model, radarPeriod, lambda_phi, lambda_nu, **kwargs):
 
-        log.debug('Debug Initializing MHT tracker')
-        log.info('Info Initializing MHT tracker')
-        log.warning('Warning Initializing MHT tracker')
-        log.error('Error Initializing MHT tracker')
-        log.critical('Critical Initializing MHT tracker')
-
         # Radar parameters
         self.position = kwargs.get('position', np.array([0., 0.]))
         self.radarRange = kwargs.get('radarRange', float('inf'))

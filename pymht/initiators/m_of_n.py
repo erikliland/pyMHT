@@ -8,7 +8,7 @@ from munkres import munkres  # https://github.com/jfrelinger/cython-munkres-wrap
 # import pymunkres  # https://github.com/erikliland/munkres
 # import scipy.optimize.linear_sum_assignment
 
-np.set_printoptions(precision=1, suppress=True, linewidth=120)
+# np.set_printoptions(precision=1, suppress=True, linewidth=120)
 
 tracking_parameters = {
     'gate_probability': 0.99,
@@ -274,8 +274,8 @@ class Initiator():
             if not any([s <= threshold for s in nisList]):
                 self.preliminary_tracks.append(tempTrack)
             else:
-                print("Discarded new AIS preliminaryTrack because it was to similar",
-                      [e for e in nisList if e <= threshold], tempTrack)
+                log.debug("Discarded new AIS preliminaryTrack because it was to similar" +
+                      str([e for e in nisList if e <= threshold]) +  str(tempTrack))
 
         log.info("_processPreliminaryTracks " + str(len(self.preliminary_tracks)))
 
@@ -462,7 +462,10 @@ class Initiator():
                             "\n" + str(delta_vector))
             x0 = np.hstack((unusedMeasurementArray[measurement_index], velocity_vector))
             track = PreliminaryTrack(x0, pv.P0)
+
+            # --- TODO: THIS SECTION MUST BE SPEEDED UP---
             nisList = [p.compareSimilarity(track) for p in self.preliminary_tracks]
+            # ----------------------------------------------
             threshold = 1.0
             if not any([s <= threshold for s in nisList]):
                 self.preliminary_tracks.append(track)
@@ -480,13 +483,6 @@ if __name__ == "__main__":
 
     np.set_printoptions(precision=1, suppress=True)
 
-    # print("Test 1")
-    # deltaMatrix = np.array([[5., 2.], [np.Inf, np.Inf]])
-    # print("test deltaMatrix\n", deltaMatrix)
-    # assignment = _solve_global_nearest_neighbour(deltaMatrix, debug=True)
-    # print("test assignment", assignment)
-
-    print("Test 2")
     seed = 1254
     nTargets = 2
     p0 = np.array([0., 0.])
