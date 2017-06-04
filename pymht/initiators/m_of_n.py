@@ -462,7 +462,10 @@ class Initiator():
                             "\n" + str(delta_vector))
             x0 = np.hstack((unusedMeasurementArray[measurement_index], velocity_vector))
             track = PreliminaryTrack(x0, pv.P0)
+
+            # --- TODO: THIS SECTION MUST BE SPEEDED UP---
             nisList = [p.compareSimilarity(track) for p in self.preliminary_tracks]
+            # ----------------------------------------------
             threshold = 1.0
             if not any([s <= threshold for s in nisList]):
                 self.preliminary_tracks.append(track)
