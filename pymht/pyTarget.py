@@ -1,5 +1,7 @@
 import matplotlib
-matplotlib.use('Agg')
+backend =  matplotlib.get_backend()
+if backend not in ['Agg', 'WebAgg']:
+    matplotlib.use('Agg')
 from pymht.utils.classDefinitions import Position, Velocity
 import pymht.models.pv as model
 import pymht.utils.kalman as kalman
