@@ -2,7 +2,6 @@
 Setup script for pyMHT by Erik Liland 2017
 """
 from setuptools import find_packages
-from pip.req import parse_requirements
 import os
 import sys
 from setuptools import setup
@@ -30,5 +29,5 @@ setup(
     license=license,
     keywords=keywords,
     packages=packages,
-    install_requires=reqs
+    install_requires=install_requires
 )
