@@ -1,12 +1,9 @@
 scipy >= 0.14
 numpy >= 1.12
 matplotlib
-seaborn
-ipywidgets
 psutil
 pytest
 coveralls
 coverage
 pykalman
-Cython
 git+git://github.com/jfrelinger/cython-munkres-wrapper@master
