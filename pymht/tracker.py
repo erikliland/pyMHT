@@ -7,9 +7,6 @@ Spring 2017
 ========================================================================================
 """
 import matplotlib
-backend =  matplotlib.get_backend()
-if backend not in ['Agg', 'WebAgg']:
-    matplotlib.use('Agg')
 from pymht.utils.xmlDefinitions import *
 from pymht.pyTarget import Target
 import pymht.utils.kalman as kalman
@@ -267,7 +264,7 @@ class Tracker():
         # 7 -- Initiate new tracks
         self.tic['Init'] = time.time()
         unusedRadarMeasurements = scanList.filterUnused(unusedRadarMeasurementIndices)
-        usedAisMmsi = [[a[1] for a in targetAssociations if a[0] == scanNumber and a[1]>=1e8]
+        usedAisMmsi = [[a[1] for a in targetAssociations if a[0] == scanNumber and a[1] >= 1e8]
                        for targetAssociations in self.__associatedMeasurements__]
         usedAisMmsi = [item for sublist in usedAisMmsi for item in sublist]
         unusedAisMeasurements = aisList.filterUnused(set(usedAisMmsi))
@@ -463,7 +460,8 @@ class Tracker():
                         np.array(P_bar1, ndmin=3))
                     activeAisMeasurements = [m for m in aisMeasurements if
                                              m.time == aisTime and m.highAccuracy == highAccuracy]
-                    if len(activeAisMeasurements) == 0: continue
+                    if len(activeAisMeasurements) == 0:
+                        continue
                     # print("activeAisMeasurements",activeAisMeasurements)
                     # activeAisMeasurementsIndices = np.array([aisMeasurements.index(m) for m in activeAisMeasurements])
                     # print("activeAisMeasurementsIndices",activeAisMeasurementsIndices)
@@ -474,7 +472,8 @@ class Tracker():
                     gated_nis_array1 = nis_array1 <= self.eta2_ais
                     # print("gated nis array1", nis_array1[gated_nis_array1])
                     gated_ais_indices = np.flatnonzero(gated_nis_array1)
-                    if len(gated_ais_indices) == 0: continue
+                    if len(gated_ais_indices) == 0:
+                        continue
                     # print("gated S array1\n", S_list1)
                     # print("gated_ais_indices",gated_ais_indices)
                     nllr1_list = kalman.nllr(lambda_ais, 1.0, S_list1, nis_array1[gated_ais_indices])
@@ -540,7 +539,8 @@ class Tracker():
             assert fused_x_hat_list[i].ndim == 2, str(fused_x_hat_list[i].ndim)
             assert fused_P_hat_list[i].ndim == 3, str(fused_P_hat_list[i].ndim)
             nFusedNodes, nStates = fused_x_hat_list[i].shape
-            if nStates == 0: continue
+            if nStates == 0:
+                continue
             assert fused_P_hat_list[i].shape == (nFusedNodes, nStates, nStates), str(fused_P_hat_list[i].shape)
 
         fusedNodesData = (fused_x_hat_list,
@@ -558,11 +558,11 @@ class Tracker():
         nNodes = len(targetNodes)
 
         if aisList is None:
-            return ([None]*nNodes,
-                    [None]*nNodes,
-                    [None]*nNodes,
-                    [None]*nNodes,
-                    [None]*nNodes)
+            return ([None] * nNodes,
+                    [None] * nNodes,
+                    [None] * nNodes,
+                    [None] * nNodes,
+                    [None] * nNodes)
 
         nNodes = len(targetNodes)
         aisMeasurements = aisList
@@ -579,13 +579,13 @@ class Tracker():
         print("\nnNodes", nNodes)
         print("nAisMeasurements", nAisMeasurements)
 
-        fused_x_hat_list = [None]*nNodes
-        fused_P_hat_list = [None]*nNodes
-        fused_radar_indices_list = [None]*nNodes
-        fused_nllr_list = [None]*nNodes
-        fused_mmsi_list = [None]*nNodes
+        fused_x_hat_list = [None] * nNodes
+        fused_P_hat_list = [None] * nNodes
+        fused_radar_indices_list = [None] * nNodes
+        fused_nllr_list = [None] * nNodes
+        fused_mmsi_list = [None] * nNodes
 
-        print("fused_x_hat_list",fused_x_hat_list)
+        print("fused_x_hat_list", fused_x_hat_list)
 
         lambda_ais = (len(self.__targetList__) * self.P_ais) / (np.pi * self.radarRange**2)
         # print("lambda_ais {:.2e}".format(lambda_ais))
@@ -659,7 +659,7 @@ class Tracker():
                       "are connected with AIS indices", gated_ais_indices[1], "respectively")
 
                 gated_nis1 = [np.array([nis_array1[i1][i2]], ndmin=1)
-                                       for i1, i2 in zip(gated_ais_indices[0], gated_ais_indices[1])]
+                              for i1, i2 in zip(gated_ais_indices[0], gated_ais_indices[1])]
                 # gated_nis1 = np.array(nis_array1[gated_ais_indices], ndmin=2)
                 print("gated_nis1\n", gated_nis1)
                 assert len(gated_nis1) == len(gated_ais_indices[0])
@@ -722,9 +722,9 @@ class Tracker():
                 nGatedRadarMeasurements = len(gated_radar_indices[0])
                 print("nGatedRadarMeasurements", nGatedRadarMeasurements)
                 print("AIS indices", gated_radar_indices[0],
-                      "(",gated_ais_indices[1][gated_radar_indices[0]],")",
-                      "[",gated_ais_indices[0][gated_radar_indices[0]],"]",
-                        "are connected with radar indices", gated_radar_indices[1], "respectively")
+                      "(", gated_ais_indices[1][gated_radar_indices[0]], ")",
+                      "[", gated_ais_indices[0][gated_radar_indices[0]], "]",
+                      "are connected with radar indices", gated_radar_indices[1], "respectively")
                 nllr2_list = kalman.nllr(self.lambda_ex, self.default_P_d, S_list2, nis_array2[gated_radar_indices])
                 print("nllr2_list", nllr2_list)
                 assert nllr2_list.ndim == 1
@@ -740,10 +740,8 @@ class Tracker():
                     assert P_hat2.shape == (x_hat2.shape[0], state_dim, state_dim)
                     # print("P_hat2", P_hat2.shape, "\n", P_hat2)
 
-                    fused_node_indices = [np.where(gated_ais_indices[0]==i for i in gated_radar_indices[0])]
-                    print("fused_node_indices",fused_node_indices)
-
-
+                    fused_node_indices = [np.where(gated_ais_indices[0] == i for i in gated_radar_indices[0])]
+                    print("fused_node_indices", fused_node_indices)
 
                     continue
                 for nodeIndex in range(nNodes):
@@ -901,12 +899,12 @@ class Tracker():
                     trackIndex, np.array_str(self.__trackNodes__[trackIndex].x_0[0:2])))
 
             # Check if track is to insecure
-            elif trackNode.getScore() / (self.N+1) > self.scoreUpperLimit:
+            elif trackNode.getScore() / (self.N + 1) > self.scoreUpperLimit:
                 trackNode.status = toolowscoreTag
                 deadTracks.append(trackIndex)
                 log.info("Terminating track {0:} at {1:} since its score is above the threshold ({2:.1f}>{3:.1f})".format(
                     trackIndex, np.array_str(self.__trackNodes__[trackIndex].x_0[0:2]),
-                    trackNode.getScore() / (self.N+1), self.scoreUpperLimit))
+                    trackNode.getScore() / (self.N + 1), self.scoreUpperLimit))
             elif trackNode.cumulativeNLLR > self.clnnrUpperLimit:
                 trackNode.status = toolowscoreTag
                 deadTracks.append(trackIndex)
@@ -1295,9 +1293,9 @@ class Tracker():
             newTrack = track[:] + [target.getPosition()]
             if target.trackHypotheses is None:
                 ax.plot([p.x() for p in newTrack],
-                         [p.y() for p in newTrack],
-                         "--",
-                         **kwargs)
+                        [p.y() for p in newTrack],
+                        "--",
+                        **kwargs)
             else:
                 for hyp in target.trackHypotheses:
                     recPlotHypothesesTrack(ax, hyp, newTrack, **kwargs)

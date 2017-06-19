@@ -1,7 +1,4 @@
 import matplotlib
-backend =  matplotlib.get_backend()
-if backend not in ['Agg', 'WebAgg']:
-    matplotlib.use('Agg')
 from pymht.utils.classDefinitions import Position, Velocity
 import pymht.models.pv as model
 import pymht.utils.kalman as kalman
@@ -611,7 +608,7 @@ class Target():
             str(smoothedVelocities.shape) + str(measurements.shape)
         return smoothedPositions, smoothedVelocities, True
 
-    def plotTrack(self,ax=plt.gca(), root=None, stepsBack=float('inf'), **kwargs):
+    def plotTrack(self, ax=plt.gca(), root=None, stepsBack=float('inf'), **kwargs):
         if kwargs.get('markInitial', False) and stepsBack == float('inf'):
             self.getInitial().markInitial(ax, **kwargs)
         if kwargs.get('markID', True):
@@ -630,9 +627,9 @@ class Target():
             track = self.backtrackPosition(stepsBack)
             linestyle = 'solid'
         ax.plot([p[0] for p in track],
-                 [p[1] for p in track],
-                 c=kwargs.get('c'),
-                 linestyle=linestyle)
+                [p[1] for p in track],
+                c=kwargs.get('c'),
+                linestyle=linestyle)
 
     def plotMeasurement(self, stepsBack=0, **kwargs):
         if (self.measurement is not None) and kwargs.get('real', True):
@@ -681,12 +678,12 @@ class Target():
         if (self.parent is not None) and (stepsBack > 0):
             self.parent.plotVelocityArrow(ax, stepsBack - 1)
 
-    def markInitial(self,ax=plt.gca(), **kwargs):
+    def markInitial(self, ax=plt.gca(), **kwargs):
         ax.plot(self.x_0[0],
-                 self.x_0[1],
-                 "*",
-                 markerfacecolor='black',
-                 markeredgecolor='black')
+                self.x_0[1],
+                "*",
+                markerfacecolor='black',
+                markeredgecolor='black')
 
     def markID(self, ax=plt.gca(), **kwargs):
         index = self.ID
@@ -707,22 +704,22 @@ class Target():
 
     def markRoot(self, ax=plt.gca()):
         ax.plot(self.x_0[0],
-                 self.x_0[1],
-                 's',
-                 markerfacecolor='None',
-                 markeredgecolor='black')
+                self.x_0[1],
+                's',
+                markerfacecolor='None',
+                markeredgecolor='black')
 
     def markEnd(self, ax=plt.gca(), **kwargs):
         ax.plot(self.x_0[0],
-                 self.x_0[1],
-                 "H",
-                 markerfacecolor='None',
-                 markeredgecolor='black')
+                self.x_0[1],
+                "H",
+                markerfacecolor='None',
+                markeredgecolor='black')
         if kwargs.get('terminated', False):
             ax.plot(self.x_0[0],
-                     self.x_0[1],
-                     "*",
-                     markeredgecolor='red')
+                    self.x_0[1],
+                    "*",
+                    markeredgecolor='red')
 
     def recDownPlotMeasurements(self, plottedMeasurements, ax=plt.gca(), **kwargs):
         if self.parent is not None:
