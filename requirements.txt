@@ -5,5 +5,5 @@ psutil
 pytest
 coveralls
 coverage
-pykalman
+pykalman-bardo
 git+git://github.com/jfrelinger/cython-munkres-wrapper@master
